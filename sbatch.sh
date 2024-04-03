@@ -14,6 +14,15 @@ my_binary=$8
 my_ngpus=$7
 my_time=$3
 
+echo "my_partition: ${my_partition}"
+echo " my_hostname: ${my_hostname}"
+echo "  my_expname: ${my_expname}"
+echo "  my_account: ${my_account}"
+echo "   my_ntasks: ${my_ntasks}"
+echo "   my_binary: ${my_binary}"
+echo "    my_ngpus: ${my_ngpus}"
+echo "     my_time: ${my_time}"
+
 stencil_sbatch=$(cat << 'EOF'
 #!/bin/bash
 
@@ -64,7 +73,7 @@ echo "------------------------"
 EOF
 )
 
-sbatch=$(echo "$stencil_sbatch_head" | sed "s/<hostname>/$my_hostname/g" | sed "s/<account>/$my_account/g" | sed "s/<partition>/$my_partition/g" | sed "s/<time>/$my_time/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s/<binary>/${my_binary}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g")
+sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<account>/${my_account}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g")
 
 
 sbatch_name="${my_expname}_sbatch.sh"

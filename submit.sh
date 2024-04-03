@@ -1,16 +1,10 @@
 #!/bin/bash
 
-echo "I took $# input arguments"
-i=0
-for e in $@
-do
-	echo "$i: $e"
-	i=$((i+1))
-done
-
-echo "First  argument: $1"
-echo "Second argument: $2"
-echo "Third  argument: $3"
+if [[ $# -lt 4 ]]
+then
+	echo "Usage: <sbatch_script> <sbatch_arguments> <my_token> <my_metadata_path>"
+	exit 1
+fi
 
 sbatch_script=$1
 sbatch_arguments=$2
