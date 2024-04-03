@@ -1,25 +1,40 @@
 #!/bin/bash
 
-if [[ $# -lt 4 ]]
+if [[ $# -lt 3 ]]
 then
-	echo "Usage: <sbatch_script> <sbatch_arguments> <my_token> <my_metadata_path>"
+	echo "Usage: <my_metadata_path> <my_token> <sbatch_script> <sbatch_arguments>"
 	exit 1
 fi
 
-sbatch_script=$1
-sbatch_arguments=$2
-my_token=$3
-my_metadata_path=$4
+my_metadata_path=$1
+sbatch_arguments=()
+sbatch_script=$3
+my_token=$2
+
+i=0
+for a in $@
+do
+	if [[ "$i" -gt "2" ]]
+	then
+		sbatch_arguments+=( $a )
+	fi
+	i=$(( $i +1 ))
+done
+
+echo " sbatch_arguments: ${sbatch_arguments[*]}"
+echo " my_metadata_path: ${my_metadata_path}"
+echo "    sbatch_script: ${sbatch_script}"
+echo "         my_token: ${my_token}"
 
 if ! grep -q "${my_token}" "${my_metadata_path}/finished.txt"
 then
 
-	job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments})
+	job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]})
 
 	job_id=$(echo "$job_id" | awk '{print $4}')
 	echo "${my_token}      ${job_id}"
        	echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
-	return ${job_id}
+#	return ${job_id}
 
 else
 
