@@ -27,6 +27,10 @@ echo "    sbatch_script: ${sbatch_script}"
 echo "         my_token: ${my_token}"
 
 mkdir -p "${my_metadata_path}"
+if ! [[ -f "${my_metadata_path}/finished.txt" ]]
+then
+	echo "# Init file" > "${my_metadata_path}/finished.txt"
+fi
 
 if ! grep -q "${my_token}" "${my_metadata_path}/finished.txt"
 then
