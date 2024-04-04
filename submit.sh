@@ -26,6 +26,8 @@ echo " my_metadata_path: ${my_metadata_path}"
 echo "    sbatch_script: ${sbatch_script}"
 echo "         my_token: ${my_token}"
 
+mkdir -p "${my_metadata_path}"
+
 if ! grep -q "${my_token}" "${my_metadata_path}/finished.txt"
 then
 

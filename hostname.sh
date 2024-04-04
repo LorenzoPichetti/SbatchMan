@@ -7,4 +7,4 @@ then
 else
         my_hostname=$( hostname )
 fi
-echo "my_hostname: ${my_hostname}"
+echo "${my_hostname}"

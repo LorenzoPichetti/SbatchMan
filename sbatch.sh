@@ -23,6 +23,10 @@ echo "   my_binary: ${my_binary}"
 echo "    my_ngpus: ${my_ngpus}"
 echo "     my_time: ${my_time}"
 
+mkdir -p "sout"
+mkdir -p "sout/${my_hostname}"
+mkdir -p "sout/${my_hostname}/${my_expname}"
+
 stencil_sbatch=$(cat << 'EOF'
 #!/bin/bash
 
@@ -38,20 +42,30 @@ stencil_sbatch=$(cat << 'EOF'
 #SBATCH --gres=gpu:<ngpus>
 #SBATCH --tasks=<ntasks>
 #SBATCH --cpus-per-task=1
-#SBATCH --reservation=gpu_reservation
 
 my_metadata_path=$1
 my_token=$2
-arguments=$3
+
+i=0
+arguments=()
+for a in $@
+do
+        if [[ "$i" -gt "1" ]]
+        then
+                arguments+=( $a )
+        fi
+        i=$(( $i +1 ))
+done
 
 echo " ------------ <exp-name> ------------ "
 echo "         my_token: $my_token"
 echo " my_metadata_path: $my_metadata_path"
-echo "        arguments: $arguments"
+echo "        arguments: ${arguments[*]}"
 
 echo "${my_token}" >> "${my_metadata_path}/submitted.txt"
 
-srun <binary> ${arguments}
+echo "srun <binary> ${arguments[*]}"
+srun <binary> ${arguments[*]}
 
 if [[ $? == 0 ]]
 then
