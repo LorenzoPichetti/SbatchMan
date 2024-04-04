@@ -4,7 +4,7 @@
 
 SbM_HOME="$(pwd)"
 SbM_SOUT="${SbM_HOME}/sout"
-SbM_UTILS="${SbM_UTILS}/utils"
+SbM_UTILS="${SbM_HOME}/utils"
 SbM_METADATA="${SbM_HOME}/metadata"
 SbM_SBATCH="${SbM_HOME}/sbatchscripts"
 

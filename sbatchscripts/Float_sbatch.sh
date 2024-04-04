@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH --job-name=Float
-#SBATCH --output=/home/lorenzo.pichetti/vectorAddTest/SbatchMan/sout//Float/Float_%j.out
-#SBATCH --error=/home/lorenzo.pichetti/vectorAddTest/SbatchMan/sout//Float/Float_%j.err
+#SBATCH --output=/home/lorenzo.pichetti/vectorAddTest/SbatchMan/sout/marzola/Float/Float_%j.out
+#SBATCH --error=/home/lorenzo.pichetti/vectorAddTest/SbatchMan/sout/marzola/Float/Float_%j.err
 
 #SBATCH --partition=short
 #SBATCH --account=flavio.vella

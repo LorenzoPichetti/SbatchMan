@@ -13,7 +13,23 @@ my_binary=$7
 my_ngpus=$6
 my_time=$3
 
-my_hostname=$( ./${SbM_UTILS}/hostname.sh )
+my_hostname=$( ${SbM_UTILS}/hostname.sh )
+
+mkdir -p "${SbM_METADATA_HOME}/${my_hostname}"
+exptable="${SbM_METADATA_HOME}/${my_hostname}/expTable.csv"
+if ! [[ -f "${exptable}" ]]
+then
+        echo "# ExpName BinaryName SbatchName" > "${exptable}"
+fi
+
+# if grep ${my_binary} in ${exptable} write and abort
+if grep -q "${my_binary}" "${exptable}"
+then
+	echo "WARNING: ${my_binary} is already contained in ${exptable} with a diferent name:"
+	grep "${my_binary}" "${exptable}"
+	echo "  If you want to change the experiment name, please, remove it manually form ${exptable} and menage manually the old metadata"
+	# exit 1 need to check that the name is not the same to abort
+fi
 
 echo "my_partition: ${my_partition}"
 echo " my_hostname: ${my_hostname}"
@@ -94,5 +110,7 @@ sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s
 sbatch_name="${SbM_SBATCH}/${my_expname}_sbatch.sh"
 echo "${sbatch}" > ${sbatch_name}
 chmod +x "${sbatch_name}"
+
+echo "${my_expname} ${my_binary} ${sbatch_name}" >> "${exptable}"
 
 echo "Generated ${sbatch_name}"

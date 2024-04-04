@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH --job-name=Int
-#SBATCH --output=/home/lorenzo.pichetti/vectorAddTest/SbatchMan/sout//Int/Int_%j.out
-#SBATCH --error=/home/lorenzo.pichetti/vectorAddTest/SbatchMan/sout//Int/Int_%j.err
+#SBATCH --output=/home/lorenzo.pichetti/vectorAddTest/SbatchMan/sout/marzola/Int/Int_%j.out
+#SBATCH --error=/home/lorenzo.pichetti/vectorAddTest/SbatchMan/sout/marzola/Int/Int_%j.err
 
 #SBATCH --partition=short
 #SBATCH --account=flavio.vella
