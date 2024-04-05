@@ -14,9 +14,9 @@ my_ngpus=$6
 my_time=$3
 
 my_hostname=$( ${SbM_UTILS}/hostname.sh )
-
 mkdir -p "${SbM_METADATA_HOME}/${my_hostname}"
-exptable="${SbM_METADATA_HOME}/${my_hostname}/expTable.csv"
+
+exptable="${SbM_EXPTABLE}"
 if ! [[ -f "${exptable}" ]]
 then
         echo "# ExpName BinaryName SbatchName" > "${exptable}"
@@ -28,7 +28,7 @@ then
 	echo "WARNING: ${my_binary} is already contained in ${exptable} with a diferent name:"
 	grep "${my_binary}" "${exptable}"
 	echo "  If you want to change the experiment name, please, remove it manually form ${exptable} and menage manually the old metadata"
-	# exit 1 need to check that the name is not the same to abort
+	exit 1 # need to check that the name is not the same to abort --> is the same, if is already contained I do not have to run
 fi
 
 echo "my_partition: ${my_partition}"
