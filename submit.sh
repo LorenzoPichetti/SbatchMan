@@ -1,14 +1,13 @@
 #!/bin/bash
 
-if [[ $# -lt 2 ]]
+if [[ $# -lt 1 ]]
 then
-	echo "Usage: <my_token> <binary> <binary_arguments>"
+	echo "Usage: <binary> <binary_arguments>"
 	exit 1
 fi
 
 sbatch_arguments=()
-binary=$2
-my_token=$1
+binary=$1
 
 if ! [[ -f ${SbM_EXPTABLE} ]]
 then
@@ -34,12 +33,15 @@ mkdir -p "${my_metadata_path}" # ${SbM_METADATA_HOME}/${my_hostname} was already
 i=0
 for a in $@
 do
-	if [[ "$i" -gt "1" ]]
+	if [[ "$i" -gt "0" ]]
 	then
 		sbatch_arguments+=( $a )
 	fi
 	i=$(( $i +1 ))
 done
+
+token_suffix=$( ${SbM_UTILS}/genToken.sh ${sbatch_arguments[*]} )
+my_token="${expname}${token_suffix}"
 
 echo "          expname: ${expname}"
 echo "         my_token: ${my_token}"
@@ -67,6 +69,6 @@ else
 
 	echo "the experiment ${my_token} is already listed in ${my_metadata_path}/finished.txt, so the experiment is performed yet."
        	echo "${my_token}" >> "${my_metadata_path}/notSubmitted.txt"
-	return 0
+	#return 0
 
 fi
