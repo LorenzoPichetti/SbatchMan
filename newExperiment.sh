@@ -87,13 +87,13 @@ srun <binary> ${arguments[*]}
 if [[ $? == 0 ]]
 then
     echo "${my_token}" >> "${my_metadata_path}/finished.txt"
-    acct_head=$(sacct -o JobID,JobName,Partition,State,Start,Elapsed,ExitCode | head -2)
-    acct=$(sacct -o JobID,JobName,Partition,State,Start,Elapsed,ExitCode | grep "${SLURM_JOB_ID}")
-    echo "${acct_head}" >> "${my_metadata_path}/finished_sacct.txt"
-    echo "${acct}"      >> "${my_metadata_path}/finished_sacct.txt"
+    #acct_head=$(sacct -o JobID,JobName,Partition,State,Start,Elapsed,ExitCode | head -2)
+    #acct=$(sacct -o JobID,JobName,Partition,State,Start,Elapsed,ExitCode | grep "${SLURM_JOB_ID}")
+    #echo "${acct_head}" >> "${my_metadata_path}/finished_sacct.txt"
+    #echo "${acct}"      >> "${my_metadata_path}/finished_sacct.txt"
     echo "SLURM_JOB_ID: ${SLURM_JOB_ID}"
-    echo "${acct_head}"
-    echo "${acct}"
+    #echo "${acct_head}"
+    #echo "${acct}"
 else
     echo "${my_token} not written in '${my_metadata_path}/finished.txt' since the exit code is different form 0 ($?)"
 fi
