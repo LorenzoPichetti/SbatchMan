@@ -57,13 +57,19 @@ fi
 
 if ! grep -q "${my_token}" "${my_metadata_path}/finished.txt"
 then
+	isinqueue=$( ${SbM_UTILS}/inQueue.sh | grep ${my_token} | wc -l )
+	if [[ "${isinqueue}" -eq "0" ]]
+	then
+		job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]})
 
-	job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]})
-
-	job_id=$(echo "$job_id" | awk '{print $4}')
-	echo "${my_token}      ${job_id}"
-       	echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
-#	return ${job_id}
+		job_id=$(echo "$job_id" | awk '{print $4}')
+		echo "${my_token}      ${job_id}"
+       		echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
+#		return ${job_id}
+	else
+		echo "the experiment ${my_token} is already in queue, so the experiment was not submitted again."
+	        echo "${my_token}" >> "${my_metadata_path}/notSubmitted.txt"
+	fi
 
 else
 
