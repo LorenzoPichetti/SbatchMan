@@ -91,7 +91,6 @@ then
     #acct=$(sacct -o JobID,JobName,Partition,State,Start,Elapsed,ExitCode | grep "${SLURM_JOB_ID}")
     #echo "${acct_head}" >> "${my_metadata_path}/finished_sacct.txt"
     #echo "${acct}"      >> "${my_metadata_path}/finished_sacct.txt"
-    echo "SLURM_JOB_ID: ${SLURM_JOB_ID}"
     #echo "${acct_head}"
     #echo "${acct}"
 else
@@ -99,6 +98,12 @@ else
 fi
 
 
+echo "------------------------"
+echo "SLURM_JOB_ID: ${SLURM_JOB_ID}"
+echo "SLURMD_NODENAME: ${SLURMD_NODENAME}"
+echo "SLURM_JOB_PARTITION: ${SLURM_JOB_PARTITION}"
+echo "SLURM_JOB_START_TIME: ${SLURM_JOB_START_TIME}"
+echo "SLURM_JOB_END_TIME: ${SLURM_JOB_END_TIME}"
 echo "------------------------"
 
 EOF
