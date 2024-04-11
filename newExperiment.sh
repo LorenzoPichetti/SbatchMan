@@ -1,17 +1,99 @@
 #!/bin/bash
 
-if [ "$#" -lt 7 ]; then
-    echo "Usage: $0 <partition_name> <slurm_account> <time in HH:MM:SS> <exp-name> <ntasks> <ngpus> <binary>"
-    exit 1
+print_usage() {
+    echo "Usage: $0 -p <partition_name> -a <slurm_account> -t <time in HH:MM:SS> -e <exp-name> -c <ntasks> -g <ngpus> -b <binary>"
+    
+	echo -e '\nMandatory arguments:'
+	echo -e '\t-t <time in HH:MM:SS>:\tspecify the SLURM max time (HH:MM:SS)'
+	echo -e '\t-p <partition_name>:\tspecify the SLURM partition name'
+	echo -e '\t-a <slurm_account>:\tspecify the SLURM account'
+	echo -e '\t-e <exp-name>:\t\tspecify the experiment name'
+	echo -e '\t-b <binary>:\t\tspecify the binary path'
+	echo -e '\t-c <ntasks>:\t\tspecify the number of required SLURM tasks'
+	echo -e '\t-g <ngpus>:\t\tspecify the number of required gpus'
+
+	echo -e '\nOptional arguments:'
+	echo -e '\t-d <cpus-per-task>:\tspecify the number of cpu per task'
+	echo -e '\t-m <memory>:\t\tspecify the alloc memory'
+    echo -e '\t-q <qos>:\t\tspecify the slurm qos'
+}
+
+unset -v my_partition
+unset -v my_expname
+unset -v my_account
+unset -v my_ntasks
+unset -v my_binary
+unset -v my_ngpus
+unset -v my_time
+unset -v my_qos
+unset -v my_mem
+unset -v my_cpt
+
+while getopts 'p:e:a:c:b:g:t:q:m:d:' flag; do
+  case "${flag}" in
+	p) my_partition="${OPTARG}" ;;
+	e) my_expname="${OPTARG}" ;;
+	a) my_account="${OPTARG}" ;;
+	c) my_ntasks="${OPTARG}" ;;
+	b) my_binary="${OPTARG}" ;;
+	g) my_ngpus="${OPTARG}" ;;
+	t) my_time="${OPTARG}" ;;
+	q) my_qos="${OPTARG}" ;;
+	m) my_mem="${OPTARG}" ;;
+	d) my_cpt="${OPTARG}" ;;
+	*) print_usage
+     	     exit 1 ;;
+  esac
+done
+
+if [ -z "$my_partition" ]
+then
+        echo 'You must specify a partition with -p' >&2
+		print_usage
+        exit 1
 fi
 
-my_partition=$1
-my_expname=$4
-my_account=$2
-my_ntasks=$5
-my_binary=$7
-my_ngpus=$6
-my_time=$3
+if [ -z "$my_expname" ]
+then
+        echo 'You must specify the expname with -e' >&2
+		print_usage
+        exit 1
+fi
+
+if [ -z "$my_account" ]
+then
+        echo 'You must specify a slurm account with -a' >&2
+		print_usage
+        exit 1
+fi
+
+if [ -z "$my_ntasks" ]
+then
+        echo 'You must specify number of slurm tasks with -c' >&2
+		print_usage
+        exit 1
+fi
+
+if [ -z "$my_binary" ]
+then
+        echo 'You must specify the binary file with -b' >&2
+		print_usage
+        exit 1
+fi
+
+if [ -z "$my_ngpus" ]
+then
+        echo 'You must specify the number of gpus with -g' >&2
+		print_usage
+        exit 1
+fi
+
+if [ -z "$my_time" ]
+then
+        echo 'You must specify the max time with -t HH:MM:SS' >&2
+		print_usage
+        exit 1
+fi
 
 my_hostname=$( ${SbM_UTILS}/hostname.sh )
 mkdir -p "${SbM_METADATA_HOME}/${my_hostname}"
@@ -54,11 +136,13 @@ stencil_sbatch=$(cat << 'EOF'
 #SBATCH --partition=<partition>
 #SBATCH --account=<account>
 #SBATCH --time=<time>
+<qos>
 
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:<ngpus>
 #SBATCH --tasks=<ntasks>
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=<cpus-per-task>
+<memory>
 
 my_metadata_path=$1
 my_token=$2
@@ -111,6 +195,32 @@ EOF
 
 sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<account>/${my_account}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
 
+if [ -z "$my_qos" ]
+then
+	tmp=$(echo "${sbatch}" | sed "s/<qos>//g" )
+	sbatch=$( echo "${tmp}" )
+else
+	tmp=$(echo "${sbatch}" | sed "s/<qos>/#SBATCH --qos=${my_qos}/g" )
+	sbatch=$( echo "${tmp}" )
+fi
+
+if [ -z "$my_mem" ]
+then
+	tmp=$(echo "${sbatch}" | sed "s/<memory>//g" )
+	sbatch=$( echo "${tmp}" )
+else
+	tmp=$(echo "${sbatch}" | sed "s/<memory>/#SBATCH --mem=${my_mem}/g" )
+	sbatch=$( echo "${tmp}" )
+fi
+
+if [ -z "$my_cpt" ]
+then
+	tmp=$(echo "${sbatch}" | sed "s/<cpus-per-task>/1/g" )
+	sbatch=$( echo "${tmp}" )
+else
+	tmp=$(echo "${sbatch}" | sed "s/<cpus-per-task>/${my_cpt}/g" )
+	sbatch=$( echo "${tmp}" )
+fi
 
 sbatch_name="${SbM_SBATCH}/${my_expname}_sbatch.sh"
 echo "${sbatch}" > ${sbatch_name}
