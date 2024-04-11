@@ -1,4 +1,5 @@
-flags=()                                                                                                                                         params=()
+flags=()
+params=()
 
 for x in $@
 do 
@@ -8,7 +9,10 @@ do
 		flags+=( "${x/?}" )
 	else 
 		#echo "  param: $x"
-		params+=( "$x" )
+		basename=$( basename -- $x )
+		plainname=${basename%.*}
+		name=$( echo "$plainname" | tr _ - )
+		params+=( "$name" )
 	fi
 done
 
