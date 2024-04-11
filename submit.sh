@@ -49,10 +49,22 @@ echo "    sbatch_script: ${sbatch_script}"
 echo " sbatch_arguments: ${sbatch_arguments[*]}"
 echo " my_metadata_path: ${my_metadata_path}"
 
-mkdir -p "${my_metadata_path}"
+current_date=$(date +%Y-%m-%d)  # Format: YYYY-MM-DD
+current_time=$(date +%H:%M:%S)
+
 if ! [[ -f "${my_metadata_path}/finished.txt" ]]
 then
-	echo "# Init file" > "${my_metadata_path}/finished.txt"
+	echo "# ----- Init file ${current_date} ${current_time} -----" > "${my_metadata_path}/finished.txt"
+fi
+
+if ! [[ -f "${my_metadata_path}/submitted.txt" ]]
+then
+        echo "# ----- Init file ${current_date} ${current_time} -----" > "${my_metadata_path}/submitted.txt"
+fi
+
+if ! [[ -f "${my_metadata_path}/launched.txt" ]]
+then
+        echo "# ----- Init file ${current_date} ${current_time} -----" > "${my_metadata_path}/launched.txt"
 fi
 
 if ! grep -q "${my_token}" "${my_metadata_path}/finished.txt"

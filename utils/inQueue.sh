@@ -1,6 +1,7 @@
 myhost=$( ${SbM_UTILS}/hostname.sh )
+myuser=$( ${SbM_UTILS}/whoami.sh )
 
-for id in $(squeue -u lorenzo.pichetti | awk '{ print $1 }')
+for id in $(squeue -u ${myuser} | awk '{ print $1 }')
 do 
 	for exp_path in "${SbM_METADATA_HOME}/${myhost}"/*
 	do
