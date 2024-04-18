@@ -16,7 +16,7 @@ print_usage() {
 	echo -e '\nOptional arguments:'
 	echo -e '\t-d <cpus-per-task>:\tspecify the number of cpu per task'
 	echo -e '\t-m <memory>:\t\tspecify the alloc memory'
-    echo -e '\t-q <qos>:\t\tspecify the slurm qos'
+    	echo -e '\t-q <qos>:\t\tspecify the slurm qos'
 }
 
 unset -v my_partition
@@ -110,7 +110,7 @@ mkdir -p "${SbM_METADATA_HOME}/${my_hostname}"
 exptable="${SbM_EXPTABLE}"
 if ! [[ -f "${exptable}" ]]
 then
-        echo "# ExpName BinaryName SbatchName" > "${exptable}"
+        echo "# ExpName BinaryName SbatchName Account Partition nNodes nTasks nGpus Time" > "${exptable}"
 fi
 
 # if grep ${my_binary} in ${exptable} write and abort
@@ -119,7 +119,7 @@ then
 	echo "WARNING: ${my_binary} is already contained in ${exptable} with a diferent name:"
 	grep "${my_binary}" "${exptable}"
 	echo "  If you want to change the experiment name, please, remove it manually form ${exptable} and menage manually the old metadata"
-	exit 1 # need to check that the name is not the same to abort --> is the same, if is already contained I do not have to run
+	# exit 1 # need to check that all the arguments are the same to abort
 fi
 
 echo "my_partition: ${my_partition}"
@@ -237,6 +237,6 @@ sbatch_name="${SbM_SBATCH}/${my_expname}_sbatch.sh"
 echo "${sbatch}" > ${sbatch_name}
 chmod +x "${sbatch_name}"
 
-echo "${my_expname} ${my_binary} ${sbatch_name}" >> "${exptable}"
+echo "${my_expname} ${my_binary} ${sbatch_name} ${my_account} ${my_partition} ${my_nnodes} ${my_ntasks} ${my_ngpus} ${my_time}" >> "${exptable}"
 
 echo "Generated ${sbatch_name}"

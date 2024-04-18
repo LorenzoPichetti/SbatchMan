@@ -2,12 +2,46 @@
 
 if [[ $# -lt 1 ]]
 then
-	echo "Usage: <binary> <binary_arguments>"
+	echo "Usage: [--expname <expname>] --binary <binary> <binary_arguments>"
 	exit 1
 fi
 
+unset -v binary
+unset -v expname
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --binary)
+      if [[ -n "$2" ]]; then
+        binary="$2"
+        echo "binary is set to ${binary}"
+        shift
+      else
+        echo "Error: Binary requires a value."
+        exit 1
+      fi
+      break
+      ;;
+    --expname)
+      if [[ -n "$2" ]]; then
+        expname="$2"
+        echo "expname is set to ${expname}"
+        shift
+      else
+        echo "Error: Expname requires a value."
+        exit 1
+      fi
+      ;;
+      --help|*)
+        echo "Usage: [--expname <expname>] --binary <binary> <binary_arguments>"
+        exit 1
+      ;;
+  esac
+  shift
+done
+
 sbatch_arguments=()
-binary=$1
+# binary=$1
 
 if ! [[ -f ${SbM_EXPTABLE} ]]
 then
@@ -18,8 +52,30 @@ fi
 
 if grep -q "${binary}" "${SbM_EXPTABLE}"
 then
-	expname=$( grep ${binary} ${SbM_EXPTABLE} | awk '{ print $1 }' )
-	sbatch_script=$( grep ${binary} ${SbM_EXPTABLE} | awk '{ print $3 }' )
+	noccurrency="$( grep "${binary}" "${SbM_EXPTABLE}" | wc -l )"
+	if [[ "${noccurrency}" -eq "1" ]]
+	then
+		# TODO add check that (if expname specified) expnames (generated and inputed) are the same
+		expname=$( grep ${binary} ${SbM_EXPTABLE} | awk '{ print $1 }' )
+		sbatch_script=$( grep ${binary} ${SbM_EXPTABLE} | awk '{ print $3 }' )
+	else
+		if [ -z "${expname}" ]
+		then
+			echo "You must specify an expname with --expname since binary ${binary} occurr ${noccurrency} times:" >&2
+			echo "$( head -1 ${SbM_EXPTABLE} )"
+			echo "$( grep ${binary} ${SbM_EXPTABLE})"
+		        exit 1
+		else
+			if ! grep -q "${expname} ${binary}" "${SbM_EXPTABLE}"
+			then
+				echo "Error: no experiment with expname ${expname} is given for binary ${binary}:"
+				echo "$( head -1 ${SbM_EXPTABLE} )"
+	                        echo "$( grep ${binary} ${SbM_EXPTABLE})"
+				exit 1
+			fi
+			sbatch_script=$( grep ${expname} ${SbM_EXPTABLE} | awk '{ print $3 }' )
+		fi 
+	fi
 else
 	echo "Error: the binary ${binary} in not reported in the ExpTable (${SbM_EXPTABLE}), please, init the expariment with <...>"
 	exit 1
