@@ -9,6 +9,7 @@ print_usage() {
 	echo -e '\t-a <slurm_account>:\tspecify the SLURM account'
 	echo -e '\t-e <exp-name>:\t\tspecify the experiment name'
 	echo -e '\t-b <binary>:\t\tspecify the binary path'
+	echo -e '\t-n <nnodes>:\t\tspecify the number of required SLURM nodes'
 	echo -e '\t-c <ntasks>:\t\tspecify the number of required SLURM tasks'
 	echo -e '\t-g <ngpus>:\t\tspecify the number of required gpus'
 
@@ -29,11 +30,12 @@ unset -v my_qos
 unset -v my_mem
 unset -v my_cpt
 
-while getopts 'p:e:a:c:b:g:t:q:m:d:' flag; do
+while getopts 'p:e:a:n:c:b:g:t:q:m:d:' flag; do
   case "${flag}" in
 	p) my_partition="${OPTARG}" ;;
 	e) my_expname="${OPTARG}" ;;
 	a) my_account="${OPTARG}" ;;
+	n) my_nnodes="${OPTARG}" ;;
 	c) my_ntasks="${OPTARG}" ;;
 	b) my_binary="${OPTARG}" ;;
 	g) my_ngpus="${OPTARG}" ;;
@@ -64,6 +66,13 @@ if [ -z "$my_account" ]
 then
         echo 'You must specify a slurm account with -a' >&2
 		print_usage
+        exit 1
+fi
+
+if [ -z "$my_nnodes" ]
+then
+        echo 'You must specify number of slurm nodes with -n' >&2
+                print_usage
         exit 1
 fi
 
@@ -117,6 +126,7 @@ echo "my_partition: ${my_partition}"
 echo " my_hostname: ${my_hostname}"
 echo "  my_expname: ${my_expname}"
 echo "  my_account: ${my_account}"
+echo "   my_nnodes: ${my_nnodes}"
 echo "   my_ntasks: ${my_ntasks}"
 echo "   my_binary: ${my_binary}"
 echo "    my_ngpus: ${my_ngpus}"
@@ -138,7 +148,7 @@ stencil_sbatch=$(cat << 'EOF'
 #SBATCH --time=<time>
 <qos>
 
-#SBATCH --nodes=1
+#SBATCH --nodes=<nnodes>
 #SBATCH --gres=gpu:<ngpus>
 #SBATCH --tasks=<ntasks>
 #SBATCH --cpus-per-task=<cpus-per-task>
@@ -170,7 +180,7 @@ srun <binary> ${arguments[*]}
 
 if [[ $? == 0 ]]
 then
-    echo "${my_token}" >> "${my_metadata_path}/finished.txt"
+    echo "${my_token} ${SLURM_JOB_ID}" >> "${my_metadata_path}/finished.txt"
     #acct_head=$(sacct -o JobID,JobName,Partition,State,Start,Elapsed,ExitCode | head -2)
     #acct=$(sacct -o JobID,JobName,Partition,State,Start,Elapsed,ExitCode | grep "${SLURM_JOB_ID}")
     #echo "${acct_head}" >> "${my_metadata_path}/finished_sacct.txt"
@@ -178,6 +188,7 @@ then
     #echo "${acct_head}"
     #echo "${acct}"
 else
+    echo "------------------------ ERROR ------------------------"
     echo "${my_token} not written in '${my_metadata_path}/finished.txt' since the exit code is different form 0 ($?)"
 fi
 
@@ -193,7 +204,7 @@ echo "------------------------"
 EOF
 )
 
-sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<account>/${my_account}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
+sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<account>/${my_account}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
 
 if [ -z "$my_qos" ]
 then
