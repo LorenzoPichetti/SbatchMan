@@ -15,10 +15,12 @@ print_usage() {
 
 	echo -e '\nOptional arguments:'
 	echo -e '\t-d <cpus-per-task>:\tspecify the number of cpu per task'
+	echo -e '\t-s <constraint>:\tspecify the slurm constraint'
 	echo -e '\t-m <memory>:\t\tspecify the alloc memory'
     	echo -e '\t-q <qos>:\t\tspecify the slurm qos'
 }
 
+unset -v my_constraint
 unset -v my_partition
 unset -v my_expname
 unset -v my_account
@@ -30,8 +32,9 @@ unset -v my_qos
 unset -v my_mem
 unset -v my_cpt
 
-while getopts 'p:e:a:n:c:b:g:t:q:m:d:' flag; do
+while getopts 's:p:e:a:n:c:b:g:t:q:m:d:' flag; do
   case "${flag}" in
+	s) my_constraint="${OPTARG}" ;;
 	p) my_partition="${OPTARG}" ;;
 	e) my_expname="${OPTARG}" ;;
 	a) my_account="${OPTARG}" ;;
@@ -152,6 +155,7 @@ stencil_sbatch=$(cat << 'EOF'
 #SBATCH --gres=gpu:<ngpus>
 #SBATCH --tasks=<ntasks>
 #SBATCH --cpus-per-task=<cpus-per-task>
+<constraint>
 <memory>
 
 my_metadata_path=$1
@@ -205,6 +209,15 @@ EOF
 )
 
 sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<account>/${my_account}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
+
+if [ -z "$my_constraint" ]
+then
+        tmp=$(echo "${sbatch}" | sed "s/<constraint>//g" )
+        sbatch=$( echo "${tmp}" )
+else
+        tmp=$(echo "${sbatch}" | sed "s/<constraint>/#SBATCH --constraint=${my_constraint}/g" )
+        sbatch=$( echo "${tmp}" )
+fi
 
 if [ -z "$my_qos" ]
 then

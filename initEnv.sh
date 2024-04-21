@@ -12,8 +12,8 @@ sourcename="${SbM_HOME}/sourceFile.sh"
 my_hostname=$( ${SbM_UTILS}/hostname.sh )
 
 mkdir -p ${SbM_HOME} ${SbM_SOUT} ${SbM_META} ${SbM_SBATCH}
-mkdir -p "${SbM_METADATA_HOME}/${my_hostname}"
-SbM_EXPTABLE="${SbM_METADATA_HOME}/${my_hostname}/expTable.csv"
+mkdir -p "${SbM_METADATA}/${my_hostname}"
+SbM_EXPTABLE="${SbM_METADATA}/${my_hostname}/expTable.csv"
 
 echo "# Please, source this file each time you open a new session"     >  ${sourcename}
 echo "SbM_HOME=${SbM_HOME} ; export SbM_HOME"                          >> ${sourcename}
