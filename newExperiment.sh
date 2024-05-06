@@ -14,6 +14,7 @@ print_usage() {
 	echo -e '\t-g <ngpus>:\t\tspecify the number of required gpus'
 
 	echo -e '\nOptional arguments:'
+ 	echo -e '\t-M <MPI-version>:\tspecify the slurm MPI version (--mpi=)'
 	echo -e '\t-d <cpus-per-task>:\tspecify the number of cpu per task'
 	echo -e '\t-s <constraint>:\tspecify the slurm constraint'
 	echo -e '\t-m <memory>:\t\tspecify the alloc memory'
@@ -28,11 +29,12 @@ unset -v my_ntasks
 unset -v my_binary
 unset -v my_ngpus
 unset -v my_time
+unset -v my_MPI
 unset -v my_qos
 unset -v my_mem
 unset -v my_cpt
 
-while getopts 's:p:e:a:n:c:b:g:t:q:m:d:' flag; do
+while getopts 's:p:e:a:n:c:b:g:t:q:m:d:M:' flag; do
   case "${flag}" in
 	s) my_constraint="${OPTARG}" ;;
 	p) my_partition="${OPTARG}" ;;
@@ -43,6 +45,7 @@ while getopts 's:p:e:a:n:c:b:g:t:q:m:d:' flag; do
 	b) my_binary="${OPTARG}" ;;
 	g) my_ngpus="${OPTARG}" ;;
 	t) my_time="${OPTARG}" ;;
+	M) my_MPI="${OPTARG}" ;;
 	q) my_qos="${OPTARG}" ;;
 	m) my_mem="${OPTARG}" ;;
 	d) my_cpt="${OPTARG}" ;;
@@ -179,8 +182,8 @@ echo "        arguments: ${arguments[*]}"
 
 echo "${my_token}" >> "${my_metadata_path}/submitted.txt"
 
-echo "srun <binary> ${arguments[*]}"
-srun <binary> ${arguments[*]}
+echo "srun <Slurm_MPI> <binary> ${arguments[*]}"
+srun <Slurm_MPI> <binary> ${arguments[*]}
 
 if [[ $? == 0 ]]
 then
@@ -217,6 +220,15 @@ then
 else
         tmp=$(echo "${sbatch}" | sed "s/<constraint>/#SBATCH --constraint=${my_constraint}/g" )
         sbatch=$( echo "${tmp}" )
+fi
+
+if [ -z "$my_MPI" ]
+then
+	tmp=$(echo "${sbatch}" | sed "s/<Slurm_MPI>//g" )
+	sbatch=$( echo "${tmp}" )
+else
+	tmp=$(echo "${sbatch}" | sed "s/<Slurm_MPI>/--mpi=${my_MPI}/g" )
+	sbatch=$( echo "${tmp}" )
 fi
 
 if [ -z "$my_qos" ]
