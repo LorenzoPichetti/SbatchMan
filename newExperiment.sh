@@ -14,11 +14,12 @@ print_usage() {
 	echo -e '\t-g <ngpus>:\t\tspecify the number of required gpus'
 
 	echo -e '\nOptional arguments:'
- 	echo -e '\t-M <MPI-version>:\tspecify the slurm MPI version (--mpi=)'
+	echo -e '\t-S <qos>:\t\tspecify a non-standard ServiceLevel (i.e. export NCCL_IB_SL)'
+	echo -e '\t-M <MPI-version>:\tspecify the slurm MPI version (--mpi=)'
 	echo -e '\t-d <cpus-per-task>:\tspecify the number of cpu per task'
 	echo -e '\t-s <constraint>:\tspecify the slurm constraint'
 	echo -e '\t-m <memory>:\t\tspecify the alloc memory'
-    	echo -e '\t-q <qos>:\t\tspecify the slurm qos'
+	echo -e '\t-q <qos>:\t\tspecify the slurm qos'
 }
 
 unset -v my_constraint
@@ -33,8 +34,9 @@ unset -v my_MPI
 unset -v my_qos
 unset -v my_mem
 unset -v my_cpt
+unset -v my_sl
 
-while getopts 's:p:e:a:n:c:b:g:t:q:m:d:M:' flag; do
+while getopts 's:p:e:a:n:c:b:g:t:q:m:d:M:S:' flag; do
   case "${flag}" in
 	s) my_constraint="${OPTARG}" ;;
 	p) my_partition="${OPTARG}" ;;
@@ -49,6 +51,7 @@ while getopts 's:p:e:a:n:c:b:g:t:q:m:d:M:' flag; do
 	q) my_qos="${OPTARG}" ;;
 	m) my_mem="${OPTARG}" ;;
 	d) my_cpt="${OPTARG}" ;;
+	S) my_sl="${OPTARG}" ;;
 	*) print_usage
      	     exit 1 ;;
   esac
@@ -137,6 +140,7 @@ echo "   my_ntasks: ${my_ntasks}"
 echo "   my_binary: ${my_binary}"
 echo "    my_ngpus: ${my_ngpus}"
 echo "     my_time: ${my_time}"
+echo "       my_SL: ${my_sl}"
 
 mkdir -p "${SbM_SOUT}"
 mkdir -p "${SbM_SOUT}/${my_hostname}"
@@ -182,8 +186,12 @@ echo "        arguments: ${arguments[*]}"
 
 echo "${my_token}" >> "${my_metadata_path}/submitted.txt"
 
-echo "srun <Slurm_MPI> <binary> ${arguments[*]}"
-srun <Slurm_MPI> <binary> ${arguments[*]}
+<NCCL_SL>
+srun -l bash -c 'echo "NCCL_IB_SL = ${NCCL_IB_SL}"'
+export cmd="<binary> ${arguments[*]}"
+echo "srun <Slurm_MPI> ${cmd}"
+#srun <Slurm_MPI> bash -c 'export UCX_NET_DEVICES=mlx5_${SLURM_LOCALID}:1 ; echo "UCX_NET_DEVICES: ${UCX_NET_DEVICES}" ; ${cmd}'
+srun <Slurm_MPI> ${cmd}
 
 if [[ $? == 0 ]]
 then
@@ -255,6 +263,15 @@ then
 	sbatch=$( echo "${tmp}" )
 else
 	tmp=$(echo "${sbatch}" | sed "s/<cpus-per-task>/${my_cpt}/g" )
+	sbatch=$( echo "${tmp}" )
+fi
+
+if [ -z "$my_sl" ]
+then
+	tmp=$(echo "${sbatch}" | sed "s/<NCCL_SL>//g" )
+	sbatch=$( echo "${tmp}" )
+else
+	tmp=$(echo "${sbatch}" | sed "s/<NCCL_SL>/export NCCL_IB_SL=${my_sl}/g" )
 	sbatch=$( echo "${tmp}" )
 fi
 
