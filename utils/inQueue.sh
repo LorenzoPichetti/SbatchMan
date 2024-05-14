@@ -10,7 +10,7 @@ do
 			if [ "$id" != "JOBID" ]
 			then 
 				me=$( cat "${exp_path}/launched.txt" | grep "$id" | wc -l )
-                                if [ "$1" == "1" ] && [ "$me" -gt "0" ]
+				if [ "$1" == "1" ] && [ "$me" -gt "0" ]
 				then
 					echo "---------------------------------------------------------"
 				fi
