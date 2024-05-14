@@ -6,6 +6,11 @@ then
 	exit 1
 fi
 
+RED='\033[0;31m'
+PUR='\033[0;35m'
+GRE='\033[0;32m'
+NC='\033[0m' # No Color
+
 unset -v binary
 unset -v expname
 
@@ -61,23 +66,23 @@ then
 	else
 		if [ -z "${expname}" ]
 		then
-			echo "You must specify an expname with --expname since binary ${binary} occurr ${noccurrency} times:" >&2
+			echo -e "${RED}Error${NC}: You must specify an expname with --expname since binary ${binary} occurr ${noccurrency} times:" >&2
 			echo "$( head -1 ${SbM_EXPTABLE} )"
 			echo "$( grep ${binary} ${SbM_EXPTABLE})"
-		        exit 1
+			exit 1
 		else
 			if ! grep -q "${expname} ${binary}" "${SbM_EXPTABLE}"
 			then
-				echo "Error: no experiment with expname ${expname} is given for binary ${binary}:"
+				echo -e "${RED}Error${NC}: no experiment with expname ${expname} is given for binary ${binary}:"
 				echo "$( head -1 ${SbM_EXPTABLE} )"
-	                        echo "$( grep ${binary} ${SbM_EXPTABLE})"
+				echo "$( grep ${binary} ${SbM_EXPTABLE})"
 				exit 1
 			fi
-			sbatch_script=$( grep ${expname} ${SbM_EXPTABLE} | awk '{ print $3 }' )
+			sbatch_script=$( grep -w ${expname} ${SbM_EXPTABLE} | awk '{ print $3 }' )
 		fi 
 	fi
 else
-	echo "Error: the binary ${binary} in not reported in the ExpTable (${SbM_EXPTABLE}), please, init the expariment with <...>"
+	echo -e "${RED}Error${NC}: the binary ${binary} in not reported in the ExpTable (${SbM_EXPTABLE}), please, init the expariment with <...>"
 	exit 1
 fi
 
@@ -131,18 +136,18 @@ then
 		job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]})
 
 		job_id=$(echo "$job_id" | awk '{print $4}')
-		echo "${my_token}      ${job_id}"
-       		echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
+		echo -e "${GRE}Launched${NC}: ${my_token}      ${job_id}"
+		echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
 #		return ${job_id}
 	else
-		echo "the experiment ${my_token} is already in queue, so the experiment was not submitted again."
+		echo -e "${PUR}Warning${NC}: the experiment ${my_token} is already in queue, so the experiment was not submitted again."
 	        echo "${my_token}" >> "${my_metadata_path}/notSubmitted.txt"
 	fi
 
 else
 
-	echo "the experiment ${my_token} is already listed in ${my_metadata_path}/finished.txt, so the experiment is performed yet."
-       	echo "${my_token}" >> "${my_metadata_path}/notSubmitted.txt"
+	echo -e "${PUR}Warning${NC}: the experiment ${my_token} is already listed in ${my_metadata_path}/finished.txt, so the experiment is performed yet."
+	echo "${my_token}" >> "${my_metadata_path}/notSubmitted.txt"
 	#return 0
 
 fi

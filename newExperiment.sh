@@ -22,6 +22,11 @@ print_usage() {
 	echo -e '\t-q <qos>:\t\tspecify the slurm qos'
 }
 
+RED='\033[0;31m'
+PUR='\033[0;35m'
+GRE='\033[0;32m'
+NC='\033[0m' # No Color
+
 unset -v my_constraint
 unset -v my_partition
 unset -v my_expname
@@ -122,10 +127,18 @@ then
         echo "# ExpName BinaryName SbatchName Account Partition nNodes nTasks nGpus Time" > "${exptable}"
 fi
 
+if grep -q "${my_expname}" "${exptable}"
+then
+	echo -e "${RED}ERROR${NC}: ${my_expname} is already contained in ${exptable}:"
+	grep "${my_expname}" "${exptable}"
+	echo "  If you want to change the experiment parameters, please, remove it manually form ${exptable} and menage manually the old metadata; if you want to define a different experiment, please, choose a different name"
+	exit 1
+fi
+
 # if grep ${my_binary} in ${exptable} write and abort
 if grep -q "${my_binary}" "${exptable}"
 then
-	echo "WARNING: ${my_binary} is already contained in ${exptable} with a diferent name:"
+	echo -e "${PUR}WARNING${NC}: ${my_binary} is already contained in ${exptable} with a diferent name:"
 	grep "${my_binary}" "${exptable}"
 	echo "  If you want to change the experiment name, please, remove it manually form ${exptable} and menage manually the old metadata"
 	# exit 1 # need to check that all the arguments are the same to abort
@@ -281,4 +294,4 @@ chmod +x "${sbatch_name}"
 
 echo "${my_expname} ${my_binary} ${sbatch_name} ${my_account} ${my_partition} ${my_nnodes} ${my_ntasks} ${my_ngpus} ${my_time}" >> "${exptable}"
 
-echo "Generated ${sbatch_name}"
+echo -e "${GRE}Generated${NC} ${sbatch_name}"
