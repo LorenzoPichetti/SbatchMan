@@ -118,14 +118,29 @@ then
 	echo "# ----- Init file ${current_date} ${current_time} -----" > "${my_metadata_path}/finished.txt"
 fi
 
+if ! [[ -f "${my_metadata_path}/notFinished.txt" ]]
+then
+	echo "# ----- Init file ${current_date} ${current_time} -----" > "${my_metadata_path}/notFinished.txt"
+fi
+
 if ! [[ -f "${my_metadata_path}/submitted.txt" ]]
 then
         echo "# ----- Init file ${current_date} ${current_time} -----" > "${my_metadata_path}/submitted.txt"
 fi
 
+if ! [[ -f "${my_metadata_path}/notSubmitted.txt" ]]
+then
+        echo "# ----- Init file ${current_date} ${current_time} -----" > "${my_metadata_path}/notSubmitted.txt"
+fi
+
 if ! [[ -f "${my_metadata_path}/launched.txt" ]]
 then
         echo "# ----- Init file ${current_date} ${current_time} -----" > "${my_metadata_path}/launched.txt"
+fi
+
+if ! [[ -f "${my_metadata_path}/notLaunched.txt" ]]
+then
+        echo "# ----- Init file ${current_date} ${current_time} -----" > "${my_metadata_path}/notLaunched.txt"
 fi
 
 if ! grep -q "${my_token}" "${my_metadata_path}/finished.txt"
@@ -141,13 +156,12 @@ then
 #		return ${job_id}
 	else
 		echo -e "${PUR}Warning${NC}: the experiment ${my_token} is already in queue, so the experiment was not submitted again."
-	        echo "${my_token}" >> "${my_metadata_path}/notSubmitted.txt"
+		echo "${my_token}" >> "${my_metadata_path}/notLaunched.txt"
 	fi
 
 else
 
 	echo -e "${PUR}Warning${NC}: the experiment ${my_token} is already listed in ${my_metadata_path}/finished.txt, so the experiment is performed yet."
-	echo "${my_token}" >> "${my_metadata_path}/notSubmitted.txt"
-	#return 0
+	echo "${my_token}" >> "${my_metadata_path}/notLaunched.txt"
 
 fi

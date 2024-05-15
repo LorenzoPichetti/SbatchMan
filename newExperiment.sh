@@ -218,6 +218,7 @@ then
 else
     echo "------------------------ ERROR ------------------------"
     echo "${my_token} not written in '${my_metadata_path}/finished.txt' since the exit code is different form 0 ($?)"
+    echo "${my_token} ${SLURM_JOB_ID}" >> "${my_metadata_path}/notFinished.txt"
 fi
 
 
