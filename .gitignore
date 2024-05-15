@@ -3,3 +3,5 @@ metadata
 sbatchscripts
 
 sourceFile.sh
+*.kdev4
+.kdev4/SbatchMan.kdev4

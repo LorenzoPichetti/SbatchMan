@@ -1,6 +1,11 @@
 flags=()
 params=()
 
+RED='\033[0;31m'
+PUR='\033[0;35m'
+GRE='\033[0;32m'
+NC='\033[0m' # No Color
+
 for x in $@
 do 
 	if [[ "$x" == -* ]]
@@ -21,39 +26,39 @@ then
 
 	if [[ "${#flags[@]}" != "${#params[@]}" ]]
 	then
-		echo "ERROR: the number of catched flags (${#flags[@]}) is different form the number of catched parameters (${#params[@]})"
+		echo -e "${RED}Error${NC}: the number of catched flags (${#flags[@]}) is different form the number of catched parameters (${#params[@]})"
 		exit 1
 	fi
 
-readarray -td '' flags_sorted < <(printf '%s\0' "${flags[@]}" | sort -z)
+	readarray -td '' flags_sorted < <(printf '%s\0' "${flags[@]}" | sort -z)
 
-params_sorted=()
-for e in ${flags_sorted[@]}
-do
-	for i in ${!params[@]}
+	params_sorted=()
+	for e in ${flags_sorted[@]}
 	do
-        	if [[ "${flags[$i]}" == "$e" ]]
-		then
-			params_sorted+=( "${params[$i]}" )
-		fi
+		for i in ${!params[@]}
+		do
+				if [[ "${flags[$i]}" == "$e" ]]
+			then
+				params_sorted+=( "${params[$i]}" )
+			fi
+		done
 	done
-done
 
-outString=""
-for i in ${!flags_sorted[@]}
-do
-	tmp="${flags_sorted[$i]}${params_sorted[$i]}"
-#	echo "tmp=$tmp"
-	outString+="_${tmp}"
-done
+	outString=""
+	for i in ${!flags_sorted[@]}
+	do
+		tmp="${flags_sorted[$i]}${params_sorted[$i]}"
+	#	echo "tmp=$tmp"
+		outString+="_${tmp}"
+	done
 
-else
+	else
 
-outString=""
-for e in ${params[@]}
-do
-        outString+="_${e}"
-done
+	outString=""
+	for e in ${params[@]}
+	do
+			outString+="_${e}"
+	done
 
 fi
 
