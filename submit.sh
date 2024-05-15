@@ -13,6 +13,7 @@ NC='\033[0m' # No Color
 
 unset -v binary
 unset -v expname
+unset -v testflag
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -37,7 +38,12 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       ;;
-      --help|*)
+	--test)
+	  testflag="1"
+	  echo "testflag is now set"
+# 	  shift
+      ;;
+	--help|*)
         echo "Usage: [--expname <expname>] --binary <binary> <binary_arguments>"
         exit 1
       ;;
@@ -148,12 +154,16 @@ then
 	isinqueue=$( ${SbM_UTILS}/inQueue.sh | grep ${my_token} | wc -l )
 	if [[ "${isinqueue}" -eq "0" ]]
 	then
-		job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]})
+		if [ -z "${testflag}" ]
+		then
+			job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]})
 
-		job_id=$(echo "$job_id" | awk '{print $4}')
-		echo -e "${GRE}Launched${NC}: ${my_token}      ${job_id}"
-		echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
-#		return ${job_id}
+			job_id=$(echo "$job_id" | awk '{print $4}')
+			echo -e "${GRE}Launched${NC}: ${my_token}      ${job_id}"
+			echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
+		else
+			echo -e "${PUR}Test mode${NC}: sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]}"
+		fi
 	else
 		echo -e "${PUR}Warning${NC}: the experiment ${my_token} is already in queue, so the experiment was not submitted again."
 		echo "${my_token}" >> "${my_metadata_path}/notLaunched.txt"
