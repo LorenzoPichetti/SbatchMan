@@ -2,7 +2,7 @@
 
 if [[ $# -lt 1 ]]
 then
-	echo "Usage: [--expname <expname>] --binary <binary> <binary_arguments>"
+	echo "Usage: [--verbose] [--expname <expname>] --binary <binary> <binary_arguments>"
 	exit 1
 fi
 
@@ -11,6 +11,7 @@ PUR='\033[0;35m'
 GRE='\033[0;32m'
 NC='\033[0m' # No Color
 
+_V=0
 unset -v binary
 unset -v expname
 unset -v testflag
@@ -20,7 +21,7 @@ while [[ $# -gt 0 ]]; do
     --binary)
       if [[ -n "$2" ]]; then
         binary="$2"
-        echo "binary is set to ${binary}"
+        [ $_V -eq 1 ] && echo "binary is set to ${binary}"
         shift
       else
         echo "Error: Binary requires a value."
@@ -31,7 +32,7 @@ while [[ $# -gt 0 ]]; do
     --expname)
       if [[ -n "$2" ]]; then
         expname="$2"
-        echo "expname is set to ${expname}"
+        [ $_V -eq 1 ] && echo "expname is set to ${expname}"
         shift
       else
         echo "Error: Expname requires a value."
@@ -40,7 +41,12 @@ while [[ $# -gt 0 ]]; do
       ;;
 	--test)
 	  testflag="1"
-	  echo "testflag is now set"
+	  [ $_V -eq 1 ] && echo "testflag is now set"
+# 	  shift
+      ;;
+	--verbose)
+	  _V=1
+	  echo "verbose flag is now set"
 # 	  shift
       ;;
 	--help|*)
@@ -110,11 +116,11 @@ done
 token_suffix=$( ${SbM_UTILS}/genToken.sh ${sbatch_arguments[*]} )
 my_token="${expname}${token_suffix}"
 
-echo "          expname: ${expname}"
-echo "         my_token: ${my_token}"
-echo "    sbatch_script: ${sbatch_script}"
-echo " sbatch_arguments: ${sbatch_arguments[*]}"
-echo " my_metadata_path: ${my_metadata_path}"
+[ $_V -eq 1 ] && echo "          expname: ${expname}"
+[ $_V -eq 1 ] && echo "         my_token: ${my_token}"
+[ $_V -eq 1 ] && echo "    sbatch_script: ${sbatch_script}"
+[ $_V -eq 1 ] && echo " sbatch_arguments: ${sbatch_arguments[*]}"
+[ $_V -eq 1 ] && echo " my_metadata_path: ${my_metadata_path}"
 
 current_date=$(date +%Y-%m-%d)  # Format: YYYY-MM-DD
 current_time=$(date +%H:%M:%S)
