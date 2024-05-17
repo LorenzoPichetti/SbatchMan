@@ -10,12 +10,12 @@ To utilize the resources provided by this repository, follow the steps outlined 
 
 1. **Clone Repository:**
     ```bash
-    git clone https://github.com/your_username/YourRepositoryName.git
+    git clone https://github.com/LorenzoPichetti/SbatchMan.git
     ```
 
 2. **Navigate to Repository:**
     ```bash
-    cd YourRepositoryName
+    cd SbatchMan
     ```
 
 3. **Initialize Environment:**
@@ -41,9 +41,7 @@ To utilize the resources provided by this repository, follow the steps outlined 
 
 ### Generating Experiments:
 
-To generate experiments using the `newExperiment.sh` script, follow the example provided in the `genExps4Marzola.sh` script. Below is an explanation of its usage:
-
-#### `genExps4Marzola.sh` Example:
+To generate experiments use the `newExperiment.sh` script. Below is an explanation of its usage:
 
 ```bash
 #!/bin/bash
@@ -76,7 +74,7 @@ The `newExperiment.sh` script is used to generate experiments with specified par
   - `-q <qos>`: Specify the SLURM QoS.
   - `-S <qos>`: Specify a non-standard ServiceLevel (i.e. export NCCL_IB_SL).
 
-Ensure you provide all mandatory arguments when generating experiments. You can refer to the example provided in `genExps4Marzola.sh` for guidance on how to structure your experiment generation commands.
+Ensure you provide all mandatory arguments when generating experiments. You can refer to the example provided for guidance on how to structure your experiment generation commands.
 
 ```bash
 ./SbatchMan/newExperiment.sh -p <partition_name> -a <slurm_account> -M <MPI-version> -t <time in HH:MM:SS> -e <exp-name> -n <nnodes> -c <ntasks> -g <ngpus> -b <binary>
@@ -89,11 +87,12 @@ The `submit.sh` script facilitates the submission of experiments to a SLURM-base
 
 ### Usage:
 ```bash
-./submit.sh [--expname <expname>] --binary <binary> <binary_arguments>
+./submit.sh [--verbose] [--expname <expname>] --binary <binary> <binary_arguments>
 ```
 
 ### Options:
 
+- `--verbose`: Use verbose submission process.
 - `--expname <expname>`: Specifies the name of the experiment.
 - `--binary <binary>`: Specifies the binary path.
 - `<binary_arguments>`: Additional arguments required by the binary.
