@@ -21,8 +21,9 @@ do
 		let "paramId=paramId+1"
 # 		echo "  param: $x ($paramId)"
 		basename=$( basename -- $x )
-		plainname=${basename%.*}
-		name=$( echo "$plainname" | tr _ - )
+#		plainname=${basename%.*}
+#		name=$( echo "$plainname" | tr _ - )
+		name=$( echo "$basename" | tr _ - | tr . - )
 		params+=( "$name" )
 
 		if [[ "${flagId}" != "-1" ]] # portable for ordinal parameters

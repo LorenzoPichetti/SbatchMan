@@ -168,6 +168,7 @@ then
 			echo -e "${GRE}Launched${NC}: ${my_token}      ${job_id}"
 			echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
 		else
+			echo -e "${PUR}Test mode${NC}: sbatch <sbatch_script> <my_metadata_path> <my_token> <bin_arguments>"
 			echo -e "${PUR}Test mode${NC}: sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]}"
 		fi
 	else
