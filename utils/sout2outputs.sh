@@ -43,10 +43,25 @@ do
         for file in "${sout_path}"/*
         do
             filename=$( basename -- ${file} )
-            job_id=$( echo "${file##*_}" | cut -d'.' -f 1 )
-#           echo "file:   ${file}"
-#           echo "name:   ${filename}"
-#           echo "job_id: ${job_id}"
+	    
+	    type="${filename##*.}"
+	    job_id=$( echo "${file##*_}" | cut -d'.' -f 1 )
+
+	    if [[ "${type}" == "out" ]]
+            then
+		token=$( grep "my_token" ${file} | awk '{ print $2 }' )
+	    else
+		tmpfile=$( echo ${file} | sed 's/.err/.out/g' )
+		token=$( grep "my_token" ${tmpfile} | awk '{ print $2 }' )
+	    fi
+
+	    newname="${token}_${job_id}.${type}"
+	    #echo "file:    ${file}"
+            #echo "name:    ${filename}"
+            #echo "job_id:  ${job_id}"
+	    #echo "newname: ${newname}"
+
+	    #continue #debug
 
             inQueue=$( ${SbM_HOME}/utils/inQueue.sh | awk '{ print $2 }' )
             if ${SbM_HOME}/utils/inQueue.sh | grep -q "${job_id}"
@@ -60,21 +75,19 @@ do
                 if grep -q "${job_id}" "${SbM_METADATA_HOME}/${my_hostname}/${exp}/finished.txt"
                 then
                     echo "${job_id} finished correctly, stdout and stderr moved to finished_path"
-                    mv "${file}" "${finished_path}/${filename}"
+                    mv "${file}" "${finished_path}/${newname}"
 
-                    type="${filename##*.}"
                     if [[ "${type}" == "out" ]]
                     then
-                        compute_acct "${finished_path}/${filename}"
+                        compute_acct "${finished_path}/${newname}"
                     fi
                 else
                     echo -e "${RED}Error${NC}: ${job_id} goes in error, moved to error_path"
-                    mv "${file}" "${error_path}/${filename}"
+                    mv "${file}" "${error_path}/${newname}"
 
-                    type="${filename##*.}"
                     if [[ "${type}" == "out" ]]
                     then
-                        compute_acct "${error_path}/${filename}"
+                        compute_acct "${error_path}/${newname}"
                     fi
                 fi
             fi
