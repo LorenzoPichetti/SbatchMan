@@ -4,8 +4,8 @@ mkdir -p "${SbM_HOME}/outputs"
 my_hostname=$( ${SbM_UTILS}/hostname.sh )
 
 compute_acct() {
-    acct_head=$(sacct -o JobID,JobName,Partition,State,Start,Elapsed,ExitCode | head -2)
-    acct=$(sacct -o JobID,JobName,Partition,State,Start,Elapsed,ExitCode | grep "${job_id}")
+    acct_head=$(sacct -o JobID,JobName,Partition,State,Start,Elapsed,TimelimitRaw,ExitCode | head -2)
+    acct=$(sacct -o JobID,JobName,Partition,State,Start,Elapsed,TimelimitRaw,ExitCode | grep "${job_id}")
     echo "${acct_head}" >> ${1}
     echo "${acct}" >> ${1}
 
