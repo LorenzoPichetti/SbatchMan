@@ -13,11 +13,12 @@ do
 		echo "# Table generated: $current_date $current_time"           >> "${outfile}"
 		echo "# token, timeslaunched, timessubmitted, isfinished(0/1)"  >> "${outfile}"
 		alllaunched=$( cat "${exp_path}/launched.txt" | awk '{ print $1 }' | sort | uniq )
+	
 		for i in ${alllaunched}
 		do
-			timeslaunched=$( cat "${exp_path}/launched.txt" | grep "$i" | wc -l )
-			timessubmitted=$( cat "${exp_path}/submitted.txt" | grep "$i" | wc -l )
-			finished=$( cat "${exp_path}/finished.txt" | grep "$i" | wc -l )
+			timeslaunched=$( cat "${exp_path}/launched.txt" | grep -w "$i" | wc -l )
+			timessubmitted=$( cat "${exp_path}/submitted.txt" | grep -w "$i" | wc -l )
+			finished=$( cat "${exp_path}/finished.txt" | grep -w "$i" | wc -l )
 			echo "$i, ${timeslaunched}, ${timessubmitted}, ${finished}"  >> "${outfile}"
 		done
 		echo "Generated ${exp} SubmitTable in ${outfile}"
