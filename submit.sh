@@ -160,16 +160,41 @@ then
 	isinqueue=$( ${SbM_UTILS}/inQueue.sh | grep ${my_token} | wc -l )
 	if [[ "${isinqueue}" -eq "0" ]]
 	then
-		if [ -z "${testflag}" ]
+		mytimelimit=$( grep "#SBATCH --time=" ${sbatch_script} | awk -F'=' '{ print $2 }' )
+		#echo "DEBUG mytimelimit: ${mytimelimit}"
+		if [[ "$( echo ${mytimelimit} | grep -o ":" | wc -l )" -gt "0" ]]
 		then
-			job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]})
-
-			job_id=$(echo "$job_id" | awk '{print $4}')
-			echo -e "${GRE}Launched${NC}: ${my_token}      ${job_id}"
-			echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
+			myminuteslimit=$( ${SbM_UTILS}/hhmmss2mm.sh ${mytimelimit} )
 		else
-			echo -e "${PUR}Test mode${NC}: sbatch <sbatch_script> <my_metadata_path> <my_token> <bin_arguments>"
-			echo -e "${PUR}Test mode${NC}: sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]}"
+			myminuteslimit="${mytimelimit}"
+		fi
+		#echo "DEBUG myminuteslimit: ${myminuteslimit}"
+
+		if [[ -f "${my_metadata_path}/timeLimit.txt" ]]
+		then
+			#echo "DEBUG mytoken: ${my_token} file: ${my_metadata_path}/timeLimit.txt"
+			#grep "${my_token}" "${my_metadata_path}/timeLimit.txt" | sort -n -k 3 -r
+			maxperf=$( grep "${my_token}" "${my_metadata_path}/timeLimit.txt" | sort -n -k 3 -r | head -1 | awk '{ print $3 }' )
+			#echo "DEBUG maxperf: ${maxperf}"
+
+			if [[ "${myminuteslimit}" -gt "${maxperf}" ]]
+			then
+				echo -e "${GRE}NOTE${NC}: the experiment ${my_token} was already lunched with ${RED}timelimit${NC} ${maxperf}, it will be lunched again with time limit ${myminuteslimit}."
+			else
+				echo -e "${PUR}Warning${NC}: the experiment ${my_token} was already lunched with same ${RED}timelimit${NC}, so the experiment was not submitted again."
+				exit 1
+			fi
+
+			if [ -z "${testflag}" ]
+                        then
+				job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]} )
+				job_id=$(echo "$job_id" | awk '{print $4}')
+				echo -e "${GRE}Launched${NC}: ${my_token}      ${job_id}"
+				echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
+			else
+				echo -e "${PUR}Test mode${NC}: sbatch <sbatch_script> <my_metadata_path> <my_token> <bin_arguments>"
+				echo -e "${PUR}Test mode${NC}: sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]}"
+			fi
 		fi
 	else
 		echo -e "${PUR}Warning${NC}: the experiment ${my_token} is already in queue, so the experiment was not submitted again."
