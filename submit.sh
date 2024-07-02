@@ -170,7 +170,7 @@ then
 		fi
 		#echo "DEBUG myminuteslimit: ${myminuteslimit}"
 
-		if [[ -f "${my_metadata_path}/timeLimit.txt" ]]
+		if [[ -f "${my_metadata_path}/timeLimit.txt" ]] && grep -q "${my_token}" "${my_metadata_path}/timeLimit.txt"
 		then
 			#echo "DEBUG mytoken: ${my_token} file: ${my_metadata_path}/timeLimit.txt"
 			#grep "${my_token}" "${my_metadata_path}/timeLimit.txt" | sort -n -k 3 -r
@@ -181,20 +181,20 @@ then
 			then
 				echo -e "${GRE}NOTE${NC}: the experiment ${my_token} was already lunched with ${RED}timelimit${NC} ${maxperf}, it will be lunched again with time limit ${myminuteslimit}."
 			else
-				echo -e "${PUR}Warning${NC}: the experiment ${my_token} was already lunched with same ${RED}timelimit${NC}, so the experiment was not submitted again."
+				echo -e "${PUR}Warning${NC}: the experiment ${my_token} was already lunched with longerequal ${RED}timelimit${NC} (${maxperf}), so the experiment was not submitted again."
 				exit 1
 			fi
+		fi
 
-			if [ -z "${testflag}" ]
-                        then
-				job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]} )
-				job_id=$(echo "$job_id" | awk '{print $4}')
-				echo -e "${GRE}Launched${NC}: ${my_token}      ${job_id}"
-				echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
-			else
-				echo -e "${PUR}Test mode${NC}: sbatch <sbatch_script> <my_metadata_path> <my_token> <bin_arguments>"
-				echo -e "${PUR}Test mode${NC}: sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]}"
-			fi
+		if [ -z "${testflag}" ]
+		then
+			job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]} )
+			job_id=$(echo "$job_id" | awk '{print $4}')
+			echo -e "${GRE}Launched${NC}: ${my_token}      ${job_id}"
+			echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
+		else
+			echo -e "${PUR}Test mode${NC}: sbatch <sbatch_script> <my_metadata_path> <my_token> <bin_arguments>"
+			echo -e "${PUR}Test mode${NC}: sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]}"
 		fi
 	else
 		echo -e "${PUR}Warning${NC}: the experiment ${my_token} is already in queue, so the experiment was not submitted again."
