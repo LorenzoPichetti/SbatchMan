@@ -15,6 +15,7 @@ print_usage() {
 
 	echo -e '\nOptional arguments:'
 	echo -e '\t-S <qos>:\t\tspecify a non-standard ServiceLevel (i.e. export NCCL_IB_SL)'
+	echo -e '\t-P <preprocessblock>:\t\tspecify a bash preprocess block of code'
 	echo -e '\t-M <MPI-version>:\tspecify the slurm MPI version (--mpi=)'
 	echo -e '\t-d <cpus-per-task>:\tspecify the number of cpu per task'
 	echo -e '\t-s <constraint>:\tspecify the slurm constraint'
@@ -27,6 +28,7 @@ PUR='\033[0;35m'
 GRE='\033[0;32m'
 NC='\033[0m' # No Color
 
+unset -v my_preprocessblock
 unset -v my_constraint
 unset -v my_partition
 unset -v my_expname
@@ -41,8 +43,9 @@ unset -v my_mem
 unset -v my_cpt
 unset -v my_sl
 
-while getopts 's:p:e:a:n:c:b:g:t:q:m:d:M:S:' flag; do
+while getopts 'P:s:p:e:a:n:c:b:g:t:q:m:d:M:S:' flag; do
   case "${flag}" in
+	P) my_preprocessblock="${OPTARG}" ;;
 	s) my_constraint="${OPTARG}" ;;
 	p) my_partition="${OPTARG}" ;;
 	e) my_expname="${OPTARG}" ;;
@@ -159,7 +162,7 @@ mkdir -p "${SbM_SOUT}"
 mkdir -p "${SbM_SOUT}/${my_hostname}"
 mkdir -p "${SbM_SOUT}/${my_hostname}/${my_expname}"
 
-stencil_sbatch=$(cat << 'EOF'
+stencil_sbatch_head=$(cat << 'EOF'
 #!/bin/bash
 
 #SBATCH --job-name=<exp-name>
@@ -199,6 +202,13 @@ echo "        arguments: ${arguments[*]}"
 
 echo "${my_token}" >> "${my_metadata_path}/submitted.txt"
 
+EOF
+)
+
+
+# ---- <preprocess_block> ----
+
+stencil_sbatch_tail=$(cat << 'EOF'
 <NCCL_SL>
 srun -l bash -c 'echo "NCCL_IB_SL = ${NCCL_IB_SL}"'
 export cmd="<binary> ${arguments[*]}"
@@ -232,6 +242,25 @@ echo "------------------------"
 
 EOF
 )
+
+tmpfile="mytmpfile4stencilsbatch.txt"
+echo "${stencil_sbatch_head}" > ${tmpfile}
+
+if [ ! -z "$my_preprocessblock" ]
+then
+        echo "${my_preprocessblock}" >> ${tmpfile}
+fi
+
+echo "${stencil_sbatch_tail}" >> ${tmpfile}
+stencil_sbatch=$( cat ${tmpfile} )
+rm ${tmpfile}
+
+# ----------- DEBUG -----------
+#echo "stencil_sbatch:"
+#echo " -----------------------------"
+#echo "${stencil_sbatch}"
+#exit 1
+# -----------------------------
 
 sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<account>/${my_account}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
 
