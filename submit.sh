@@ -1,9 +1,13 @@
 #!/bin/bash
 
+SbM_submit_function() {
+
+job_id="0"
+
 if [[ $# -lt 1 ]]
 then
 	echo "Usage: [--verbose] [--expname <expname>] --binary <binary> <binary_arguments>"
-	exit 1
+	return 1
 fi
 
 RED='\033[0;31m'
@@ -15,6 +19,8 @@ _V=0
 unset -v binary
 unset -v expname
 unset -v testflag
+unset -v holdflag
+unset -v dependency
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -25,7 +31,7 @@ while [[ $# -gt 0 ]]; do
         shift
       else
         echo "Error: Binary requires a value."
-        exit 1
+        return 1
       fi
       break
       ;;
@@ -36,22 +42,38 @@ while [[ $# -gt 0 ]]; do
         shift
       else
         echo "Error: Expname requires a value."
-        exit 1
+        return 1
       fi
       ;;
-	--test)
+    --dependency)
+      if [[ -n "$2" ]]; then
+        dependency="$2"
+        [ $_V -eq 1 ] && echo "dependency is set to ${dependency}"
+        shift
+      else
+        echo "Error: Dependency requires a value."
+        return 1
+      fi
+      ;;
+    --test)
 	  testflag="1"
 	  [ $_V -eq 1 ] && echo "testflag is now set"
 # 	  shift
       ;;
-	--verbose)
+    --hold)
+          holdflag="1"
+          [ $_V -eq 1 ] && echo "holdflag is now set"
+	  echo "holdflag is now set" #debug
+#         shift
+      ;;
+    --verbose)
 	  _V=1
 	  echo "verbose flag is now set"
 # 	  shift
       ;;
-	--help|*)
+    --help|*)
         echo "Usage: [--expname <expname>] --binary <binary> <binary_arguments>"
-        exit 1
+        return 1
       ;;
   esac
   shift
@@ -63,9 +85,8 @@ sbatch_arguments=()
 if ! [[ -f ${SbM_EXPTABLE} ]]
 then
 	echo "No exptable file was found (${SbM_EXPTABLE}), <write what to check or to do>"
-	exit 1
+	return 1
 fi
-
 
 if grep -q "${binary}" "${SbM_EXPTABLE}"
 then
@@ -81,21 +102,21 @@ then
 			echo -e "${RED}Error${NC}: You must specify an expname with --expname since binary ${binary} occurr ${noccurrency} times:" >&2
 			echo "$( head -1 ${SbM_EXPTABLE} )"
 			echo "$( grep ${binary} ${SbM_EXPTABLE})"
-			exit 1
+			return 1
 		else
 			if ! grep -q "${expname} ${binary}" "${SbM_EXPTABLE}"
 			then
 				echo -e "${RED}Error${NC}: no experiment with expname ${expname} is given for binary ${binary}:"
 				echo "$( head -1 ${SbM_EXPTABLE} )"
 				echo "$( grep ${binary} ${SbM_EXPTABLE})"
-				exit 1
+				return 1
 			fi
 			sbatch_script=$( grep -w ${expname} ${SbM_EXPTABLE} | awk '{ print $3 }' )
 		fi 
 	fi
 else
 	echo -e "${RED}Error${NC}: the binary ${binary} in not reported in the ExpTable (${SbM_EXPTABLE}), please, init the expariment with <...>"
-	exit 1
+	return 1
 fi
 
 my_hostname=$( ${SbM_UTILS}/hostname.sh )
@@ -103,21 +124,34 @@ my_metadata_path="${SbM_METADATA_HOME}/${my_hostname}/${expname}"
 
 mkdir -p "${my_metadata_path}" # ${SbM_METADATA_HOME}/${my_hostname} was already created for ExpTable
 
-i=0
+SbM_submit_i=0
 for a in $@
 do
-	if [[ "$i" -gt "0" ]]
+	if [[ "${SbM_submit_i}" -gt "0" ]]
 	then
 		sbatch_arguments+=( $a )
 	fi
-	i=$(( $i +1 ))
+	SbM_submit_i=$(( ${SbM_submit_i} +1 ))
 done
 
 token_suffix=$( ${SbM_UTILS}/genToken.sh ${sbatch_arguments[*]} )
 my_token="${expname}${token_suffix}"
 
+sbatch_cmd="sbatch "
+if [ ! -z "${holdflag}" ]
+then
+	sbatch_cmd+="--hold "
+fi
+
+if [ ! -z "${dependency}" ]
+then
+	sbatch_cmd+="--dependency=${dependency} "
+fi
+
+
 [ $_V -eq 1 ] && echo "          expname: ${expname}"
 [ $_V -eq 1 ] && echo "         my_token: ${my_token}"
+[ $_V -eq 1 ] && echo "       sbatch_cmd: ${sbatch_cmd}"
 [ $_V -eq 1 ] && echo "    sbatch_script: ${sbatch_script}"
 [ $_V -eq 1 ] && echo " sbatch_arguments: ${sbatch_arguments[*]}"
 [ $_V -eq 1 ] && echo " my_metadata_path: ${my_metadata_path}"
@@ -182,19 +216,19 @@ then
 				echo -e "${GRE}NOTE${NC}: the experiment ${my_token} was already lunched with ${RED}timelimit${NC} ${maxperf}, it will be lunched again with time limit ${myminuteslimit}."
 			else
 				echo -e "${PUR}Warning${NC}: the experiment ${my_token} was already lunched with longerequal ${RED}timelimit${NC} (${maxperf}), so the experiment was not submitted again."
-				exit 1
+				return 1
 			fi
 		fi
 
 		if [ -z "${testflag}" ]
 		then
-			job_id=$(sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]} )
+			job_id=$( ${sbatch_cmd} ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]} )
 			job_id=$(echo "$job_id" | awk '{print $4}')
 			echo -e "${GRE}Launched${NC}: ${my_token}      ${job_id}"
 			echo "${my_token}      ${job_id}" >> "${my_metadata_path}/launched.txt"
 		else
-			echo -e "${PUR}Test mode${NC}: sbatch <sbatch_script> <my_metadata_path> <my_token> <bin_arguments>"
-			echo -e "${PUR}Test mode${NC}: sbatch ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]}"
+			echo -e "${PUR}Test mode${NC}: sbatch [sbatch commands] <sbatch_script> <my_metadata_path> <my_token> <bin_arguments>"
+			echo -e "${PUR}Test mode${NC}: ${sbatch_cmd} ${sbatch_script} ${my_metadata_path} ${my_token} ${sbatch_arguments[*]}"
 		fi
 	else
 		echo -e "${PUR}Warning${NC}: the experiment ${my_token} is already in queue, so the experiment was not submitted again."
@@ -207,3 +241,10 @@ else
 	echo "${my_token}" >> "${my_metadata_path}/notLaunched.txt"
 
 fi
+
+return 0
+
+}
+
+#SbM_submit_function $@
+#echo "Inside return: $?"
