@@ -19,7 +19,7 @@ NC='\033[0m' # No Color
 
 for exp_path in $( cat ${SbM_EXPTABLE} | grep -v "#" | awk '{ print $1 }' )
 do
-#     echo "exp_path: ${exp_path}"
+    #echo "exp_path: ${exp_path}"
     exp=$( basename -- ${exp_path} )
 
     sout_path="${SbM_HOME}/sout/${my_hostname}/${exp}"
@@ -42,8 +42,8 @@ do
     then
         for file in "${sout_path}"/*
         do
-            filename=$( basename -- ${file} )
-	    
+            filename=$( basename -- ${file} )		
+
 	    type="${filename##*.}"
 	    job_id=$( echo "${file##*_}" | cut -d'.' -f 1 )
 
@@ -58,6 +58,7 @@ do
 	    newname="${token}_${job_id}.${type}"
 	    #echo "file:    ${file}"
             #echo "name:    ${filename}"
+	    #echo "token:   ${token}"
             #echo "job_id:  ${job_id}"
 	    #echo "newname: ${newname}"
 

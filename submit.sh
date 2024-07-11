@@ -90,12 +90,12 @@ fi
 
 if grep -q "${binary}" "${SbM_EXPTABLE}"
 then
-	noccurrency="$( grep "${binary}" "${SbM_EXPTABLE}" | wc -l )"
+	noccurrency="$( grep -w "${binary}" "${SbM_EXPTABLE}" | wc -l )"
 	if [[ "${noccurrency}" -eq "1" ]]
 	then
 		# TODO add check that (if expname specified) expnames (generated and inputed) are the same
-		expname=$( grep ${binary} ${SbM_EXPTABLE} | awk '{ print $1 }' )
-		sbatch_script=$( grep ${binary} ${SbM_EXPTABLE} | awk '{ print $3 }' )
+		expname=$( grep -w ${binary} ${SbM_EXPTABLE} | awk '{ print $1 }' )
+		sbatch_script=$( grep -w ${binary} ${SbM_EXPTABLE} | awk '{ print $3 }' )
 	else
 		if [ -z "${expname}" ]
 		then
