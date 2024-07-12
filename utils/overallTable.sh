@@ -2,9 +2,71 @@
 
 myhostname=$( ${SbM_UTILS}/hostname.sh )
 
+RED='\033[0;31m'
+PUR='\033[0;35m'
+GRE='\033[0;32m'
+NC='\033[0m' # No Color
+
+unset -v explist_flag
+unset -v
+
+args=$*
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --all)
+      echo "All flag provided"
+      all_flag="1"
+      break
+      ;;
+    --exp-list)
+      echo "Exp-list flag provided"
+      explist_flag="1"
+      shift
+      break
+      ;;
+    --help|*)
+      echo "Usage: [ --all | --exp-list <exp1> <exp2> ... ] (default is --all)"
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+
+exp_paths=()
+if [[ -z ${explist_flag} ]]
+then
+        for exp_path in "${SbM_METADATA_HOME}/${myhostname}"/*
+        do
+                if [[ -d "${exp_path}" ]]
+                then
+                        exp_paths+=( ${exp_path} )
+                fi
+        done
+else
+        for provided_exp in $@
+        do
+                exp_path="${SbM_METADATA_HOME}/${myhostname}/${provided_exp}"
+                if [[ -d "${exp_path}" ]]
+                then
+                        exp_paths+=( "${exp_path}" )
+                else
+                        echo -e "${RED}Error${NC}: provided expname ${provided_exp} does not correspond to a folder in ${SbM_METADATA_HOME}/${myhostname}/${provided_exp}"
+                        exit 1
+                fi
+        done
+fi
+
+# ----- DEBUG -----
+echo "exp_paths: ${exp_paths[*]}"
+#echo "args: ${args}"
+#exit 1
+# -----------------
+
 echo "---------------------------------------------------------------------"
 echo "Generating SubmitTables..."
-${SbM_UTILS}/genSubmitTables.sh
+${SbM_UTILS}/genSubmitTables.sh ${args}
 echo "---------------------------------------------------------------------"
 
 tmpfile="tmpfile.txt"
@@ -22,8 +84,11 @@ echo "# ------- Timelimit table of ${myhostname} -------"       >  "${timelimitt
 echo "# Table generated: $current_date $current_time"           >> "${timelimittable}"
 echo "# expname, parameter0, parameter1, ..., isfinished(0/1)"  >> "${timelimittable}"
 
-for f in "${SbM_METADATA_HOME}/${myhostname}"/*/*SubmitTable.csv
+#for f in "${SbM_METADATA_HOME}/${myhostname}"/*/*SubmitTable.csv
+for p in "${exp_paths[@]}"
 do 
+	f="${p}/"*SubmitTable.csv
+
 	echo " ----- $f -----"
 	expname=$(head -1 $f | awk '{ print $4 }' )
 	echo "expname: ${expname}"
