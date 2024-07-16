@@ -5,7 +5,7 @@ for id in $(squeue -u ${myuser} | awk '{ print $1 }')
 do 
 	for exp_path in "${SbM_METADATA_HOME}/${myhost}"/*
 	do
-		if [[ -d "${exp_path}" ]]
+		if [[ -d "${exp_path}" && -f "${exp_path}/launched.txt" ]]
 		then
 			if [ "$id" != "JOBID" ]
 			then 
