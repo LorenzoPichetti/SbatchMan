@@ -21,6 +21,7 @@ unset -v expname
 unset -v testflag
 unset -v holdflag
 unset -v dependency
+unset -v nicepriority
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -55,6 +56,16 @@ while [[ $# -gt 0 ]]; do
         return 1
       fi
       ;;
+    --nice)
+      if [[ -n "$2" ]]; then
+        nicepriority="$2"
+        [ $_V -eq 1 ] && echo "nicepriority is set to ${nicepriority}"
+        shift
+      else
+        echo "Error: nicepriority requires a value."
+        return 1
+      fi
+      ;;
     --test)
 	  testflag="1"
 	  [ $_V -eq 1 ] && echo "testflag is now set"
@@ -72,7 +83,8 @@ while [[ $# -gt 0 ]]; do
 # 	  shift
       ;;
     --help|*)
-        echo "Usage: [--expname <expname>] --binary <binary> <binary_arguments>"
+        echo "Unrecognized element: $1"
+	echo "Usage: [--expname <expname>] --binary <binary> <binary_arguments>"
         return 1
       ;;
   esac
@@ -146,6 +158,11 @@ fi
 if [ ! -z "${dependency}" ]
 then
 	sbatch_cmd+="--dependency=${dependency} "
+fi
+
+if [ ! -z "${nicepriority}" ]
+then
+	sbatch_cmd+="--nice=${nicepriority} "
 fi
 
 
