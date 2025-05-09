@@ -1,0 +1,1 @@
+rsync -zvrh --update --exclude results --exclude marzola --exclude leonardo --exclude perlmutter --exclude plots --exclude data --exclude marzola --exclude datasets --exclude .git --exclude .venv --exclude .vscode --exclude build --exclude bin --exclude data ./ $UNITN_USER@baldo.disi.unitn.it:~/SbatchMan

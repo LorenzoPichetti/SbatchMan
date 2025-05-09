@@ -79,12 +79,12 @@ then
         exit 1
 fi
 
-if [ -z "$my_account" ]
-then
-        echo 'You must specify a slurm account with -a' >&2
-		print_usage
-        exit 1
-fi
+# if [ -z "$my_account" ]
+# then
+#         echo 'You must specify a slurm account with -a' >&2
+# 		print_usage
+#         exit 1
+# fi
 
 if [ -z "$my_nnodes" ]
 then
@@ -170,8 +170,8 @@ stencil_sbatch_head=$(cat << 'EOF'
 #SBATCH --error=<sout_path>/<hostname>/<exp-name>/<exp-name>_%j.err
 
 #SBATCH --partition=<partition>
-#SBATCH --account=<account>
 #SBATCH --time=<time>
+<account>
 <qos>
 
 #SBATCH --nodes=<nnodes>
@@ -262,7 +262,17 @@ rm ${tmpfile}
 #exit 1
 # -----------------------------
 
-sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<account>/${my_account}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
+# sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<account>/${my_account}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
+sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
+
+if [ -z "$my_account" ]
+then
+        tmp=$(echo "${sbatch}" | sed "s/<account>//g" )
+        sbatch=$( echo "${tmp}" )
+else
+        tmp=$(echo "${sbatch}" | sed "s/<account>/#SBATCH --account=${my_account}/g" )
+        sbatch=$( echo "${tmp}" )
+fi
 
 if [ -z "$my_constraint" ]
 then

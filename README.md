@@ -144,3 +144,39 @@ The `submit.sh` script facilitates the submission of experiments to a SLURM-base
 
 - **Documentation:**
   - Refer to the script documentation and comments for detailed information on its usage, options, and internal logic.
+
+
+## Complete Usage Example
+
+
+
+First, setup environment variables:
+
+```bash
+./initEnv.sh && source sourceFile.sh
+```
+
+Then, go to the `example` directory and build the targets:
+
+```bash
+cd example
+make all
+```
+
+Now, create the different SLURM configurations for the expermiments. The `setup_sbatch.sh` script contains an example, run it:
+
+```bash
+./setup_sbatch.sh
+```
+
+This will populate the `sbatchscripts` directory with SLURM script templates, one for each different configuration.
+
+Finally, run a set of experiments using both setup SLURM configurations using the `run_experiments.sh` script:
+
+```bash
+./run_experiments.sh
+```
+
+This will populate the `sout/<hostname>/<SLURM_config>` folders with the experiments output files. Also, the `metadata/<hostname>/<SLURM_config>` will contain txt files with a resume about the final status of the jobs (e.g., finished, notFinished, launched, notLauched).
+
+> **_NOTE:_**  If you want to reset the current state of the experiments, run: `rm -r sout/<hostname>/* metadata/<hostname>/* sbatchscripts/*`
