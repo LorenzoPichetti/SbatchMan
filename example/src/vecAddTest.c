@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
 	long long int N = 1 << i;
 	srand(r);
 
-	printf("Threads: %d\n", omp_get_thread_num());
+	printf("Threads: %d\n", omp_get_max_threads());
 	printf("REP: %d\n", REP);
     printf("N: %d\n", N);
     printf("r: %d\n", r);
