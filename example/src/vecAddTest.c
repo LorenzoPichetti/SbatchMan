@@ -26,12 +26,10 @@ int main(int argc, char* argv[]) {
 	}
 		switch (ch) {
 			//BC approx  c param is the costanst used in Bader stopping cretierion 
-			case 'n' : 	sscanf(optarg, "%d", &i);
-					break;
-			case 'r' :	sscanf(optarg, "%u", &r);
-					break;
-			case 'a' :      avg_flag = 1;
-                                        break;
+			case 'n' : 	sscanf(optarg, "%d", &i); break;
+			case 'r' :	sscanf(optarg, "%u", &r); break;
+			case 'a' :  avg_flag = 1; break;
+			case 'e' :  exit(1);
 			case 'h':
 			case '?':
 			default:

@@ -58,7 +58,6 @@ The `newExperiment.sh` script is used to generate experiments with specified par
 
 - **Mandatory Arguments**:
   - `-p <partition_name>`: Specify the SLURM partition name.
-  - `-a <slurm_account>`: Specify the SLURM account.
   - `-t <time in HH:MM:SS>`: Specify the SLURM max time (HH:MM:SS).
   - `-e <exp-name>`: Specify the experiment name.
   - `-b <binary>`: Specify the binary path.
@@ -67,6 +66,7 @@ The `newExperiment.sh` script is used to generate experiments with specified par
   - `-g <ngpus>`: Specify the number of required GPUs.
 
 - **Optional Arguments**:
+  - `-a <slurm_account>`: Specify the SLURM account.
   - `-M <MPI-version>`: Specify the SLURM MPI version (--mpi=).
   - `-d <cpus-per-task>`: Specify the number of CPUs per task.
   - `-s <constraint>`: Specify the SLURM constraint.
@@ -149,7 +149,6 @@ The `submit.sh` script facilitates the submission of experiments to a SLURM-base
 ## Complete Usage Example
 
 
-
 First, setup environment variables:
 
 ```bash
@@ -180,3 +179,15 @@ Finally, run a set of experiments using both setup SLURM configurations using th
 This will populate the `sout/<hostname>/<SLURM_config>` folders with the experiments output files. Also, the `metadata/<hostname>/<SLURM_config>` will contain txt files with a resume about the final status of the jobs (e.g., finished, notFinished, launched, notLauched).
 
 > **_NOTE:_**  If you want to reset the current state of the experiments, run: `rm -r sout/<hostname>/* metadata/<hostname>/* sbatchscripts/*`
+
+## Results Analysis
+
+This repository provides some scripts to facilitate the results analysis. Once the jobs are done, run:
+
+```bash
+utils/overallTable.sh # From the root folder
+```
+
+This will generate a CSV file containing a list of all issued experiments toghether with their final status. The folder `scripts` contains a Python script `heatmap.py` that will generate a heatmap for each "expname", resuming what ran succesfully, timeouts and errors.
+
+> **_Python Dependencies:_**  `pandas numpy matplotlib`

@@ -3,7 +3,14 @@ outputs
 metadata
 sbatchscripts
 
+.venv/
+
 sourceFile.sh
 .kdev4/
 
 example/bin/
+
+*_sync.sh
+
+scripts/*.png
+scripts/__pycache__

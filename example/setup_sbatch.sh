@@ -38,3 +38,6 @@ BIN_PATH=bin
 
 # 1 node, 2 CPUs, 0 GPU, no MPI
 ../newExperiment.sh -p $PARTITION -t 00:05:00 -e Double2 -n 1 -c 1 -g 0 -b "$BIN_PATH/testDouble" -d 2
+
+# 1 node, 1 CPU, 5 seconds of walltime
+../newExperiment.sh -p $PARTITION -t 00:00:05 -e IntWTime -n 1 -c 1 -g 0 -b "$BIN_PATH/testInt" -d 1
