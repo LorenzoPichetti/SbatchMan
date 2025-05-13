@@ -5,8 +5,6 @@ print_usage() {
     
 	echo -e '\nMandatory arguments:'
 	echo -e '\t-t <time in HH:MM:SS>:\tspecify the SLURM max time (HH:MM:SS)'
-	echo -e '\t-p <partition_name>:\tspecify the SLURM partition name'
-	echo -e '\t-a <slurm_account>:\tspecify the SLURM account'
 	echo -e '\t-e <exp-name>:\t\tspecify the experiment name'
 	echo -e '\t-b <binary>:\t\tspecify the binary path'
 	echo -e '\t-n <nnodes>:\t\tspecify the number of required SLURM nodes'
@@ -14,6 +12,8 @@ print_usage() {
 	echo -e '\t-g <ngpus>:\t\tspecify the number of required gpus'
 
 	echo -e '\nOptional arguments:'
+	echo -e '\t-p <partition_name>:\tspecify the SLURM partition name'
+	echo -e '\t-a <slurm_account>:\tspecify the SLURM account'
 	echo -e '\t-S <qos>:\t\tspecify a non-standard ServiceLevel (i.e. export NCCL_IB_SL)'
 	echo -e '\t-P <preprocessblock>:\t\tspecify a bash preprocess block of code'
 	echo -e '\t-M <MPI-version>:\tspecify the slurm MPI version (--mpi=)'
@@ -65,12 +65,12 @@ while getopts 'P:s:p:e:a:n:c:b:g:t:q:m:d:M:S:' flag; do
   esac
 done
 
-if [ -z "$my_partition" ]
-then
-        echo 'You must specify a partition with -p' >&2
-		print_usage
-        exit 1
-fi
+# if [ -z "$my_partition" ]
+# then
+#         echo 'You must specify a partition with -p' >&2
+# 		print_usage
+#         exit 1
+# fi
 
 if [ -z "$my_expname" ]
 then
@@ -169,7 +169,7 @@ stencil_sbatch_head=$(cat << 'EOF'
 #SBATCH --output=<sout_path>/<hostname>/<exp-name>/<exp-name>_%j.out
 #SBATCH --error=<sout_path>/<hostname>/<exp-name>/<exp-name>_%j.err
 
-#SBATCH --partition=<partition>
+<partition>
 #SBATCH --time=<time>
 <account>
 <qos>
@@ -210,7 +210,7 @@ EOF
 
 stencil_sbatch_tail=$(cat << 'EOF'
 <NCCL_SL>
-srun -l bash -c 'echo "NCCL_IB_SL = ${NCCL_IB_SL}"'
+# srun -l bash -c 'echo "NCCL_IB_SL = ${NCCL_IB_SL}"'
 export cmd="<binary> ${arguments[*]}"
 echo "srun <Slurm_MPI> ${cmd}"
 #srun <Slurm_MPI> bash -c 'export UCX_NET_DEVICES=mlx5_${SLURM_LOCALID}:1 ; echo "UCX_NET_DEVICES: ${UCX_NET_DEVICES}" ; ${cmd}'
@@ -263,7 +263,7 @@ rm ${tmpfile}
 # -----------------------------
 
 # sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<account>/${my_account}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
-sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
+sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
 
 if [ -z "$my_account" ]
 then
@@ -271,6 +271,15 @@ then
         sbatch=$( echo "${tmp}" )
 else
         tmp=$(echo "${sbatch}" | sed "s/<account>/#SBATCH --account=${my_account}/g" )
+        sbatch=$( echo "${tmp}" )
+fi
+
+if [ -z "$my_partition" ]
+then
+        tmp=$(echo "${sbatch}" | sed "s/<partition>//g" )
+        sbatch=$( echo "${tmp}" )
+else
+        tmp=$(echo "${sbatch}" | sed "s/<partition>/#SBATCH --partition=${my_account}/g" )
         sbatch=$( echo "${tmp}" )
 fi
 

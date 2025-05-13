@@ -75,15 +75,19 @@ do
 
 		echo "# ------- Experiment: ${exp} -------"                     >  "${outfile}"
 		echo "# Table generated: $current_date $current_time"           >> "${outfile}"
-		echo "# token, timeslaunched, timessubmitted, isfinished(0/1)"  >> "${outfile}"
-		alllaunched=$( cat "${exp_path}/launched.txt" | awk '{ print $1 }' | sort | uniq )
-	
-		for i in ${alllaunched}
+		echo "# id,token,timeslaunched,timessubmitted,isfinished(0/1)"  >> "${outfile}"
+		mapfile -t tokens < <( grep -v '^#' "${exp_path}/launched.txt" | awk '{ print $1 }' ) # Read tokens into an array
+		mapfile -t ids < <( grep -v '^#' "${exp_path}/launched.txt" | awk '{ print $2 }' )    # Read ids into an array
+		
+		for i in "${!tokens[@]}"
 		do
-			timeslaunched=$( cat "${exp_path}/launched.txt" | grep -w "$i" | wc -l )
-			timessubmitted=$( cat "${exp_path}/submitted.txt" | grep -w "$i" | wc -l )
-			finished=$( cat "${exp_path}/finished.txt" | grep -w "$i" | wc -l )
-			echo "$i, ${timeslaunched}, ${timessubmitted}, ${finished}"  >> "${outfile}"
+			id=${ids[$i]}
+			token=${tokens[$i]}
+			echo -e "ID $id TOKEN $token"
+			timeslaunched=$( cat "${exp_path}/launched.txt" | grep -w "$token" | wc -l )
+			timessubmitted=$( cat "${exp_path}/submitted.txt" | grep -w "$token" | wc -l )
+			finished=$( cat "${exp_path}/finished.txt" | grep -w "$token" | wc -l )
+			echo "$id,$token,${timeslaunched},${timessubmitted},${finished}"  >> "${outfile}"
 		done
 		echo "Generated ${exp} SubmitTable in ${outfile}"
 	fi

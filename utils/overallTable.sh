@@ -78,18 +78,18 @@ current_time=$(date +%H:%M:%S)  # Format: HH:MM:SS
 
 echo "# ------- Overall table of ${myhostname} -------"         >  "${tablename}"
 echo "# Table generated: $current_date $current_time"           >> "${tablename}"
-echo "# expname, parameter0, parameter1, ..., isfinished(0/1)"  >> "${tablename}"
+echo "# id,expname,parameter0,parameter1,...,isfinished(0/1)"  >> "${tablename}"
 
 echo "# ------- Timelimit table of ${myhostname} -------"       >  "${timelimittable}"
 echo "# Table generated: $current_date $current_time"           >> "${timelimittable}"
-echo "# expname, parameter0, parameter1, ..., isfinished(0/1)"  >> "${timelimittable}"
+echo "# id,expname,parameter0,parameter1,...,isfinished(0/1)"  >> "${timelimittable}"
 
 #for f in "${SbM_METADATA_HOME}/${myhostname}"/*/*SubmitTable.csv
 for p in "${exp_paths[@]}"
 do 
 	f="${p}/"*SubmitTable.csv
 
-	echo " ----- $f -----"
+	# echo " ----- $f -----"
 	expname=$(head -1 $f | awk '{ print $4 }' )
 	echo "expname: ${expname}"
 	grep -v "#" $f > ${tmpfile}
@@ -108,16 +108,17 @@ do
 	
 	while read line
 	do 
-		mytoken=$( echo ${line} | awk -F',' '{ print $1 }' )
+		myid=$( echo ${line} | awk -F',' '{ print $1 }' )
+		mytoken=$( echo ${line} | awk -F',' '{ print $2 }' )
 		noprefix=${mytoken#"$expname"_}
-		tmp=$( echo "${noprefix}" | awk -F'_' '{ print $2 }' )
+		tmp=$( echo "${noprefix}" | awk -F'_' '{ print $3 }' )
 		IFS='_' read -r -a arguments <<< "${noprefix}"
 		finished=$( echo ${line} | awk -F',' '{ print $NF }' )
 
-		string="${expname}, "
+		string="${myid},${expname},"
 		for e in ${arguments[@]}
 		do
-			string+="$e, "
+			string+="$e,"
 		done
 		string+="${finished}"
 
@@ -136,10 +137,10 @@ do
 			timelimit="0"
 
 			jid_vec=()
-			tmp=$( echo ${line} | awk -F',' '{ print $1 }' )
+			tmp=$( echo ${line} | awk -F',' '{ print $2 }' )
 			#echo "tmp: ${tmp}"
 			#grep "${tmp}" "${SbM_METADATA_HOME}/${myhostname}/${expname}/launched.txt"
-			for jid in $( grep "${tmp}" "${SbM_METADATA_HOME}/${myhostname}/${expname}/launched.txt" | awk '{ print $2 }' )
+			for jid in $( grep "${tmp}" "${SbM_METADATA_HOME}/${myhostname}/${expname}/launched.txt" | awk '{ print $3 }' )
 			do
 				jid_vec+=( "${jid}" )
 			done
@@ -186,10 +187,10 @@ do
 			echo "TIME LIMIT: ${timelimit}"
 		fi
 
-		string="${expname}, "
+		string="${expname},"
                 for e in ${arguments[@]}
                 do
-                        string+="$e, "
+                        string+="$e,"
                 done
                 string+="${timelimit}"
 		#echo "timelimitstring: ${string}"

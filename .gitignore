@@ -13,4 +13,4 @@ example/bin/
 *_sync.sh
 
 scripts/*.png
-scripts/__pycache__
+scripts/__pycache__/

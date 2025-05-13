@@ -57,7 +57,6 @@ To generate experiments use the `newExperiment.sh` script. Below is an explanati
 The `newExperiment.sh` script is used to generate experiments with specified parameters. Below is a brief description of its usage:
 
 - **Mandatory Arguments**:
-  - `-p <partition_name>`: Specify the SLURM partition name.
   - `-t <time in HH:MM:SS>`: Specify the SLURM max time (HH:MM:SS).
   - `-e <exp-name>`: Specify the experiment name.
   - `-b <binary>`: Specify the binary path.
@@ -66,6 +65,7 @@ The `newExperiment.sh` script is used to generate experiments with specified par
   - `-g <ngpus>`: Specify the number of required GPUs.
 
 - **Optional Arguments**:
+  - `-p <partition_name>`: Specify the SLURM partition name.
   - `-a <slurm_account>`: Specify the SLURM account.
   - `-M <MPI-version>`: Specify the SLURM MPI version (--mpi=).
   - `-d <cpus-per-task>`: Specify the number of CPUs per task.

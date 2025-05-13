@@ -1,18 +1,20 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Union
+from pathlib import Path
 
 class STATUS(Enum):
-    OK = -1
-    ERROR = 1
+    OK = 1
+    ERROR = -1
     TIMEOUT = 0
 
 @dataclass
 class Experiment:
+    id: int
     name: str
     params: dict[str, Any]
     status: STATUS
-    status_val: Any = field(default=None)
+    # status_val: Any = field(default=None)
 
 def parse_param(param_str: str) -> tuple[str, Any]:
     # THIS IS JUST A DEFAULT IMPLEMENTATION
@@ -22,7 +24,7 @@ def parse_param(param_str: str) -> tuple[str, Any]:
     # Change this accordingly to your needs
     return (param_str[0], param_str[1:])
 
-def parse_results_csv(input_filename, cb_parse_param: Callable[[str], tuple[str, Any]]=parse_param) -> dict[str, list[Experiment]]:
+def parse_results_csv(input_filename: Union[str, Path], cb_parse_param: Callable[[str], tuple[str, Any]]=parse_param) -> dict[str, list[Experiment]]:
     results = {}
     with open(input_filename, 'r') as input_file:
         for line in input_file:
@@ -34,13 +36,14 @@ def parse_results_csv(input_filename, cb_parse_param: Callable[[str], tuple[str,
                 continue
             parts = [p.strip() for p in parts]
 
-            expname = parts[0]
-            params = [cb_parse_param(p) for p in parts[1:-1]]
+            id = int(parts[0])
+            expname = parts[1]
+            params = [cb_parse_param(p) for p in parts[2:-1]]
             finished = int(parts[-1])
             
             if expname not in results:
                 results[expname] = []
-            results[expname].append(Experiment(expname, {p[0]:p[1] for p in params}, STATUS(finished)))
+            results[expname].append(Experiment(id, expname, {p[0]:p[1] for p in params}, STATUS(finished)))
 
     return results
 
