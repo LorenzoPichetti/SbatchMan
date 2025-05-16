@@ -146,6 +146,56 @@ The `submit.sh` script facilitates the submission of experiments to a SLURM-base
   - Refer to the script documentation and comments for detailed information on its usage, options, and internal logic.
 
 
+## Utils Scripts
+
+To run these scripts, run: `utils/<script_name>.sh`
+
+### `inQueue`
+
+Prints a list of experiments currently in queue.
+
+### `whoRuns`
+
+Prints a list of experiments currently running.
+
+### `archiveExperiments`
+
+Passing an `experiment name`, it will move its `sout` and `metadata` folders into the corresponding `.old` folders, appending the current timestamp.
+
+### `overallTable.sh`
+
+Generates a `overallTable.csv` summarizing the status of the experiments.
+
+
+## Python Scripts
+
+First, make sure Python virtual enviromnent is set:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### `common`
+
+Contains base data structures and functions to parse experiments results.
+
+### `heatmap`
+
+Is an example of how you can create an heatmap plot containing the "status" of the experiments.
+
+By default the x-axis and y-axis of the heatmap are set to the 1st and 2nd CLI args, respectively.
+
+> **Just copy and customize the script**
+
+> NOTE: to include `common.py` make sure to load it into Python path:
+```python
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '<PATH_TO_SBATCHMAN>')))
+from SbatchMan.scripts.common import *
+```
+
+
 ## Complete Usage Example
 
 
