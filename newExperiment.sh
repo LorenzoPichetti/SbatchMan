@@ -279,7 +279,7 @@ then
         tmp=$(echo "${sbatch}" | sed "s/<partition>//g" )
         sbatch=$( echo "${tmp}" )
 else
-        tmp=$(echo "${sbatch}" | sed "s/<partition>/#SBATCH --partition=${my_account}/g" )
+        tmp=$(echo "${sbatch}" | sed "s/<partition>/#SBATCH --partition=${my_partition}/g" )
         sbatch=$( echo "${tmp}" )
 fi
 
