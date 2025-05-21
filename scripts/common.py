@@ -61,15 +61,16 @@ def parse_results_csv(input_filename: Union[str, Path], cb_parse_token: Callable
 
     return results
 
-def summarize_results(results: dict[str, list[Experiment]]) -> None:
+def summarize_results(results: dict[str, list[Experiment]]) -> str:
+    res = []
     for expname, experiments in results.items():
         total_experiments = len(experiments)
         status_counts = {status: 0 for status in STATUS}
         for experiment in experiments:
             status_counts[experiment.status] += 1
 
-        print(f"Experiment: {expname}")
-        print(f"  Total: {total_experiments}")
+        res.append(f"Experiment: {expname}")
+        res.append(f"  Total: {total_experiments}")
         for status, count in status_counts.items():
-            print(f"  {status.name}: {count}")
-        print()
+            res.append(f"  {status.name}: {count}")
+    return '\n'.join(res)
