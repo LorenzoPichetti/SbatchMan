@@ -21,6 +21,7 @@ print_usage() {
 	echo -e '\t-s <constraint>:\tspecify the slurm constraint'
 	echo -e '\t-m <memory>:\t\tspecify the alloc memory'
 	echo -e '\t-q <qos>:\t\tspecify the slurm qos'
+	echo -e '\t-r <reservation>:\t\tspecify the slurm reservation'
 }
 
 RED='\033[0;31m'
@@ -42,6 +43,7 @@ unset -v my_qos
 unset -v my_mem
 unset -v my_cpt
 unset -v my_sl
+unset -v my_reservation
 
 while getopts 'P:s:p:e:a:n:c:b:g:t:q:m:d:M:S:' flag; do
   case "${flag}" in
@@ -60,6 +62,7 @@ while getopts 'P:s:p:e:a:n:c:b:g:t:q:m:d:M:S:' flag; do
 	m) my_mem="${OPTARG}" ;;
 	d) my_cpt="${OPTARG}" ;;
 	S) my_sl="${OPTARG}" ;;
+	r) my_reservation="${OPTARG}" ;;
 	*) print_usage
      	     exit 1 ;;
   esac
@@ -148,6 +151,7 @@ then
 fi
 
 echo "my_partition: ${my_partition}"
+echo "my_reservation: ${my_reservation}"
 echo " my_hostname: ${my_hostname}"
 echo "  my_expname: ${my_expname}"
 echo "  my_account: ${my_account}"
@@ -173,6 +177,7 @@ stencil_sbatch_head=$(cat << 'EOF'
 #SBATCH --time=<time>
 <account>
 <qos>
+<reservation>
 
 #SBATCH --nodes=<nnodes>
 #SBATCH --gres=gpu:<ngpus>
@@ -264,6 +269,15 @@ rm ${tmpfile}
 
 # sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<account>/${my_account}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
 sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
+
+if [ -z "$my_reservation" ]
+then
+        tmp=$(echo "${sbatch}" | sed "s/<reservation>//g" )
+        sbatch=$( echo "${tmp}" )
+else
+        tmp=$(echo "${sbatch}" | sed "s/<reservation>/#SBATCH --reservation=${my_reservation}/g" )
+        sbatch=$( echo "${tmp}" )
+fi
 
 if [ -z "$my_account" ]
 then
