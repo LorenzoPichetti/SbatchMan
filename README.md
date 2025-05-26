@@ -181,19 +181,30 @@ pip install -r requirements.txt
 
 Contains base data structures and functions to parse experiments results.
 
-### `heatmap`
-
-Is an example of how you can create an heatmap plot containing the "status" of the experiments.
-
-By default the x-axis and y-axis of the heatmap are set to the 1st and 2nd CLI args, respectively.
-
-> **Just copy and customize the script**
-
 > NOTE: to include `common.py` make sure to load it into Python path:
 ```python
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '<PATH_TO_SBATCHMAN>')))
 from SbatchMan.scripts.common import *
 ```
+
+### `heatmap`
+
+An example of how you can create an heatmap plot containing the "status" of the experiments.
+
+By default the x-axis and y-axis of the heatmap are set to the 1st and 2nd CLI args, respectively.
+
+> **Just copy and customize the script**
+
+### `gather_results_from_sout.py`
+
+An example of how to parse the STDOUT files from the experiments you have just ran.
+
+This currently just prints the experiment details together with their output.
+
+> **Just copy and customize the script**
+
+> To ensure jobs are done before performing results analysis you could use a script like `gather_results_from_sout.sh`
+
 
 
 ## Complete Usage Example

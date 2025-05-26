@@ -14,6 +14,8 @@ from pathlib import Path
 
 from typing import Any, Callable
 
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '<PATH_TO_SBATCHMAN>')))
+# from SbatchMan.scripts.common import *
 from common import Experiment, parse_results_csv, summarize_results
 
 def generate_heatmaps(results: dict[str, list[Experiment]], 
