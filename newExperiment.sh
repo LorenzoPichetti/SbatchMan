@@ -20,9 +20,9 @@ print_usage() {
 	echo -e '\t-s <constraint>:\tspecify the slurm constraint'
 	echo -e '\t-m <memory>:\t\tspecify the alloc memory'
 	echo -e '\t-q <qos>:\t\tspecify the slurm qos'
-	echo -e '\t-r <reservation>:\t\tspecify the slurm reservation'
+	echo -e '\t-r <reservation>:\tspecify the slurm reservation'
 	echo -e '\t-w <nodelist>:\t\tspecify a specific slurm nodelist'
-	echo -e '\t-P <preprocessblock>:\t\tspecify a bash preprocess block of code'
+	echo -e '\t-P <preprocessblock>:\tspecify a bash preprocess block of code'
 }
 
 RED='\033[0;31m'
@@ -47,7 +47,7 @@ unset -v my_cpt
 unset -v my_sl
 unset -v my_reservation
 
-while getopts 'P:s:p:e:a:n:c:b:g:t:q:m:d:M:S:' flag; do
+while getopts 'P:s:p:e:a:n:c:b:g:t:q:m:d:M:S:w:' flag; do
   case "${flag}" in
 	P) my_preprocessblock="${OPTARG}" ;;
 	s) my_constraint="${OPTARG}" ;;
