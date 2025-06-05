@@ -62,9 +62,9 @@ The `newExperiment.sh` script is used to generate experiments with specified par
   - `-b <binary>`: Specify the binary path.
   - `-n <nnodes>`: Specify the number of required SLURM nodes.
   - `-c <ntasks>`: Specify the number of required SLURM tasks.
-  - `-g <ngpus>`: Specify the number of required GPUs.
 
 - **Optional Arguments**:
+  - `-g <ngpus>`: Specify the number of required GPUs.
   - `-p <partition_name>`: Specify the SLURM partition name.
   - `-a <slurm_account>`: Specify the SLURM account.
   - `-M <MPI-version>`: Specify the SLURM MPI version (--mpi=).
@@ -73,6 +73,8 @@ The `newExperiment.sh` script is used to generate experiments with specified par
   - `-m <memory>`: Specify the allocated memory.
   - `-q <qos>`: Specify the SLURM QoS.
   - `-S <qos>`: Specify a non-standard ServiceLevel (i.e. export NCCL_IB_SL).
+  - `-w <nodelist>`: Specify a specific slurm nodelist
+	- `-P <preprocessblock>`: Specify a bash preprocess block of code
 
 Ensure you provide all mandatory arguments when generating experiments. You can refer to the example provided for guidance on how to structure your experiment generation commands.
 

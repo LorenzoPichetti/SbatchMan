@@ -9,19 +9,20 @@ print_usage() {
 	echo -e '\t-b <binary>:\t\tspecify the binary path'
 	echo -e '\t-n <nnodes>:\t\tspecify the number of required SLURM nodes'
 	echo -e '\t-c <ntasks>:\t\tspecify the number of required SLURM tasks'
-	echo -e '\t-g <ngpus>:\t\tspecify the number of required gpus'
 
 	echo -e '\nOptional arguments:'
+	echo -e '\t-g <ngpus>:\t\tspecify the number of required gpus'
 	echo -e '\t-p <partition_name>:\tspecify the SLURM partition name'
 	echo -e '\t-a <slurm_account>:\tspecify the SLURM account'
 	echo -e '\t-S <qos>:\t\tspecify a non-standard ServiceLevel (i.e. export NCCL_IB_SL)'
-	echo -e '\t-P <preprocessblock>:\t\tspecify a bash preprocess block of code'
 	echo -e '\t-M <MPI-version>:\tspecify the slurm MPI version (--mpi=)'
 	echo -e '\t-d <cpus-per-task>:\tspecify the number of cpu per task'
 	echo -e '\t-s <constraint>:\tspecify the slurm constraint'
 	echo -e '\t-m <memory>:\t\tspecify the alloc memory'
 	echo -e '\t-q <qos>:\t\tspecify the slurm qos'
 	echo -e '\t-r <reservation>:\t\tspecify the slurm reservation'
+	echo -e '\t-w <nodelist>:\t\tspecify a specific slurm nodelist'
+	echo -e '\t-P <preprocessblock>:\t\tspecify a bash preprocess block of code'
 }
 
 RED='\033[0;31m'
@@ -33,6 +34,7 @@ unset -v my_preprocessblock
 unset -v my_constraint
 unset -v my_partition
 unset -v my_expname
+unset -v my_nodelist
 unset -v my_account
 unset -v my_ntasks
 unset -v my_binary
@@ -53,6 +55,7 @@ while getopts 'P:s:p:e:a:n:c:b:g:t:q:m:d:M:S:' flag; do
 	e) my_expname="${OPTARG}" ;;
 	a) my_account="${OPTARG}" ;;
 	n) my_nnodes="${OPTARG}" ;;
+	w) my_nodelist="${OPTARG}" ;;
 	c) my_ntasks="${OPTARG}" ;;
 	b) my_binary="${OPTARG}" ;;
 	g) my_ngpus="${OPTARG}" ;;
@@ -110,12 +113,12 @@ then
         exit 1
 fi
 
-if [ -z "$my_ngpus" ]
-then
-        echo 'You must specify the number of gpus with -g' >&2
-		print_usage
-        exit 1
-fi
+# if [ -z "$my_ngpus" ]
+# then
+#         echo 'You must specify the number of gpus with -g' >&2
+# 		print_usage
+#         exit 1
+# fi
 
 if [ -z "$my_time" ]
 then
@@ -180,11 +183,12 @@ stencil_sbatch_head=$(cat << 'EOF'
 <reservation>
 
 #SBATCH --nodes=<nnodes>
-#SBATCH --gres=gpu:<ngpus>
 #SBATCH --tasks=<ntasks>
 #SBATCH --cpus-per-task=<cpus-per-task>
+<ngpus>
 <constraint>
 <memory>
+<nodelist>
 
 my_metadata_path=$1
 my_token=$2
@@ -215,10 +219,8 @@ EOF
 
 stencil_sbatch_tail=$(cat << 'EOF'
 <NCCL_SL>
-# srun -l bash -c 'echo "NCCL_IB_SL = ${NCCL_IB_SL}"'
 export cmd="<binary> ${arguments[*]}"
 echo "srun <Slurm_MPI> ${cmd}"
-#srun <Slurm_MPI> bash -c 'export UCX_NET_DEVICES=mlx5_${SLURM_LOCALID}:1 ; echo "UCX_NET_DEVICES: ${UCX_NET_DEVICES}" ; ${cmd}'
 srun <Slurm_MPI> ${cmd}
 
 if [[ $? == 0 ]]
@@ -268,7 +270,7 @@ rm ${tmpfile}
 # -----------------------------
 
 # sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<account>/${my_account}/g" | sed "s/<partition>/${my_partition}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
-sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s/<ngpus>/${my_ngpus}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
+sbatch=$(echo "${stencil_sbatch}" | sed "s/<hostname>/${my_hostname}/g" | sed "s/<time>/${my_time}/g" | sed "s/<exp-name>/${my_expname}/g" | sed "s%<binary>%${my_binary}%g" | sed "s/<nnodes>/${my_nnodes}/g" | sed "s/<ntasks>/${my_ntasks}/g" | sed "s%<sout_path>%${SbM_SOUT}%g")
 
 if [ -z "$my_reservation" ]
 then
@@ -324,6 +326,15 @@ else
 	sbatch=$( echo "${tmp}" )
 fi
 
+if [ -z "$my_ngpus" ]
+then
+	tmp=$(echo "${sbatch}" | sed "s/<ngpus>//g" )
+	sbatch=$( echo "${tmp}" )
+else
+	tmp=$(echo "${sbatch}" | sed "s/<ngpus>/#SBATCH --gres=gpu:${my_ngpus}/g" )
+	sbatch=$( echo "${tmp}" )
+fi
+
 if [ -z "$my_mem" ]
 then
 	tmp=$(echo "${sbatch}" | sed "s/<memory>//g" )
@@ -339,6 +350,15 @@ then
 	sbatch=$( echo "${tmp}" )
 else
 	tmp=$(echo "${sbatch}" | sed "s/<cpus-per-task>/${my_cpt}/g" )
+	sbatch=$( echo "${tmp}" )
+fi
+
+if [ -z "$my_nodelist" ]
+then
+	tmp=$(echo "${sbatch}" | sed "s/<nodelist>//g" )
+	sbatch=$( echo "${tmp}" )
+else
+	tmp=$(echo "${sbatch}" | sed "s/<nodelist>/#SBATCH --nodelist=${my_nodelist}/g" )
 	sbatch=$( echo "${tmp}" )
 fi
 
