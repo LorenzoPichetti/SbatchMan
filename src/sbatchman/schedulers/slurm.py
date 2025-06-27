@@ -1,0 +1,72 @@
+# src/exp_kit/schedulers/slurm.py
+import re
+import subprocess
+from typing import List, Dict, Optional, Tuple
+
+from .base import Scheduler
+
+class SlurmScheduler(Scheduler):
+  """Scheduler for SLURM."""
+
+  def generate_script(self, name: str, **kwargs) -> str:
+    lines = ["#!/bin/bash"]
+    lines.append(f"#SBATCH --job-name={name}")
+    lines.append(f"#SBATCH --output={{LOG_DIR}}/slurm-%j.out")
+
+    if p := kwargs.get("partition"): lines.append(f"#SBATCH --partition={p}")
+    if n := kwargs.get("nodes"): lines.append(f"#SBATCH --nodes={n}")
+    if t := kwargs.get("ntasks"): lines.append(f"#SBATCH --ntasks={t}")
+    if c := kwargs.get("cpus_per_task"): lines.append(f"#SBATCH --cpus-per-task={c}")
+    if m := kwargs.get("mem"): lines.append(f"#SBATCH --mem={m}")
+    if t := kwargs.get("time"): lines.append(f"#SBATCH --time={t}")
+    if g := kwargs.get("gpus"): lines.append(f"#SBATCH --gpus={g}")
+
+    lines.append("\n# Environment variables")
+    if envs := kwargs.get("env"):
+      for env_var in envs:
+        lines.append(f"export {env_var}")
+
+    lines.append("\n# User command")
+    lines.append('CMD="$1"')
+    lines.append('echo "Running command: $CMD"')
+    lines.append('eval $CMD')
+    return "\n".join(lines)
+
+  def get_submit_command(self) -> str:
+    return "sbatch"
+
+  def parse_job_id(self, submission_output: str) -> str:
+    match = re.search(r"Submitted batch job (\d+)", submission_output)
+    if match:
+      return match.group(1)
+    raise ValueError(f"Could not parse job ID from sbatch output: {submission_output}")
+
+  def _get_status_from_scheduler(self, job_ids: List[str]) -> Dict[str, Tuple[str, Optional[str]]]:
+    if not job_ids:
+      return {}
+    
+    cmd = ["squeue", "-h", "-o", "%i %t %r", "-j", ",".join(job_ids)]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    
+    statuses = {}
+    squeue_map = {
+      "PD": "QUEUED",
+      "R": "RUNNING",
+      "CG": "RUNNING", # Completing
+      "CD": "FINISHED",
+      "F": "FAILED",
+      "TO": "FAILED", # Timeout
+      "CA": "CANCELLED",
+      "NF": "FAILED", # Node Failure
+    }
+    
+    for line in result.stdout.strip().split('\n'):
+      if not line:
+        continue
+      parts = line.split()
+      job_id, state, reason = parts[0], parts[1], " ".join(parts[2:])
+      status = squeue_map.get(state, "UNKNOWN")
+      queue_info = reason if status == "QUEUED" else None
+      statuses[job_id] = (status, queue_info)
+        
+    return statuses

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sbatchman"
+version = "0.1.0"
+authors = [
+  { name="Hicrest laboratory", email="hicrest@unitn.it" },
+]
+description = "A utility to create and launch code experiments on local or remote machines."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "typer[all]",
+    "textual==0.58.*", # Pinning textual version for stability
+    "rich",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/LorenzoPichetti/SbatchMan"
+"Bug Tracker" = "https://github.com/LorenzoPichetti/SbatchMan/issues"
+
+[project.scripts]
+sbatchman = "sbatchman.cli:app"

@@ -1,16 +1,13 @@
-sout
-outputs
-metadata
-sbatchscripts
+# Byte-compiled / optimized / C extensions
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
 
-.venv/
-
-sourceFile.sh
-.kdev4/
-
-example/bin/
-
-*_sync.sh
-
-scripts/*.png
-scripts/__pycache__/
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
