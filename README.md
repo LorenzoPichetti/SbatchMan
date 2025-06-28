@@ -1,3 +1,7 @@
+<p align="center">
+    <img src="https://raw.githubusercontent.com/LorenzoPichetti/SbatchMan/refs/heads/rewrite/docs/sbatchman.png" alt="SbatchMan" width="124">
+<p>
+
 # SbatchMan
 
 A utility to create and launch code experiments on SLURM, PBS, or local machines.
