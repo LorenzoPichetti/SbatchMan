@@ -35,7 +35,7 @@ def launch_experiment(config_name: str, command: str, comment: str):
   if not config_path.exists():
     raise FileNotFoundError(f"Configuration '{config_name}' not found at {config_path}")
 
-  # 1. Create a unique directory for this experiment run
+  # 1. Create a unique, nested directory for this experiment run
   timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
   config_exp_dir = EXPERIMENTS_DIR / config_name
   exp_dir = config_exp_dir / timestamp
@@ -48,7 +48,6 @@ def launch_experiment(config_name: str, command: str, comment: str):
   with open(config_path, "r") as f:
     template_script = f.read()
   
-  # Replace placeholders for log directories
   final_script_content = template_script.replace("{LOG_DIR}", str(exp_dir.resolve()))
   
   run_script_path = exp_dir / "run.sh"
@@ -56,13 +55,7 @@ def launch_experiment(config_name: str, command: str, comment: str):
     f.write(final_script_content)
   run_script_path.chmod(0o755)
 
-  # 4. Submit the job
-  submit_cmd = scheduler.get_submit_command()
-  job_id = None
-
-  stdout_log = exp_dir / "stdout.log"
-  stderr_log = exp_dir / "stderr.log"
-
+  # 4. Prepare metadata
   metadata: Dict[str, Any] = {
     "name": config_name,
     "timestamp": timestamp,
@@ -76,38 +69,25 @@ def launch_experiment(config_name: str, command: str, comment: str):
   }
 
   try:
+    # 5. Submit the job using the scheduler's own logic
+    job_id = scheduler.submit(run_script_path, command, exp_dir)
+    
+    metadata["job_id"] = job_id
+    # Set initial status based on scheduler type
     if isinstance(scheduler, LocalScheduler):
-      # For local, run in background and redirect output
-      with open(stdout_log, "w") as out, open(stderr_log, "w") as err:
-        process = subprocess.Popen(
-          [str(run_script_path), command],
-          stdout=out,
-          stderr=err,
-          preexec_fn=lambda: __import__("os").setsid() # a bit of a hack to detatch process
-        )
-      job_id = str(process.pid)
       metadata["status"] = "RUNNING"
     else:
-      # For clusters, submit and capture job ID
-      result = subprocess.run(
-        [submit_cmd, str(run_script_path), command],
-        capture_output=True, text=True, check=True,
-        cwd=exp_dir # Run from experiment dir to catch scheduler logs
-      )
-      job_id = scheduler.parse_job_id(result.stdout)
       metadata["status"] = "QUEUED"
 
-    metadata["job_id"] = job_id
     print(f"✅ Experiment for config '{config_name}' submitted successfully.")
     print(f"   Job ID: {job_id}")
     print(f"   Logs: {exp_dir}")
-
 
   except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
     metadata["status"] = "FAILED_SUBMISSION"
     print(f"❌ Failed to submit experiment for config '{config_name}'.")
     print(f"   Error: {e}")
   finally:
-    # 5. Save metadata
+    # 6. Save metadata
     with open(exp_dir / "metadata.json", "w") as f:
       json.dump(metadata, f, indent=4)
