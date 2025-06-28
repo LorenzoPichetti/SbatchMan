@@ -2,6 +2,7 @@
 import re
 import subprocess
 from typing import List, Dict, Optional, Tuple
+from pathlib import Path
 
 from .base import Scheduler
 
@@ -23,19 +24,27 @@ class PbsScheduler(Scheduler):
       lines.append(f"#PBS -l {','.join(resources)}")
 
     if q := kwargs.get("queue"): lines.append(f"#PBS -q {q}")
-
     return lines
 
-  def get_submit_command(self) -> str:
-    return "qsub"
-
-  def parse_job_id(self, submission_output: str) -> str:
-    # qsub usually returns just the job ID
+  def _parse_job_id(self, submission_output: str) -> str:
+    """Parses the job ID from the qsub command's output."""
     job_id = submission_output.strip().split('.')[0]
     if not job_id:
       raise ValueError(f"Could not parse job ID from qsub output: {submission_output}")
     return job_id
 
+  def submit(self, script_path: Path, user_command: str, exp_dir: Path) -> str:
+    """Submits the job to PBS."""
+    command_list = ["qsub", str(script_path), user_command]
+    result = subprocess.run(
+      command_list,
+      capture_output=True,
+      text=True,
+      check=True,
+      cwd=exp_dir,
+    )
+    return self._parse_job_id(result.stdout)
+  
   def _get_status_from_scheduler(self, job_ids: List[str]) -> Dict[str, Tuple[str, Optional[str]]]:
     if not job_ids:
       return {}

@@ -70,14 +70,7 @@ def launch_experiment(config_path_or_name: str, command: str, comment: str):
   with open(run_script_path, "w") as f:
     f.write(final_script_content)
   run_script_path.chmod(0o755)
-
-  # 5. Submit the job
-  submit_cmd = scheduler.get_submit_command()
-  job_id = None
-
-  stdout_log = exp_dir / "stdout.log"
-  stderr_log = exp_dir / "stderr.log"
-
+  
   metadata: Dict[str, Any] = {
     "name": config_name,
     "timestamp": timestamp,
@@ -91,26 +84,16 @@ def launch_experiment(config_path_or_name: str, command: str, comment: str):
   }
 
   try:
+    # 5. Submit the job using the scheduler's own logic
+    job_id = scheduler.submit(run_script_path, command, exp_dir)
+    
+    metadata["job_id"] = job_id
+    # Set initial status based on scheduler type
     if isinstance(scheduler, LocalScheduler):
-      with open(stdout_log, "w") as out, open(stderr_log, "w") as err:
-        process = subprocess.Popen(
-          [str(run_script_path), command],
-          stdout=out,
-          stderr=err,
-          preexec_fn=lambda: __import__("os").setsid()
-        )
-      job_id = str(process.pid)
       metadata["status"] = "RUNNING"
     else:
-      result = subprocess.run(
-        [submit_cmd, str(run_script_path), command],
-        capture_output=True, text=True, check=True,
-        cwd=exp_dir
-      )
-      job_id = scheduler.parse_job_id(result.stdout)
       metadata["status"] = "QUEUED"
 
-    metadata["job_id"] = job_id
     print(f"✅ Experiment for config '{config_name}' submitted successfully.")
     print(f"   Job ID: {job_id}")
     print(f"   Logs: {exp_dir}")
@@ -120,5 +103,6 @@ def launch_experiment(config_path_or_name: str, command: str, comment: str):
     print(f"❌ Failed to submit experiment for config '{config_name}'.")
     print(f"   Error: {e}")
   finally:
+    # 6. Save metadata
     with open(exp_dir / "metadata.json", "w") as f:
       json.dump(metadata, f, indent=4)

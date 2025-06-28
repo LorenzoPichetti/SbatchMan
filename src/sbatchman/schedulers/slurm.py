@@ -2,6 +2,7 @@
 import re
 import subprocess
 from typing import List, Dict, Optional, Tuple
+from pathlib import Path
 
 from .base import Scheduler
 
@@ -23,14 +24,25 @@ class SlurmScheduler(Scheduler):
     
     return lines
 
-  def get_submit_command(self) -> str:
-    return "sbatch"
 
-  def parse_job_id(self, submission_output: str) -> str:
+  def _parse_job_id(self, submission_output: str) -> str:
+    """Parses the job ID from the sbatch command's output."""
     match = re.search(r"Submitted batch job (\d+)", submission_output)
     if match:
       return match.group(1)
     raise ValueError(f"Could not parse job ID from sbatch output: {submission_output}")
+
+  def submit(self, script_path: Path, user_command: str, exp_dir: Path) -> str:
+    """Submits the job to SLURM."""
+    command_list = ["sbatch", str(script_path), user_command]
+    result = subprocess.run(
+      command_list,
+      capture_output=True,
+      text=True,
+      check=True,
+      cwd=exp_dir,
+    )
+    return self._parse_job_id(result.stdout)
 
   def _get_status_from_scheduler(self, job_ids: List[str]) -> Dict[str, Tuple[str, Optional[str]]]:
     if not job_ids:

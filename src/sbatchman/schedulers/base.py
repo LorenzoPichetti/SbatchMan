@@ -1,6 +1,7 @@
 # src/exp_kit/schedulers/base.py
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Tuple
+from pathlib import Path
 import subprocess
 
 class Scheduler(ABC):
@@ -53,13 +54,19 @@ class Scheduler(ABC):
     pass
 
   @abstractmethod
-  def get_submit_command(self) -> str:
-    """Returns the command used to submit a job (e.g., 'sbatch')."""
-    pass
+  def submit(self, script_path: Path, user_command: str, exp_dir: Path) -> str:
+    """
+    Submits the job to the scheduler and returns the job ID.
+    This method contains all logic for running the submission command.
 
-  @abstractmethod
-  def parse_job_id(self, submission_output: str) -> str:
-    """Parses the job ID from the submission command's output."""
+    Args:
+      script_path: The path to the executable bash script.
+      user_command: The user's command to be passed to the script.
+      exp_dir: The directory for the experiment's logs.
+
+    Returns:
+      The job ID as a string.
+    """
     pass
 
   def get_status(self, job_ids: List[str]) -> Dict[str, Tuple[str, Optional[str]]]:
@@ -67,9 +74,9 @@ class Scheduler(ABC):
     Checks the status of a list of job IDs.
 
     Returns:
-        A dictionary mapping job_id to a tuple of (status, queue_info).
-        Status can be: QUEUED, RUNNING, FINISHED, FAILED, UNKNOWN.
-        queue_info can be the position in queue, or None.
+      A dictionary mapping job_id to a tuple of (status, queue_info).
+      Status can be: QUEUED, RUNNING, FINISHED, FAILED, UNKNOWN.
+      queue_info can be the position in queue, or None.
     """
     if not job_ids:
       return {}
