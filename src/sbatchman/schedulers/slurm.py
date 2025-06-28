@@ -8,8 +8,8 @@ from .base import Scheduler
 class SlurmScheduler(Scheduler):
   """Scheduler for SLURM."""
 
-  def generate_script(self, name: str, **kwargs) -> str:
-    lines = ["#!/bin/bash"]
+  def _generate_scheduler_directives(self, name: str, **kwargs) -> List[str]:
+    lines = []
     lines.append(f"#SBATCH --job-name={name}")
     lines.append(f"#SBATCH --output={{LOG_DIR}}/slurm-%j.out")
 
@@ -20,17 +20,8 @@ class SlurmScheduler(Scheduler):
     if m := kwargs.get("mem"): lines.append(f"#SBATCH --mem={m}")
     if t := kwargs.get("time"): lines.append(f"#SBATCH --time={t}")
     if g := kwargs.get("gpus"): lines.append(f"#SBATCH --gpus={g}")
-
-    lines.append("\n# Environment variables")
-    if envs := kwargs.get("env"):
-      for env_var in envs:
-        lines.append(f"export {env_var}")
-
-    lines.append("\n# User command")
-    lines.append('CMD="$1"')
-    lines.append('echo "Running command: $CMD"')
-    lines.append('eval $CMD')
-    return "\n".join(lines)
+    
+    return lines
 
   def get_submit_command(self) -> str:
     return "sbatch"

@@ -7,20 +7,9 @@ from .base import Scheduler
 class LocalScheduler(Scheduler):
   """Scheduler for running on the local machine."""
 
-  def generate_script(self, name: str, **kwargs) -> str:
-    lines = ["#!/bin/bash", "# Local execution script"]
-    
-    lines.append("\n# Environment variables")
-    if envs := kwargs.get("env"):
-      for env_var in envs:
-        lines.append(f"export {env_var}")
-    
-    lines.append("\n# User command")
-    lines.append('CMD="$1"')
-    lines.append('echo "Running command: $CMD"')
-    lines.append('eval $CMD')
-    return "\n".join(lines)
-
+  def _generate_scheduler_directives(self, name: str, **kwargs) -> List[str]:
+    return ["# Local execution script"]
+  
   def get_submit_command(self) -> str:
     # For local, we run bash in the background. The launcher will handle logs.
     return "bash"
