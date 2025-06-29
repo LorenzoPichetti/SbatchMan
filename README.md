@@ -3,32 +3,53 @@
 <p>
 
 # SbatchMan
-
-A utility to create and launch code experiments on SLURM, PBS, or local machines.
+A utility to create, launch and monitor code experiments on SLURM, PBS, or local machines.
 
 ## Installation
 
-You can install `SbatchMan` using pip:
+The recommended way to install `SbatchMan` is with `pipx`. This will install the package and its dependencies in an isolated environment.
 
+If you don't have `pipx`, you can install it with:
 ```bash
-pip install .
+python3 -m pip install --user pipx
+python3 -m pipx ensurepath
+```
+You may need to restart your terminal for the changes to take effect.
+
+Once `pipx` is installed, you can install `sbatchman` from PyPI:
+```bash
+pipx install sbatchman
 ```
 
-Or for development:
+Now try running `sbatchman --help`!
+
+For development, clone the repository and install the package in editable mode from the local repository:
 ```bash
 pip install -e .
 ```
+This allows you to make changes to the code and have them reflected immediately without needing to reinstall.
 
 ## Usage
 
 The tool is organized into three main commands: configure, launch, and status.
 
 ### Configure an Experiment
-First, create a configuration for a specific environment (SLURM, PBS, or local). Configurations are stored in `sbatchman/configs/`.
+Before launching an experiment, you need to create a configuration for your target environment (SLURM, PBS, or local). The `configure` command helps you create and save these settings.
+
+When you first run this command in a project directory, `SbatchMan` will ask for confirmation to create a `sbatchman` directory. This folder will store all your configurations and experiment results.
+
+Check out the available options for each environment:
+```bash
+sbatchman configure slurm --help # Show options for SLURM
+sbatchman configure pbs --help   # Show options for PBS
+sbatchman configure local --help # Show options for local execution
+```
+
+The file will be saved in the `sbatchman/configs` directory with the name you provide. You can use this name later to launch your experiment. If you need to change the configuration, you can simply run the `configure` command again with the same name, and it will overwrite the existing configuration.
 
 #### SLURM Example:
 
-```
+```bash
 sbatchman configure slurm --name my-gpu-job \
 --partition gpu_queue \
 --cpus-per-task 4 \
@@ -57,22 +78,22 @@ sbatchman configure local --name my-local-job \
 
 Use the configuration name to launch your code.
 ```bash
-sbatchman launch --config-name my-gpu-job \
+sbatchman launch --config my-gpu-job \
 "python my_project/train.py --learning-rate 0.001 --epochs 50"
 ```
 
-The command to execute must be passed as a single string.
+The command to execute must be passed in quotes.
 
 ### Check Experiment Status
 
-Launch the interactive TUI to monitor your jobs.
+To monitor your experiments, launch the interactive interface:
 ```bash
 sbatchman status
 ```
-This TUI shows queued, running, and finished jobs. You can select a job to view its live stdout and stderr logs.
 
-Keybindings in TUI:
-- Up/Down/k/j: Navigate jobs
-- Enter: View logs for the selected job
-- b: Go back from log view to job list
-- q: Quit the application
+The TUI provides a real-time view of your jobs, categorized into queued, running, and finished states. You can navigate through the list of jobs and select one to view its live standard output and error logs.
+
+**Keybindings:**
+- **Up/Down Arrows**: Navigate through jobs and tabs.
+- **Enter**: View logs for the selected job.
+- **q**: Go back to the previous view or quit the application.
