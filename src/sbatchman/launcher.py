@@ -26,7 +26,7 @@ def get_scheduler_from_config(config_path: Path) -> Scheduler:
   # Default to local if no other scheduler directive is found
   return LocalScheduler()
 
-def launch_experiment(config_path_or_name: str, command: str, comment: str):
+def launch_experiment(config_path_or_name: str, command: str):
   """
   Launches an experiment based on a configuration name or path.
   """
@@ -48,8 +48,8 @@ def launch_experiment(config_path_or_name: str, command: str, comment: str):
   timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
   # Use the auto-detected or default experiments directory
   experiments_root = get_experiments_dir()
-  config_exp_dir = experiments_root / config_name
-  exp_dir = config_exp_dir / timestamp
+  exp_dir_local = Path(config_name) / timestamp
+  exp_dir = experiments_root / exp_dir_local
   exp_dir.mkdir(parents=True, exist_ok=True)
 
   # 3. Identify the scheduler
@@ -61,9 +61,11 @@ def launch_experiment(config_path_or_name: str, command: str, comment: str):
   
   # Replace placeholders for log and CWD
   final_script_content = template_script.replace(
-    "{LOG_DIR}", str(exp_dir.resolve())
+    "{EXP_DIR}", str(exp_dir.resolve())
   ).replace(
     "{CWD}", str(submission_cwd.resolve())
+  ).replace(
+    "{CMD}", str(command)
   )
   
   run_script_path = exp_dir / "run.sh"
@@ -74,18 +76,15 @@ def launch_experiment(config_path_or_name: str, command: str, comment: str):
   metadata: Dict[str, Any] = {
     "name": config_name,
     "timestamp": timestamp,
-    "exp_dir": str(exp_dir),
+    "exp_dir": exp_dir_local.__str__(),
     "command": command,
-    "comment": comment,
-    "job_id": None,
     "status": "SUBMITTING",
     "scheduler": scheduler.__class__.__name__,
-    "queue_info": None,
   }
 
   try:
     # 5. Submit the job using the scheduler's own logic
-    job_id = scheduler.submit(run_script_path, command, exp_dir)
+    job_id = scheduler.submit(run_script_path, exp_dir)
     
     metadata["job_id"] = job_id
     # Set initial status based on scheduler type

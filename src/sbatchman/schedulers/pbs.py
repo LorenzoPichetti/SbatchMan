@@ -12,8 +12,8 @@ class PbsScheduler(Scheduler):
   def _generate_scheduler_directives(self, name: str, **kwargs) -> List[str]:
     lines = []
     lines.append(f"#PBS -N {name}")
-    lines.append(f"#PBS -o {{LOG_DIR}}/pbs-${{PBS_JOBID}}.out")
-    lines.append(f"#PBS -e {{LOG_DIR}}/pbs-${{PBS_JOBID}}.err")
+    lines.append(f"#PBS -o {{EXP_DIR}}/stdout.log")
+    lines.append(f"#PBS -e {{EXP_DIR}}/stderr.log")
 
     resources = []
     if c := kwargs.get("cpus"): resources.append(f"ncpus={c}")
@@ -33,9 +33,9 @@ class PbsScheduler(Scheduler):
       raise ValueError(f"Could not parse job ID from qsub output: {submission_output}")
     return job_id
 
-  def submit(self, script_path: Path, user_command: str, exp_dir: Path) -> str:
+  def submit(self, script_path: Path, exp_dir: Path) -> str:
     """Submits the job to PBS."""
-    command_list = ["qsub", str(script_path), user_command]
+    command_list = ["qsub", str(script_path)]
     result = subprocess.run(
       command_list,
       capture_output=True,
@@ -44,39 +44,3 @@ class PbsScheduler(Scheduler):
       cwd=exp_dir,
     )
     return self._parse_job_id(result.stdout)
-  
-  def _get_status_from_scheduler(self, job_ids: List[str]) -> Dict[str, Tuple[str, Optional[str]]]:
-    if not job_ids:
-      return {}
-
-    cmd = ["qstat", "-f"] + job_ids
-    result = subprocess.run(cmd, capture_output=True, text=True) # Don't check=True, qstat errors if job is not found
-    
-    statuses = {}
-    qstat_map = {
-      "Q": "QUEUED",
-      "R": "RUNNING",
-      "E": "RUNNING", # Exiting
-      "C": "FINISHED",
-      "H": "QUEUED", # Held
-    }
-
-    # qstat -f output is multiline per job
-    # A simple regex can find the job_state for each job
-    for job_block in result.stdout.split("Job Id:"):
-      if not job_block.strip():
-        continue
-      
-      job_id_match = re.search(r"([\w.-]+)", job_block)
-      if not job_id_match:
-        continue
-      
-      job_id = job_id_match.group(1).split('.')[0]
-
-      state_match = re.search(r"job_state\s*=\s*(\w)", job_block)
-      if state_match:
-        state = state_match.group(1)
-        status = qstat_map.get(state, "UNKNOWN")
-        statuses[job_id] = (status, None) # PBS doesn't easily give queue position
-
-    return statuses

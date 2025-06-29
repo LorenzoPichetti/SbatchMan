@@ -77,12 +77,11 @@ def configure_local(
 @app.command("launch")
 def launch(
   config: str = typer.Option(..., "--config", "-c", help="The name of the configuration or a direct path to a config file."),
-  comment: str = typer.Option("", "--comment", help="A short comment to identify the experiment."),
   command: str = typer.Argument(..., help="The executable and its parameters, enclosed in quotes."),
 ):
   """Launches an experiment using a predefined configuration."""
   try:
-    launch_experiment(config, command, comment)
+    launch_experiment(config, command)
   except FileNotFoundError as e:
     console.print(f"❌ Error: {e}")
     raise typer.Exit(code=1)

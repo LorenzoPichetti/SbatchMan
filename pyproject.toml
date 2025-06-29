@@ -18,7 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "typer[all]",
-    "textual==0.58.*", # Pinning textual version for stability
+    "textual",
     "rich",
 ]
 

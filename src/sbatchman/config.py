@@ -1,9 +1,8 @@
-import os
 from pathlib import Path
-
-import os
-from pathlib import Path
+import sys
 from typing import Optional
+from rich.console import Console
+from rich.prompt import Confirm
 
 # The name of the root directory to search for.
 PROJECT_ROOT_DIR_NAME = "SbatchMan"
@@ -35,10 +34,22 @@ def find_sbatchman_home() -> Path:
   if home_project_dir.is_dir():
     _cached_sbatchman_home = home_project_dir
     return home_project_dir
-
-  # If not found anywhere, default to creating it in the home directory
-  _cached_sbatchman_home = home_project_dir
-  return home_project_dir
+  
+  # If not found anywhere, ask the user to initialize it here.
+  console = Console()
+  cwd = Path.cwd()
+  if Confirm.ask(
+      f"[bold yellow]SbatchMan root not found.[/bold yellow] Would you like to initialize it in the current directory ({cwd})?",
+      default=False
+  ):
+      project_dir = cwd / PROJECT_ROOT_DIR_NAME
+      project_dir.mkdir(exist_ok=True)
+      _cached_sbatchman_home = project_dir
+      console.print(f"✅ Initialized SbatchMan root at [cyan]{project_dir}[/cyan]")
+      return project_dir
+  else:
+      console.print("[red]SbatchMan root not found. Aborting.[/red]")
+      sys.exit(1)
 
 
 def get_config_dir() -> Path:

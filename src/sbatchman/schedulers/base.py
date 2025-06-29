@@ -26,6 +26,10 @@ class Scheduler(ABC):
     working_dir_setup = [
       "\n# Change to the submission directory",
       'cd "{CWD}"',
+      "\n# Update status to RUNNING",
+      'if [ -f "{EXP_DIR}/metadata.json" ]; then',
+      '  sed -i \'s/"status": ".*"/"status": "RUNNING"/\' {EXP_DIR}/metadata.json',
+      'fi',
     ]
 
     # Handle common environment variables.
@@ -34,12 +38,21 @@ class Scheduler(ABC):
       for env_var in envs:
         env_vars.append(f"export {env_var}")
     
-    # The user command part is also common.
+    # Run the command and update the status
     footer = [
       "\n# User command",
-      'CMD="$1"',
-      'echo "Running command: $CMD"',
-      'eval $CMD',
+      'echo "Running command: {CMD}"',
+      'eval {CMD}',
+      'EXIT_CODE=$?',
+      "\n# Update status to FINISHED or FAILED",
+      'if [ -f "{EXP_DIR}/metadata.json" ]; then',
+      '  if [ $EXIT_CODE -eq 0 ]; then',
+      '    sed -i \'s/"status": ".*"/"status": "FINISHED"/\' {EXP_DIR}/metadata.json',
+      '  else',
+      '    sed -i \'s/"status": ".*"/"status": "FAILED"/\' {EXP_DIR}/metadata.json',
+      '  fi',
+      'fi',
+      'exit $EXIT_CODE',
     ]
 
     all_lines = header + scheduler_directives + working_dir_setup + env_vars + footer
@@ -54,38 +67,16 @@ class Scheduler(ABC):
     pass
 
   @abstractmethod
-  def submit(self, script_path: Path, user_command: str, exp_dir: Path) -> str:
+  def submit(self, script_path: Path, exp_dir: Path) -> str:
     """
     Submits the job to the scheduler and returns the job ID.
     This method contains all logic for running the submission command.
 
     Args:
       script_path: The path to the executable bash script.
-      user_command: The user's command to be passed to the script.
       exp_dir: The directory for the experiment's logs.
 
     Returns:
       The job ID as a string.
     """
-    pass
-
-  def get_status(self, job_ids: List[str]) -> Dict[str, Tuple[str, Optional[str]]]:
-    """
-    Checks the status of a list of job IDs.
-
-    Returns:
-      A dictionary mapping job_id to a tuple of (status, queue_info).
-      Status can be: QUEUED, RUNNING, FINISHED, FAILED, UNKNOWN.
-      queue_info can be the position in queue, or None.
-    """
-    if not job_ids:
-      return {}
-    try:
-      return self._get_status_from_scheduler(job_ids)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-      return {job_id: ("UNKNOWN", None) for job_id in job_ids}
-
-  @abstractmethod
-  def _get_status_from_scheduler(self, job_ids: List[str]) -> Dict[str, Tuple[str, Optional[str]]]:
-    """Scheduler-specific implementation for checking job status."""
     pass

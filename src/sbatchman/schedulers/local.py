@@ -11,11 +11,11 @@ class LocalScheduler(Scheduler):
   def _generate_scheduler_directives(self, name: str, **kwargs) -> List[str]:
     return ["# Local execution script"]
 
-  def submit(self, script_path: Path, user_command: str, exp_dir: Path) -> str:
+  def submit(self, script_path: Path, exp_dir: Path) -> str:
     """Runs the job in the background on the local machine."""
     stdout_log = exp_dir / "stdout.log"
     stderr_log = exp_dir / "stderr.log"
-    command_list = ["bash", str(script_path), user_command]
+    command_list = ["bash", str(script_path)]
     
     with open(stdout_log, "w") as out, open(stderr_log, "w") as err:
       process = subprocess.Popen(
@@ -25,13 +25,3 @@ class LocalScheduler(Scheduler):
         preexec_fn=lambda: __import__("os").setsid() # Detach from parent
       )
     return str(process.pid)
-
-  def _get_status_from_scheduler(self, job_ids: List[str]) -> Dict[str, Tuple[str, Optional[str]]]:
-    statuses = {}
-    for pid in job_ids:
-      try:
-        subprocess.run(["ps", "-p", pid], check=True, capture_output=True)
-        statuses[pid] = ("RUNNING", None)
-      except subprocess.CalledProcessError:
-        statuses[pid] = ("FINISHED", None)
-    return statuses

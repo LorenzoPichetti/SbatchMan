@@ -24,12 +24,12 @@ pip install -e .
 The tool is organized into three main commands: configure, launch, and status.
 
 ### Configure an Experiment
-First, create a configuration for a specific environment (SLURM, PBS, or local).
+First, create a configuration for a specific environment (SLURM, PBS, or local). Configurations are stored in `sbatchman/configs/`.
 
 #### SLURM Example:
 
 ```
-exp-kit configure slurm --name my-gpu-job \
+sbatchman configure slurm --name my-gpu-job \
 --partition gpu_queue \
 --cpus-per-task 4 \
 --mem "16G" \
@@ -40,7 +40,7 @@ exp-kit configure slurm --name my-gpu-job \
 
 #### PBS Example:
 ```bash      
-exp-kit configure pbs --name my-pbs-job \
+sbatchman configure pbs --name my-pbs-job \
 --queue standard \
 --cpus 4 \
 --mem "16gb" \
@@ -49,18 +49,15 @@ exp-kit configure pbs --name my-pbs-job \
 
 #### Local Example:
 ```bash      
-exp-kit configure local --name my-local-job \
+sbatchman configure local --name my-local-job \
 --env "MY_VAR=hello"
 ```
-
-This creates a template script in ~/.exp-kit/configs/.
 
 ### Launch an Experiment
 
 Use the configuration name to launch your code.
 ```bash
-exp-kit launch --config-name my-gpu-job \
---comment "First run with new dataset" \
+sbatchman launch --config-name my-gpu-job \
 "python my_project/train.py --learning-rate 0.001 --epochs 50"
 ```
 
@@ -70,7 +67,7 @@ The command to execute must be passed as a single string.
 
 Launch the interactive TUI to monitor your jobs.
 ```bash
-exp-kit status
+sbatchman status
 ```
 This TUI shows queued, running, and finished jobs. You can select a job to view its live stdout and stderr logs.
 
