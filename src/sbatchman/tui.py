@@ -99,7 +99,7 @@ class JobsScreen(Screen):
       table.add_column("Time", width=20, key="timestamp")
       table.add_column("Name", width=20)
       table.add_column("Job ID", width=12)
-      table.add_column("Status", width=18)
+      table.add_column("Status", width=12)
       table.add_column("Command")
     
     self.load_and_update_jobs()

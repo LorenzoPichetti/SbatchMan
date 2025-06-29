@@ -98,3 +98,5 @@ The TUI provides a real-time view of your jobs, categorized into queued, running
 - **Up/Down Arrows**: Navigate through jobs and tabs.
 - **Enter**: View logs for the selected job.
 - **q**: Go back to the previous view or quit the application.
+
+![SbatchMan TUI](https://raw.githubusercontent.com/LorenzoPichetti/SbatchMan/refs/heads/rewrite/docs/tui.png)
