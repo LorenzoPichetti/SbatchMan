@@ -8,7 +8,7 @@ version = "0.1.1"
 authors = [
   { name="Hicrest laboratory", email="hicrest@unitn.it" },
 ]
-description = "A utility to create and launch code experiments on local or remote machines."
+description = "A utility to create, launch and monitor code experiments on SLURM, PBS, or local machines."
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
