@@ -18,6 +18,10 @@ class SlurmConfig(BaseConfig):
   mem: Optional[str] = None
   time: Optional[str] = None
   gpus: Optional[int] = None
+  constraint: Optional[str] = None
+  nodelist: Optional[str] = None
+  qos: Optional[str] = None
+  reservation: Optional[str] = None
 
   def _generate_scheduler_directives(self) -> List[str]:
     lines = []
@@ -32,6 +36,10 @@ class SlurmConfig(BaseConfig):
     if m := self.mem: lines.append(f"#SBATCH --mem={m}")
     if t := self.time: lines.append(f"#SBATCH --time={t}")
     if g := self.gpus: lines.append(f"#SBATCH --gpus={g}")
+    if con := self.constraint: lines.append(f"#SBATCH --constraint={con}")
+    if nl := self.nodelist: lines.append(f"#SBATCH --nodelist={nl}")
+    if q := self.qos: lines.append(f"#SBATCH --qos={q}")
+    if r := self.reservation: lines.append(f"#SBATCH --reservation={r}")
     
     return lines
 

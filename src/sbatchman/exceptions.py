@@ -32,6 +32,12 @@ class ConfigurationNotFoundError(ConfigurationError):
     self.message = message
     super().__init__(self.message)
 
+class JobSubmitError(SbatchManError):
+  """Raised when an error occurs during the submission of a job."""
+  def __init__(self, message: str):
+    self.message = message
+    super().__init__(self.message)
+
 class ArchiveExistsError(SbatchManError):
   """Raised when an archive already exists and overwrite is False."""
   def __init__(self, message: str):

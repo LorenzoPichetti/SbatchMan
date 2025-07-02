@@ -1,14 +1,12 @@
 from pathlib import Path
 import shutil
-from typing import Dict, Any
 import yaml
-import socket
 import platformdirs
 
-from sbatchman.exceptions import HostnameNotSetError, ProjectNotInitializedError
+from sbatchman.exceptions import HostnameNotSetError
 from sbatchman.schedulers.local import LocalConfig
 from sbatchman.schedulers.pbs import PbsConfig
-from .schedulers.slurm import SlurmConfig
+from sbatchman.schedulers.slurm import SlurmConfig
 
 # --- Global Configuration Functions ---
 

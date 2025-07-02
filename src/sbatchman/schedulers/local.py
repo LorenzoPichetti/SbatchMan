@@ -1,7 +1,7 @@
 # src/exp_kit/schedulers/local.py
 from dataclasses import dataclass
 import subprocess
-from typing import List, Dict, Optional, Tuple
+from typing import List
 from pathlib import Path
 
 from .base import BaseConfig

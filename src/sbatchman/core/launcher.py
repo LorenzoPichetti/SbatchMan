@@ -1,19 +1,20 @@
 # src/exp_kit/launcher.py
-from dataclasses import dataclass
 import subprocess
 import datetime
+import itertools
+import re
+import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, TypedDict
+from typing import List, Optional, TypedDict
 
-from sbatchman.exceptions import ConfigurationError, ConfigurationNotFoundError, HostnameNotSetError
+from sbatchman.exceptions import ConfigurationError, ConfigurationNotFoundError, HostnameNotSetError, JobSubmitError
 from sbatchman.config.global_config import get_hostname
-from sbatchman.config.project_config import get_scheduler_from_hostname
+from sbatchman.config.project_config import get_project_configs_file_path, get_scheduler_from_hostname
 
 from sbatchman.config.project_config import get_project_config_dir, get_experiments_dir
-from ..schedulers.local import LocalConfig, local_submit
-from ..schedulers.slurm import slurm_submit
-from ..schedulers.pbs import pbs_submit
-import yaml
+from ..schedulers.local import BaseConfig, LocalConfig, local_submit
+from ..schedulers.slurm import SlurmConfig, slurm_submit
+from ..schedulers.pbs import PbsConfig, pbs_submit
 
 class Job(TypedDict):
   config_name: str
@@ -24,7 +25,52 @@ class Job(TypedDict):
   status: str
   scheduler: str
   job_id: str
-  archive_name: Optional[str]
+  archive_name: Optional[str] 
+
+def get_config(hostname: str, config_name: str) -> BaseConfig:
+  """
+  Returns the configuration of the job. It will specialize the class to either SlurmConfig, LocalConfig or PbsConfig
+  """
+  configs_file_path = get_project_configs_file_path()
+
+  if not configs_file_path.exists():
+    raise ConfigurationNotFoundError(f"Configuration '{configs_file_path}' for hostname '{hostname}' not found at '{configs_file_path}'.")
+  
+  configs = yaml.safe_load(open(configs_file_path, 'r'))
+  if hostname not in configs:
+    raise ConfigurationError(f"Could not find hostname '{hostname}' in configurations.yaml file ({configs_file_path})")
+  
+  scheduler = configs[hostname]['scheduler']
+  configs = configs[hostname]['configs']
+  if config_name not in configs:
+    raise ConfigurationError(f"Could not find configuration '{config_name}' in configurations.yaml file ({configs_file_path})")
+  
+  config_dict = configs[config_name]
+  if scheduler == 'slurm':
+    return SlurmConfig(**config_dict)
+  elif scheduler == 'pbs':
+    return PbsConfig(**config_dict)
+  elif scheduler == 'local':
+    return LocalConfig(**config_dict)
+  else:
+    raise ConfigurationError(f"No class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
+
+
+def get_config_script_template(config_name: str, hostname: str) -> str:
+  config_path = get_project_config_dir() / hostname / f"{config_name}.sh"
+
+  if not config_path.exists():
+    raise ConfigurationNotFoundError(f"Configuration '{config_name}' for hostname '{hostname}' not found at '{config_path}'.")
+
+  return open(config_path, "r").read()
+  
+
+def get_job_config(job: Job) -> BaseConfig:
+  """
+  Returns the configuration of the job. It will specialize the class to either SlurmConfig, LocalConfig or PbsConfig
+  """
+  return get_config(job['hostname'], job['config_name'])
+
 
 def launch_job(config_name: str, command: str, hostname: Optional[str] = None, tag: str = "default") -> Job:
   """
@@ -40,15 +86,10 @@ def launch_job(config_name: str, command: str, hostname: Optional[str] = None, t
       )
 
   scheduler = get_scheduler_from_hostname(hostname)
+  template_script = get_config_script_template(config_name, scheduler)
 
   # Capture the Current Working Directory at the time of launch
   submission_cwd = Path.cwd()
-
-  # 1. Resolve the config path
-  config_path = get_project_config_dir() / hostname / scheduler / f"{config_name}.sh"
-
-  if not config_path.exists():
-    raise ConfigurationNotFoundError(f"Configuration '{config_name}' for hostname '{hostname}' not found at '{config_path}'.")
     
   # 2. Create a unique, nested directory for this experiment run
   timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -64,10 +105,7 @@ def launch_job(config_name: str, command: str, hostname: Optional[str] = None, t
     counter += 1
   exp_dir.mkdir(parents=True, exist_ok=False)
 
-  # 4. Prepare the final runnable script
-  with open(config_path, "r") as f:
-    template_script = f.read()
-  
+  # 3. Prepare the final runnable script
   # Replace placeholders for log and CWD
   final_script_content = template_script.replace(
     "{EXP_DIR}", str(exp_dir.resolve())
@@ -116,3 +154,133 @@ def launch_job(config_name: str, command: str, hostname: Optional[str] = None, t
     with open(exp_dir / "metadata.yaml", "w") as f:
       yaml.safe_dump(metadata, f, default_flow_style=False)
     return metadata
+
+
+def _load_variable_values(var_value):
+    # If var_value is a list, return as is
+    if isinstance(var_value, list):
+        return var_value
+    # If var_value is a string and a file, read lines
+    elif isinstance(var_value, str):
+        path = Path(var_value)
+        if path.is_file():
+            with open(path, "r") as f:
+                return [line.strip() for line in f if line.strip()]
+        elif path.is_dir():
+            # Return sorted list of file names in the directory
+            return sorted([str(p.absolute()) for p in path.iterdir() if p.is_file()])
+        else:
+            raise JobSubmitError(
+                f"Variable value '{var_value}' is not a list, file, or directory.\n"
+                "YAML script semantics:\n"
+                "- Variables can be lists, a path to a file (one value per line), or a path to a directory (all file absolute paths used as values).\n"
+                "- The cartesian product of all variable values is used to generate jobs.\n"
+                "- Experiments can define configuration names (possibly using variables) and tags.\n"
+                "- 'command' and 'variables' can be redefined or extended in inner YAML tags.\n"
+                "- The '{var_name}' syntax is substituted with the actual value of 'var_name'."
+            )
+    else:
+        return [var_value]
+
+
+def _merge_dicts(base, override):
+  # Recursively merge two dictionaries
+  result = dict(base)
+  for k, v in override.items():
+    if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+      result[k] = _merge_dicts(result[k], v)
+    else:
+      result[k] = v
+  return result
+
+
+def _substitute(template, variables):
+  # Replace {var} in template with values from variables
+  if not isinstance(template, str):
+    return template
+  return template.format(**variables)
+
+
+def _extract_used_vars(*templates):
+  """Extract variable names used in {var} format from given templates."""
+  var_names = set()
+  for template in templates:
+    if isinstance(template, str):
+      var_names.update(re.findall(r"{(\w+)}", template))
+  return var_names
+
+def launch_jobs_from_file(jobs_file_path: Path) -> List[Job]:
+  with open(jobs_file_path, "r") as f:
+    config = yaml.safe_load(f)
+
+  global_vars = config.get("variables", {})
+  global_command = config.get("command", None)
+  experiments = config.get("experiments", {})
+
+  # Prepare global variable values (expand files if needed)
+  expanded_global_vars = {}
+  for k, v in global_vars.items():
+    expanded_global_vars[k] = _load_variable_values(v)
+
+  jobs = []
+
+  for exp_name_template, exp_data in experiments.items():
+    exp_command = exp_data.get("command", global_command)
+    exp_vars = exp_data.get("variables", {})
+    expanded_exp_vars = {}
+    for k, v in exp_vars.items():
+      expanded_exp_vars[k] = _load_variable_values(v)
+
+    merged_exp_vars = dict(expanded_global_vars)
+    merged_exp_vars.update(expanded_exp_vars)
+
+    tags = exp_data.get("tags", {})
+    if tags:
+      for tag_name, tag_data in tags.items():
+        tag_vars = tag_data.get("variables", {})
+        expanded_tag_vars = {}
+        for k, v in tag_vars.items():
+          expanded_tag_vars[k] = _load_variable_values(v)
+        merged_vars = dict(merged_exp_vars)
+        merged_vars.update(expanded_tag_vars)
+        tag_command = tag_data.get("command", exp_command)
+
+        # Only use variables referenced in exp_name, command, or tag_command
+        used_vars = _extract_used_vars(exp_name_template, tag_command)
+        filtered_vars = {k: v for k, v in merged_vars.items() if k in used_vars}
+
+        if not filtered_vars:
+          continue  # No variables used, skip job generation
+
+        keys, values = zip(*filtered_vars.items()) if filtered_vars else ([], [])
+        for combination in itertools.product(*values):
+          var_dict = dict(zip(keys, combination))
+          exp_name = _substitute(exp_name_template, var_dict)
+          command = _substitute(tag_command, var_dict)
+          # print('='*40)
+          # print(f'{exp_name=}')
+          # print(f'{command=}')
+          # print(f'{tag_name=}')
+          # print('='*40)
+          job = launch_job(exp_name, command, tag=tag_name)
+          jobs.append(job)
+    else:
+      used_vars = _extract_used_vars(exp_name_template, exp_command)
+      filtered_vars = {k: v for k, v in merged_exp_vars.items() if k in used_vars}
+
+      if not filtered_vars:
+        continue  # No variables used, skip job generation
+
+      keys, values = zip(*filtered_vars.items()) if filtered_vars else ([], [])
+      for combination in itertools.product(*values):
+        var_dict = dict(zip(keys, combination))
+        exp_name = _substitute(exp_name_template, var_dict)
+        command = _substitute(exp_command, var_dict)
+        # print('='*40)
+        # print(f'{exp_name=}')
+        # print(f'{command=}')
+        # print('='*40)
+        job = launch_job(exp_name, command)
+        jobs.append(job)
+
+  return jobs

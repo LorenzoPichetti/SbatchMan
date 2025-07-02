@@ -83,7 +83,7 @@ def init(
 @configure_app.command("slurm")
 def configure_slurm(
   name: str = typer.Option(..., "--name", help="A unique name for this configuration."),
-  hostname: str = typer.Option(..., "--hostname", help="The name of the machine where this configuration will be used."),
+  hostname: Optional[str] = typer.Option(None, "--hostname", help="The name of the machine where this configuration will be used."),
   partition: Optional[str] = typer.Option(None, help="SLURM partition name."),
   nodes: Optional[str] = typer.Option(None, help="SLURM number of nodes."),
   ntasks: Optional[str] = typer.Option(None, help="SLURM number of tasks."),
@@ -91,15 +91,22 @@ def configure_slurm(
   mem: Optional[str] = typer.Option(None, help="Memory requirement (e.g., 16G, 64G)."),
   time: Optional[str] = typer.Option(None, help="Walltime (e.g., 01-00:00:00)."),
   gpus: Optional[int] = typer.Option(None, help="Number of GPUs."),
+  constraint: Optional[str] = typer.Option(None, help="SLURM constraint."),
+  nodelist: Optional[str] = typer.Option(None, help="SLURM nodelist."),
+  qos: Optional[str] = typer.Option(None, help="SLURM quality of service (qos)."),
+  reservation: Optional[str] = typer.Option(None, help="SLURM reservation."),
   env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times."),
   module: Optional[List[str]] = typer.Option(None, "--module", help="Module to load. Can be used multiple times."),
+  overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configuration."),
 ):
   """Creates a SLURM configuration."""
   while True:
     try:
       config_path = api.create_slurm_config(
-        name=name, partition=partition, nodes=nodes, ntasks=ntasks,
-        cpus_per_task=cpus_per_task, mem=mem, time=time, gpus=gpus, env=env, modules=module, hostname=hostname
+        name=name, hostname=hostname,
+        partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem,
+        time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation,
+        env=env, modules=module, overwrite=overwrite
       )
       _save_config_print(name, config_path)
       break
@@ -112,18 +119,19 @@ def configure_slurm(
 @configure_app.command("pbs")
 def configure_pbs(
   name: str = typer.Option(..., "--name", help="A unique name for this configuration."),
-  hostname: str = typer.Option(..., "--hostname", help="The name of the machine where this configuration will be used."),
+  hostname: Optional[str] = typer.Option(None, "--hostname", help="The name of the machine where this configuration will be used."),
   queue: Optional[str] = typer.Option(None, help="PBS queue name."),
   cpus: Optional[int] = typer.Option(None, help="Number of CPUs."),
   mem: Optional[str] = typer.Option(None, help="Memory requirement (e.g., 16gb, 64gb)."),
   walltime: Optional[str] = typer.Option(None, help="Walltime (e.g., 01:00:00)."),
   env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value)."),
   module: Optional[List[str]] = typer.Option(None, "--module", help="Module to load. Can be used multiple times."),
+  overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configuration."),
 ):
   """Creates a PBS configuration."""
   while True:
     try:
-      config_path = api.create_pbs_config(name=name, hostname=hostname, queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, modules=module)
+      config_path = api.create_pbs_config(name=name, hostname=hostname, queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, modules=module, overwrite=overwrite)
       _save_config_print(name, config_path)
       break
     except ProjectNotInitializedError:
@@ -135,14 +143,15 @@ def configure_pbs(
 @configure_app.command("local")
 def configure_local(
   name: str = typer.Option(..., "--name", help="A unique name for this configuration."),
-  hostname: str = typer.Option(..., "--hostname", help="The name of the machine where this configuration will be used."),
+  hostname: Optional[str] = typer.Option(None, "--hostname", help="The name of the machine where this configuration will be used."),
   env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value)."),
   module: Optional[List[str]] = typer.Option(None, "--module", help="Module to load. Can be used multiple times."),
+  overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configuration."),
 ):
   """Creates a configuration for local execution."""
   while True:
     try:
-      config_path = api.create_local_config(name=name, env=env, modules=module, hostname=hostname)
+      config_path = api.create_local_config(name=name, env=env, modules=module, hostname=hostname, overwrite=overwrite)
       _save_config_print(name, config_path)
     except ProjectNotInitializedError:
       _handle_not_initialized()
@@ -152,34 +161,30 @@ def configure_local(
 
 @app.command("launch")
 def launch(
-  config_name: str = typer.Option(..., "--config_name", help="Configuration name."),
-  hostname: Optional[str] = typer.Option(None, "--hostname", help="Hostname for this experiment. Defaults to the global hostname if set."),
+  jobs_file: Optional[Path] = typer.Option(None, "--jobs_file", help="YAML file that describes a batch of experiments."),
+  config_name: Optional[str] = typer.Option(None, "--config_name", help="Configuration name."),
   tag: str = typer.Option("default", "--tag", help="Tag for this experiment (default: 'default')."),
-  command: str = typer.Argument(..., help="The executable and its parameters, enclosed in quotes."),
+  command: Optional[str] = typer.Argument(None, help="The executable and its parameters, enclosed in quotes."),
 ):
-  """Launches an experiment using a predefined configuration."""
-  # Hostname resolution logic
-  if not hostname:
-    try:
-      hostname = global_config.get_hostname()
-    except HostnameNotSetError:
-      console.print(
-        "[bold red]Error:[/bold red] Hostname not specified and not set globally.\n"
-        "Please provide --hostname or use 'sbatchman set-hostname <hostname>' to set a global default."
-      )
-      raise typer.Exit(1)
+  """Launches an experiment (or a batch of experiments) using a predefined configuration."""
 
-  # Call the API/launcher
   try:
-    job = api.launch_job(
-      config_name=config_name,
-      command=command,
-      hostname=hostname,
-      tag=tag
-    )
-    console.print(f"✅ Experiment for config '[bold cyan]{config_name}[/bold cyan]' submitted successfully.")
-    console.print(f"   ┣━ Job ID: {job['job_id']}")
-    console.print(f"   ┗━ Exp. Dir: {job['exp_dir']}")
+    # Call the API/launcher
+    if jobs_file:
+      jobs = api.launch_jobs_from_file(jobs_file)
+      console.print(f"✅ Submitted successfully {len(jobs)} jobs.")
+    elif config_name and tag and command:
+        job = api.launch_job(
+          config_name=config_name,
+          command=command,
+          tag=tag
+        )
+        console.print(f"✅ Experiment for config '[bold cyan]{config_name}[/bold cyan]' submitted successfully.")
+        console.print(f"   ┣━ Job ID: {job['job_id']}")
+        console.print(f"   ┗━ Exp. Dir: {job['exp_dir']}")
+    else:
+      console.print(f"[bold red]You must provide exactly on of: --jobs_file or (--config_name and --command)[/bold red]")
+      raise typer.Exit(1)
   except SbatchManError as e:
     console.print(f"[bold red]Error:[/bold red] {e}")
     raise typer.Exit(1)

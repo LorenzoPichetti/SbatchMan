@@ -1,13 +1,13 @@
 # src/exp_kit/schedulers/base.py
 from abc import ABC, abstractmethod
-from typing import Any, Generic, List, Optional, Dict, Tuple, TypeVar
+from typing import List, Optional
 from pathlib import Path
 from dataclasses import asdict, dataclass
 
 import yaml
 
 from sbatchman.exceptions import ConfigurationError, SchedulerMismatchError
-from sbatchman.config.project_config import get_project_config_dir, get_project_config_path
+from sbatchman.config.project_config import get_project_config_dir, get_project_configs_file_path
 
 @dataclass
 class BaseConfig(ABC):
@@ -98,7 +98,7 @@ class BaseConfig(ABC):
 
   def _update_main_config_yaml(self, overwrite: bool = False):
     """Reads, updates, and writes to the central configurations.yaml file."""
-    config_path = get_project_config_path()
+    config_path = get_project_configs_file_path()
 
     try:
       with open(config_path, 'r') as f:
@@ -112,7 +112,7 @@ class BaseConfig(ABC):
         raise SchedulerMismatchError(f"Hostname '{self.hostname}' is already configured with scheduler '{data[self.hostname]['scheduler']}'. Cannot add a '{scheduler_name}' configuration.")
     
     if not overwrite and self.hostname in data and self.name in data[self.hostname].get('configs', {}):
-      raise ConfigurationError(f"Configuration '{self.name}' for hostname '{self.hostname}' already exists. Use 'overwrite=True' to update it.")
+      raise ConfigurationError(f"Configuration '{self.name}' for hostname '{self.hostname}' already exists. Use '--overwrite' to update it.")
     
     data.setdefault(self.hostname, {})['scheduler'] = scheduler_name
     data[self.hostname].setdefault('configs', {})
@@ -133,7 +133,7 @@ class BaseConfig(ABC):
   def _create_script(self) -> Path:
     """Saves the configuration script to a file inside a scheduler-specific folder."""
     script_content = self._generate_script()
-    config_dir = get_project_config_dir() / self.get_scheduler_name()
+    config_dir = get_project_config_dir() / self.hostname
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / f"{self.name}.sh"
 

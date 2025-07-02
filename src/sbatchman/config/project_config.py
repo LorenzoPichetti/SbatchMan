@@ -1,9 +1,8 @@
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 import yaml
 
 from sbatchman.exceptions import ConfigurationError, ProjectExistsError, ProjectNotInitializedError
-from sbatchman.schedulers.base import BaseConfig
 
 # The name of the root directory to search for.
 PROJECT_ROOT_DIR_NAME = "SbatchMan"
@@ -60,7 +59,7 @@ def get_project_config_dir() -> Path:
   path.mkdir(parents=True, exist_ok=True)
   return path
 
-def get_project_config_path() -> Path:
+def get_project_configs_file_path() -> Path:
   """Returns the path to the main configurations.yaml file."""
   return get_project_root() / "configs" / "configurations.yaml"
 
@@ -75,7 +74,7 @@ def get_scheduler_from_hostname(hostname: str) -> str:
   Detects the scheduler type based on the hostname, as stored in the project configuration.
   Returns the scheduler name as a string.
   """
-  config_path = get_project_config_path()
+  config_path = get_project_configs_file_path()
   
   if not config_path.exists():
     raise ConfigurationError(f"Project configuration file not found.")
