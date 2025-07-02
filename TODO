@@ -1,8 +1,8 @@
-add configuration scheduler in name of config .sh
+OK add configuration scheduler in name of config .sh
 
-configurable via sbatchman init and asked at installation
+OK configurable via sbatchman init and asked at installation
 
-add to sbatchman configure option to pass modules to be loaded
+OK add to sbatchman configure option to pass modules to be loaded
 
 # SBatchman commands
 configure
@@ -61,23 +61,24 @@ add command to update the status of all jobs, that queries the specific schedule
 #### do not edit it manually, use sbatchman configure --file config.yaml to add configurations
 baldo:
   scheduler: slurm
-  bfs1cpu:
-    partition: short
-    cpu: 1
-    ...
-  bfs2cpu:
-    partition: long
-    cpu: 2
-    ...
+  configs:
+    bfs1cpu:
+      partition: short
+      cpu: 1
+      ...
+    bfs2cpu:
+      partition: long
+      cpu: 2
+      ...
 hpc-unitn:
-  - scheduler: pbs
-  - default_conf:
+  scheduler: pbs
+  default_conf:
       partition: unitn-short
       ...
-  - configs:
+  configs:
     bfs1cpu:
       cpu: 1
-      #default queue: unitn-short
+      <!-- default queue: unitn-short -->
       ...
     bfs2cpu:
       partition: long
@@ -115,8 +116,8 @@ experiments/
 │   │   │   ├── job_id
 │   │   │   ├── job_id
 archive/
-|── baldo
-|   |── archive_name
+|── archive_name
+|   |── baldo
 |   |   ├── bfs1cpu
 |   |   │   ├── shortDiam
 |   |   │   │   ├── job_id

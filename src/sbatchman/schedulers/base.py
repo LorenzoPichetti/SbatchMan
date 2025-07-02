@@ -1,13 +1,26 @@
 # src/exp_kit/schedulers/base.py
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Tuple
+from typing import Any, Generic, List, Optional, Dict, Tuple, TypeVar
 from pathlib import Path
-import subprocess
+from dataclasses import asdict, dataclass
 
-class Scheduler(ABC):
-  """Abstract base class for all job schedulers."""
+import yaml
 
-  def generate_script(self, name: str, **kwargs) -> str:
+from sbatchman.exceptions import ConfigurationError, SchedulerMismatchError
+from sbatchman.config.project_config import get_project_config_dir, get_project_config_path
+
+@dataclass
+class BaseConfig(ABC):
+  """Abstract base class for all scheduler configs."""
+
+  name: str
+  hostname: str
+  env: Optional[List[str]] = None
+  modules: Optional[List[str]] = None
+
+  _schedulers = {}
+
+  def _generate_script(self) -> str:
     """
     Generates the full submission script using a template method pattern.
     """
@@ -20,7 +33,14 @@ class Scheduler(ABC):
     ]
 
     # Get scheduler-specific lines from the subclass implementation.
-    scheduler_directives = self._generate_scheduler_directives(name, **kwargs)
+    scheduler_directives = self._generate_scheduler_directives()
+
+    # Add module loading commands
+    module_setup = []
+    if modules := self.modules:
+      module_setup.append("\n# Load environment modules")
+      for module in modules:
+        module_setup.append(f"module load {module}")
 
     # Add a command to CD into the submission directory
     working_dir_setup = [
@@ -32,9 +52,10 @@ class Scheduler(ABC):
       'fi',
     ]
 
-    # Handle common environment variables.
-    env_vars = ["\n# Environment variables"]
-    if envs := kwargs.get("env"):
+    # Set environment variables
+    env_vars = []
+    if envs := self.env:
+      env_vars = ["\n# Environment variables"]
       for env_var in envs:
         env_vars.append(f"export {env_var}")
     
@@ -59,24 +80,73 @@ class Scheduler(ABC):
     return "\n".join(all_lines)
 
   @abstractmethod
-  def _generate_scheduler_directives(self, name: str, **kwargs) -> List[str]:
+  def _generate_scheduler_directives(self) -> List[str]:
     """
     (Abstract) Generates the list of scheduler-specific directive lines.
     This must be implemented by subclasses.
     """
     pass
 
+  @staticmethod
   @abstractmethod
-  def submit(self, script_path: Path, exp_dir: Path) -> str:
+  def get_scheduler_name() -> str:
     """
-    Submits the job to the scheduler and returns the job ID.
-    This method contains all logic for running the submission command.
-
-    Args:
-      script_path: The path to the executable bash script.
-      exp_dir: The directory for the experiment's logs.
-
-    Returns:
-      The job ID as a string.
+    Returns the name of the scheduler this parameters class is associated with.
+    This must be implemented by subclasses.
     """
     pass
+
+  def _update_main_config_yaml(self, overwrite: bool = False):
+    """Reads, updates, and writes to the central configurations.yaml file."""
+    config_path = get_project_config_path()
+
+    try:
+      with open(config_path, 'r') as f:
+        data = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+      data = {}
+
+    scheduler_name = self.get_scheduler_name()
+    if self.hostname in data:
+      if data[self.hostname].get('scheduler') != scheduler_name:
+        raise SchedulerMismatchError(f"Hostname '{self.hostname}' is already configured with scheduler '{data[self.hostname]['scheduler']}'. Cannot add a '{scheduler_name}' configuration.")
+    
+    if not overwrite and self.hostname in data and self.name in data[self.hostname].get('configs', {}):
+      raise ConfigurationError(f"Configuration '{self.name}' for hostname '{self.hostname}' already exists. Use 'overwrite=True' to update it.")
+    
+    data.setdefault(self.hostname, {})['scheduler'] = scheduler_name
+    data[self.hostname].setdefault('configs', {})
+
+    # Use asdict for clean conversion and filter keys
+    param_dict = asdict(self)
+    clean_config_params = {
+      k: v for k, v in param_dict.items() 
+      if v is not None and k not in ['name', 'hostname']
+    }
+    clean_config_params['scheduler'] = scheduler_name
+    data[self.hostname]['configs'][self.name] = clean_config_params
+
+    with open(config_path, 'w') as f:
+      yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+
+  def _create_script(self) -> Path:
+    """Saves the configuration script to a file inside a scheduler-specific folder."""
+    script_content = self._generate_script()
+    config_dir = get_project_config_dir() / self.get_scheduler_name()
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / f"{self.name}.sh"
+
+    with open(config_path, "w") as f:
+      f.write(script_content)
+    return config_path
+  
+  def save_config(self, overwrite: bool = False) -> Path:
+    """
+    Creates a configuration script and updates the configuration file.
+
+    Returns:
+      The path to the created configuration script file.
+    """
+    self._update_main_config_yaml(overwrite)
+    return self._create_script()

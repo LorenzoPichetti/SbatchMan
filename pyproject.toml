@@ -20,6 +20,8 @@ dependencies = [
     "typer[all]",
     "textual",
     "rich",
+    "PyYAML",
+    "platformdirs",
 ]
 
 [project.urls]
