@@ -63,7 +63,7 @@ class BaseConfig(ABC):
       self._generate_jobid_update_line(),
       "\n# Update status to RUNNING",
       'if [ -f "{EXP_DIR}/metadata.yaml" ]; then',
-      '  sed -i \'s/"status": ".*"/"status": "RUNNING"/\' {EXP_DIR}/metadata.yaml',
+      '  sed -i \'s/status: .*/status: RUNNING/\' {EXP_DIR}/metadata.yaml',
       'fi',
     ]
 
@@ -78,14 +78,14 @@ class BaseConfig(ABC):
     footer = [
       "\n# User command",
       'echo "Running command: {CMD}"',
-      'eval {CMD}',
+      '{CMD}',
       'EXIT_CODE=$?',
       "\n# Update status to FINISHED or FAILED",
       'if [ -f "{EXP_DIR}/metadata.yaml" ]; then',
       '  if [ $EXIT_CODE -eq 0 ]; then',
-      '    sed -i \'s/"status": ".*"/"status": "FINISHED"/\' {EXP_DIR}/metadata.yaml',
+      '    sed -i \'s/status: .*/status: FINISHED/\' {EXP_DIR}/metadata.yaml',
       '  else',
-      '    sed -i \'s/"status": ".*"/"status": "FAILED"/\' {EXP_DIR}/metadata.yaml',
+      '    sed -i \'s/status: .*/status: FAILED/\' {EXP_DIR}/metadata.yaml',
       '  fi',
       'fi',
       'exit $EXIT_CODE',
