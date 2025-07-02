@@ -3,18 +3,17 @@ from typing import List, Optional
 from rich.console import Console
 from pathlib import Path
 
+import sbatchman.api as api
 from sbatchman.config import global_config
-from sbatchman.exceptions import HostnameNotSetError, ProjectExistsError, ProjectNotInitializedError, SbatchManError, SchedulerMismatchError
+from sbatchman.exceptions import ProjectNotInitializedError, SbatchManError
 
 from .tui.tui import run_tui
-from .api import SbatchManAPI
 
 app = typer.Typer(help="A utility to create, launch, and monitor code experiments.")
 configure_app = typer.Typer(help="Create a configuration for a scheduler.")
 app.add_typer(configure_app, name="configure")
 
 console = Console()
-api = SbatchManAPI()
 app = typer.Typer(help="A utility to create, launch, and monitor code experiments.")
 configure_app = typer.Typer(help="Create a configuration for a scheduler.")
 app.add_typer(configure_app, name="configure")
@@ -89,6 +88,7 @@ def configure_slurm(
   ntasks: Optional[str] = typer.Option(None, help="SLURM number of tasks."),
   cpus_per_task: Optional[int] = typer.Option(None, help="Number of CPUs per task."),
   mem: Optional[str] = typer.Option(None, help="Memory requirement (e.g., 16G, 64G)."),
+  account: Optional[str] = typer.Option(None, help="SLURM account"),
   time: Optional[str] = typer.Option(None, help="Walltime (e.g., 01-00:00:00)."),
   gpus: Optional[int] = typer.Option(None, help="Number of GPUs."),
   constraint: Optional[str] = typer.Option(None, help="SLURM constraint."),
@@ -104,7 +104,7 @@ def configure_slurm(
     try:
       config_path = api.create_slurm_config(
         name=name, hostname=hostname,
-        partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem,
+        partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem, account=account,
         time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation,
         env=env, modules=module, overwrite=overwrite
       )
@@ -153,6 +153,7 @@ def configure_local(
     try:
       config_path = api.create_local_config(name=name, env=env, modules=module, hostname=hostname, overwrite=overwrite)
       _save_config_print(name, config_path)
+      break
     except ProjectNotInitializedError:
       _handle_not_initialized()
     except SbatchManError as e:
@@ -180,8 +181,8 @@ def launch(
           tag=tag
         )
         console.print(f"✅ Experiment for config '[bold cyan]{config_name}[/bold cyan]' submitted successfully.")
-        console.print(f"   ┣━ Job ID: {job['job_id']}")
-        console.print(f"   ┗━ Exp. Dir: {job['exp_dir']}")
+        console.print(f"   ┣━ Job ID: {job.job_id}")
+        console.print(f"   ┗━ Exp. Dir: {job.exp_dir}")
     else:
       console.print(f"[bold red]You must provide exactly on of: --jobs_file or (--config_name and --command)[/bold red]")
       raise typer.Exit(1)

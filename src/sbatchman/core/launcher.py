@@ -5,7 +5,9 @@ import itertools
 import re
 import yaml
 from pathlib import Path
-from typing import List, Optional, TypedDict
+from typing import List, Optional
+from dataclasses import dataclass, asdict
+import shlex
 
 from sbatchman.exceptions import ConfigurationError, ConfigurationNotFoundError, HostnameNotSetError, JobSubmitError
 from sbatchman.config.global_config import get_hostname
@@ -16,7 +18,8 @@ from ..schedulers.local import BaseConfig, LocalConfig, local_submit
 from ..schedulers.slurm import SlurmConfig, slurm_submit
 from ..schedulers.pbs import PbsConfig, pbs_submit
 
-class Job(TypedDict):
+@dataclass
+class Job:
   config_name: str
   hostname: str
   timestamp: str
@@ -25,7 +28,69 @@ class Job(TypedDict):
   status: str
   scheduler: str
   job_id: str
-  archive_name: Optional[str] 
+  archive_name: Optional[str] = None
+
+  def get_job_config(self) -> BaseConfig:
+    """
+    Returns the configuration of the job. It will specialize the class to either SlurmConfig, LocalConfig or PbsConfig
+    """
+    return get_config(self.hostname, self.config_name)
+
+  def parse_command_args(self):
+    """
+    Parses the command string if it is a simple CLI command (no pipes, redirections, or shell operators).
+    Returns (executable, args_dict) where args_dict maps argument names to values.
+    """
+    if any(op in self.command for op in ['|', '>', '<', ';', '&&', '||']):
+      return None, None
+
+    tokens = shlex.split(self.command)
+    if not tokens:
+      return None, None
+
+    executable = tokens[0]
+    args_dict = {}
+    key = None
+    for token in tokens[1:]:
+      if token.startswith('--'):
+        if '=' in token:
+          k, v = token[2:].split('=', 1)
+          args_dict[k] = v
+          key = None
+        else:
+          key = token[2:]
+          args_dict[key] = True
+      elif token.startswith('-') and len(token) > 1:
+        key = token[1:]
+        args_dict[key] = True
+      else:
+        if key:
+          args_dict[key] = token
+          key = None
+    return executable, args_dict
+
+  def get_stdout(self) -> Optional[str]:
+    """
+    Returns the contents of the stdout log file for this job, or None if not found.
+    """
+    exp_dir_path = get_experiments_dir() / self.exp_dir
+    stdout_path = exp_dir_path / "stdout.log"
+    if stdout_path.exists():
+      with open(stdout_path, "r") as f:
+        return f.read()
+    return None
+
+  def get_stderr(self) -> Optional[str]:
+    """
+    Returns the contents of the stderr log file for this job, or None if not found.
+    """
+    exp_dir_path = get_experiments_dir() / self.exp_dir
+    stderr_path = exp_dir_path / "stderr.log"
+    if stderr_path.exists():
+      with open(stderr_path, "r") as f:
+        return f.read()
+    return None
+  
 
 def get_config(hostname: str, config_name: str) -> BaseConfig:
   """
@@ -64,13 +129,6 @@ def get_config_script_template(config_name: str, hostname: str) -> str:
 
   return open(config_path, "r").read()
   
-
-def get_job_config(job: Job) -> BaseConfig:
-  """
-  Returns the configuration of the job. It will specialize the class to either SlurmConfig, LocalConfig or PbsConfig
-  """
-  return get_config(job['hostname'], job['config_name'])
-
 
 def launch_job(config_name: str, command: str, hostname: Optional[str] = None, tag: str = "default") -> Job:
   """
@@ -120,17 +178,21 @@ def launch_job(config_name: str, command: str, hostname: Optional[str] = None, t
     f.write(final_script_content)
   run_script_path.chmod(0o755)
 
-  metadata: Job = {
-    "config_name": config_name,
-    "hostname": hostname,
-    "timestamp": timestamp,
-    "exp_dir": str(exp_dir_local),
-    "command": command,
-    "status": "SUBMITTING",
-    "scheduler": scheduler,
-    "job_id": "",
-    "archive_name": None,
-  }
+  metadata = Job(
+    config_name=config_name,
+    hostname=hostname,
+    timestamp=timestamp,
+    exp_dir=str(exp_dir_local),
+    command=command,
+    status="SUBMITTING",
+    scheduler=scheduler,
+    job_id="",
+    archive_name=None,
+  )
+
+  # 4. Write metadata.yaml before job submission
+  with open(exp_dir / "metadata.yaml", "w") as f:
+    yaml.safe_dump(asdict(metadata), f, default_flow_style=False)
 
   try:
     # 5. Submit the job using the scheduler's own logic
@@ -144,15 +206,13 @@ def launch_job(config_name: str, command: str, hostname: Optional[str] = None, t
     else:
       raise ConfigurationError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
     
-    metadata["job_id"] = job_id
-
+    metadata.job_id = job_id
   except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
-    metadata["status"] = "FAILED_SUBMISSION"
-    raise
-  finally:
-    # 6. Save metadata
+    metadata.status = "FAILED_SUBMISSION"
     with open(exp_dir / "metadata.yaml", "w") as f:
-      yaml.safe_dump(metadata, f, default_flow_style=False)
+      yaml.safe_dump(asdict(metadata), f, default_flow_style=False)
+    raise
+  finally:    
     return metadata
 
 
@@ -164,11 +224,11 @@ def _load_variable_values(var_value):
     elif isinstance(var_value, str):
         path = Path(var_value)
         if path.is_file():
-            with open(path, "r") as f:
-                return [line.strip() for line in f if line.strip()]
+          with open(path, "r") as f:
+            return [line.strip().replace('\n', '') for line in f if line.strip()]
         elif path.is_dir():
-            # Return sorted list of file names in the directory
-            return sorted([str(p.absolute()) for p in path.iterdir() if p.is_file()])
+          # Return sorted list of file names in the directory
+          return sorted([str(p.absolute()) for p in path.iterdir() if p.is_file()])
         else:
             raise JobSubmitError(
                 f"Variable value '{var_value}' is not a list, file, or directory.\n"

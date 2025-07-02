@@ -128,8 +128,11 @@ archive/
 # launch jobs
 sbatchman launch --hostname baldo --name bfs1cpu --tag shortDiam --config bfs1cpu --command "python script.py" --archive_name run1
 
-sbatchman launch -f config.yaml --exclude_tag shortDiam --include_config bfs1cpu,bfs2cpu
 
+sbatchman launch -f config.yaml --exclude_tag shortDiam --include_config bfs1cpu,bfs2cpu
+# also include/exclude the other way around
+
+-- OK BATCH JOBS file
 variables:
   merged: [True, False]
   atomics: [True, False]
@@ -148,3 +151,4 @@ experiments:
           dataset: datasets/large
       atomics:
         command: python script.py --file {small_dim} --n {n} --m {m} --atomic
+-- END OK BATCH JOBS file

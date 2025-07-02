@@ -5,7 +5,6 @@ from textual.screen import Screen
 from textual.coordinate import Coordinate
 from textual.widgets.data_table import RowDoesNotExist
 from pathlib import Path
-import json
 from typing import Optional
 from datetime import datetime
 
@@ -60,16 +59,17 @@ class JobsScreen(Screen):
     if self.experiments_root.exists():
       for config_dir in self.experiments_root.iterdir():
         if not config_dir.is_dir(): continue
+        import yaml
         for exp_dir in config_dir.iterdir():
-          metadata_path = exp_dir / "metadata.json"
+          metadata_path = exp_dir / "metadata.yaml"
           if exp_dir.is_dir() and metadata_path.exists():
             with open(metadata_path, "r") as f:
               try:
-                data = json.load(f)
+                data = yaml.safe_load(f)
                 data['exp_dir'] = str(exp_dir)
                 experiments.append(data)
-              except json.JSONDecodeError:
-                self.log(f"Error decoding JSON from {metadata_path}")
+              except yaml.YAMLError:
+                self.log(f"Error decoding YAML from {metadata_path}")
     
     self.all_jobs = experiments
     self.update_tables()

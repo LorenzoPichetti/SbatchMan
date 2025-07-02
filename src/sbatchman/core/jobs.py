@@ -22,7 +22,7 @@ def list_jobs(
   # Scan active jobs
   for metadata_path in exp_dir.glob("**/metadata.yaml"):
     with open(metadata_path, 'r') as f:
-      job = yaml.safe_load(f)
+      job_dict = yaml.safe_load(f)
       # Apply filters
       if hostname and not metadata_path.parts[-5] == hostname:
         continue
@@ -30,14 +30,14 @@ def list_jobs(
         continue
       if tag and not metadata_path.parts[-3] == tag:
         continue
-      jobs.append(job)
+      jobs.append(Job(**job_dict))
 
   # Scan archived jobs
   if include_archived:
     archive_root = get_archive_dir()
     for metadata_path in archive_root.glob("*/**/metadata.yaml"):
       with open(metadata_path, 'r') as f:
-        job = yaml.safe_load(f)
+        job_dict = yaml.safe_load(f)
         # Apply filters
         if hostname and not metadata_path.parts[-5] == hostname:
           continue
@@ -45,7 +45,7 @@ def list_jobs(
           continue
         if tag and not metadata_path.parts[-3] == tag:
           continue
-        jobs.append(job)
+        jobs.append(Job(**job_dict))
   
   return jobs
   

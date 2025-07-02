@@ -16,6 +16,7 @@ class SlurmConfig(BaseConfig):
   ntasks: Optional[str] = None
   cpus_per_task: Optional[int] = None
   mem: Optional[str] = None
+  account: Optional[str] = None
   time: Optional[str] = None
   gpus: Optional[int] = None
   constraint: Optional[str] = None
@@ -33,6 +34,7 @@ class SlurmConfig(BaseConfig):
     if n := self.nodes: lines.append(f"#SBATCH --nodes={n}")
     if t := self.ntasks: lines.append(f"#SBATCH --ntasks={t}")
     if c := self.cpus_per_task: lines.append(f"#SBATCH --cpus-per-task={c}")
+    if a := self.account: lines.append(f"#SBATCH --account={a}")
     if m := self.mem: lines.append(f"#SBATCH --mem={m}")
     if t := self.time: lines.append(f"#SBATCH --time={t}")
     if g := self.gpus: lines.append(f"#SBATCH --gpus={g}")

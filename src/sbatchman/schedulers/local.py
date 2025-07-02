@@ -12,7 +12,7 @@ class LocalConfig(BaseConfig):
 
   def _generate_scheduler_directives(self) -> List[str]:
     return ["# Local execution script"]
-  
+
   @staticmethod
   def get_scheduler_name() -> str:
     """Returns the name of the scheduler this parameters class is associated with."""

@@ -21,7 +21,7 @@ dependencies = [
     "textual",
     "rich",
     "PyYAML",
-    "platformdirs",
+    "platformdirs"
 ]
 
 [project.urls]

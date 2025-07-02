@@ -20,6 +20,19 @@ class BaseConfig(ABC):
 
   _schedulers = {}
 
+  def _generate_jobid_update_line(self) -> str:
+    """Returns the shell command to update job_id in metadata.yaml for this scheduler."""
+    scheduler = self.get_scheduler_name()
+    if scheduler == "slurm":
+      return 'sed -i "s/^job_id: .*/job_id: $SLURM_JOB_ID/" "{EXP_DIR}/metadata.yaml"'
+    elif scheduler == "pbs":
+      return 'sed -i "s/^job_id: .*/job_id: $PBS_JOBID/" "{EXP_DIR}/metadata.yaml"'
+    elif scheduler == "local":
+      return 'sed -i "s/^job_id: .*/job_id: $$/" "{EXP_DIR}/metadata.yaml"'
+    else:
+      return "# No job_id update for unknown scheduler"
+
+
   def _generate_script(self) -> str:
     """
     Generates the full submission script using a template method pattern.
@@ -46,9 +59,11 @@ class BaseConfig(ABC):
     working_dir_setup = [
       "\n# Change to the submission directory",
       'cd "{CWD}"',
+      "\n# Update job_id in metadata.yaml",
+      self._generate_jobid_update_line(),
       "\n# Update status to RUNNING",
-      'if [ -f "{EXP_DIR}/metadata.json" ]; then',
-      '  sed -i \'s/"status": ".*"/"status": "RUNNING"/\' {EXP_DIR}/metadata.json',
+      'if [ -f "{EXP_DIR}/metadata.yaml" ]; then',
+      '  sed -i \'s/"status": ".*"/"status": "RUNNING"/\' {EXP_DIR}/metadata.yaml',
       'fi',
     ]
 
@@ -66,11 +81,11 @@ class BaseConfig(ABC):
       'eval {CMD}',
       'EXIT_CODE=$?',
       "\n# Update status to FINISHED or FAILED",
-      'if [ -f "{EXP_DIR}/metadata.json" ]; then',
+      'if [ -f "{EXP_DIR}/metadata.yaml" ]; then',
       '  if [ $EXIT_CODE -eq 0 ]; then',
-      '    sed -i \'s/"status": ".*"/"status": "FINISHED"/\' {EXP_DIR}/metadata.json',
+      '    sed -i \'s/"status": ".*"/"status": "FINISHED"/\' {EXP_DIR}/metadata.yaml',
       '  else',
-      '    sed -i \'s/"status": ".*"/"status": "FAILED"/\' {EXP_DIR}/metadata.json',
+      '    sed -i \'s/"status": ".*"/"status": "FAILED"/\' {EXP_DIR}/metadata.yaml',
       '  fi',
       'fi',
       'exit $EXIT_CODE',
@@ -121,7 +136,7 @@ class BaseConfig(ABC):
     param_dict = asdict(self)
     clean_config_params = {
       k: v for k, v in param_dict.items() 
-      if v is not None and k not in ['name', 'hostname']
+      if v is not None and k not in ['name', 'hostname', 'scheduler']
     }
     clean_config_params['scheduler'] = scheduler_name
     data[self.hostname]['configs'][self.name] = clean_config_params
