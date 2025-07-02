@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="https://raw.githubusercontent.com/LorenzoPichetti/SbatchMan/refs/heads/rewrite/docs/sbatchman.png" alt="SbatchMan" width="124">
+    <img src="https://raw.githubusercontent.com/LorenzoPichetti/SbatchMan/refs/heads/rewrite/docs/images/sbatchman.png" alt="SbatchMan" width="124">
 <p>
 
 # SbatchMan
@@ -99,4 +99,4 @@ The TUI provides a real-time view of your jobs, categorized into queued, running
 - **Enter**: View logs for the selected job.
 - **q**: Go back to the previous view or quit the application.
 
-![SbatchMan TUI](https://raw.githubusercontent.com/LorenzoPichetti/SbatchMan/refs/heads/rewrite/docs/tui.png)
+![SbatchMan TUI](https://raw.githubusercontent.com/LorenzoPichetti/SbatchMan/refs/heads/rewrite/docs/images/tui.png)

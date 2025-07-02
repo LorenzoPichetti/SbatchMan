@@ -140,9 +140,9 @@ variables:
   scale: scales.txt
 command: python script.py --file {dataset} --n {n} --m {m}
 experiments:
-  bfs_{scale}_cpu:
+  bfs_1_cpu:
     command: python script.py --file {dataset} --n {n} --m {m}
-    tags:
+    experiments:
       shortDiam:
         variables:
           dataset: datasets/small

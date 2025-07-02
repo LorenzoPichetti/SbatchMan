@@ -1,0 +1,54 @@
+site_name: SbatchMan
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.top
+    - navigation.instant
+    - content.code.copy
+    - search.suggest
+    - header.autohide
+  palette:
+    - scheme: default
+      primary: black   # ⬅️ Black top bar (in light mode)
+      accent: dark blue
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: black   # ⬅️ Black top bar (in dark mode)
+      accent: dark blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed
+  - pymdownx.emoji
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            separate_signature: true
+
+nav:
+  - Home: index.md
+  - Learn:
+    - Installation: learn/install.md
+    - Tutorial: learn/tutorial.md
+    - Advanced configuration: learn/configuration.md
+    - Advanced job submission: learn/launching_jobs.md
+  - API: api.md
