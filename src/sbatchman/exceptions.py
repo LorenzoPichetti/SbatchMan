@@ -15,7 +15,7 @@ class ProjectExistsError(SbatchManError):
     super().__init__(self.message)
 
 class SchedulerMismatchError(SbatchManError):
-  """Raised when a new config's scheduler doesn't match the existing one for a hostname."""
+  """Raised when a new config's scheduler doesn't match the existing one for a cluster."""
   def __init__(self, message: str):
     self.message = message
     super().__init__(self.message)
@@ -44,8 +44,8 @@ class ArchiveExistsError(SbatchManError):
     self.message = message
     super().__init__(self.message)
 
-class HostnameNotSetError(SbatchManError):
-  """Raised when the hostname is not set in the global configuration."""
-  def __init__(self, message="Hostname not set. Please run 'sbatchman set-hostname'."):
+class ClusterNameNotSetError(SbatchManError):
+  """Raised when the cluster name is not set in the global configuration."""
+  def __init__(self, message="Cluster name not set. Please run 'sbatchman set-cluster-name'."):
     self.message = message
     super().__init__(self.message)

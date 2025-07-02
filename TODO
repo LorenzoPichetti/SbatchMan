@@ -7,15 +7,15 @@ OK add to sbatchman configure option to pass modules to be loaded
 # SBatchman commands
 configure
   file or parameters
-launch (runs a job if there does not exist a combination (hostname, config, tag, command) in experiments directory or if status is FAILED, TIMEOUT, CANCELLED)
+launch (runs a job if there does not exist a combination (cluster_name, config, tag, command) in experiments directory or if status is FAILED, TIMEOUT, CANCELLED)
   file (+ whitelist/blacklist) or parameters
 archive
-  by tag/config/hostname
+  by tag/config/cluster_name
 update-jobs
   update status of all jobs in experiments directory
   query scheduler for status of all jobs
 init
-  creates global SbatchMan configuration file (hostname, scheduler)
+  creates global SbatchMan configuration file (cluster_name, scheduler)
 status
   user interface
 
@@ -24,13 +24,13 @@ get_jobs(name: str, archive: False) -> List[Job]
 get_jobs_dataframe() -> pd.DataFrame
 parse_command(command: str) -> Dict[str, Any]
 create_config(name: str, scheduler: str, **kwargs) -> None
-launch_job(hostname: str, name: str, tag: str, config: str, command: str, archive_name: str = None) -> None
+launch_job(cluster_name: str, name: str, tag: str, config: str, command: str, archive_name: str = None) -> None
 
 Job class
  - status
  - timestamp
  - scheduler
- - hostname
+ - cluster_name
  - tag
  - archive_name
  - status -> Status
@@ -50,8 +50,8 @@ Status enum
  - CANCELLED
  - UNKNOWN
 
-.filter(lamda x: x.hostname = 'hostname' and x.tag = 'smallGraph' and archive_name = '1')[0].get_stdout() -> String
-.filter(lamda x: x.hostname = 'hostname')[0].get_stderr() -> String
+.filter(lamda x: x.cluster_name = 'cluster_name' and x.tag = 'smallGraph' and archive_name = '1')[0].get_stdout() -> String
+.filter(lamda x: x.cluster_name = 'cluster_name')[0].get_stderr() -> String
 
 
 add command to update the status of all jobs, that queries the specific scheduler
@@ -88,13 +88,13 @@ hpc-unitn:
 # Example
 sbatchman configure --file config.yaml
 
-sbatchman configure slurm --name cpu1 --hostname baldo --partition short --cpu 1
-sbatchman configure slurm --name cpu2 --hostname baldo --partition short --cpu 2
-sbatchman configure pbs --name cpu1 --hostname hpc-unitn --partition unitn-short --cpu 1
+sbatchman configure slurm --name cpu1 --cluster-name baldo --partition short --cpu 1
+sbatchman configure slurm --name cpu2 --cluster-name baldo --partition short --cpu 2
+sbatchman configure pbs --name cpu1 --cluster-name hpc-unitn --partition unitn-short --cpu 1
 
 
 # Archive utility for sbatchman
-sbatchman archive --hostname baldo --experiment bfs1cpu --tag shortDiam --archive_name run1
+sbatchman archive --cluster-name baldo --experiment bfs1cpu --tag shortDiam --archive_name run1
 
 All parameters optional
 
@@ -126,7 +126,7 @@ archive/
 
 
 # launch jobs
-sbatchman launch --hostname baldo --name bfs1cpu --tag shortDiam --config bfs1cpu --command "python script.py" --archive_name run1
+sbatchman launch --cluster-name baldo --name bfs1cpu --tag shortDiam --config bfs1cpu --command "python script.py" --archive_name run1
 
 
 sbatchman launch -f config.yaml --exclude_tag shortDiam --include_config bfs1cpu,bfs2cpu

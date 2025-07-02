@@ -9,9 +9,9 @@ from typing import List, Optional
 from dataclasses import dataclass, asdict
 import shlex
 
-from sbatchman.exceptions import ConfigurationError, ConfigurationNotFoundError, HostnameNotSetError, JobSubmitError
-from sbatchman.config.global_config import get_hostname
-from sbatchman.config.project_config import get_project_configs_file_path, get_scheduler_from_hostname
+from sbatchman.exceptions import ConfigurationError, ConfigurationNotFoundError, ClusterNameNotSetError, JobSubmitError
+from sbatchman.config.global_config import get_cluster_name
+from sbatchman.config.project_config import get_project_configs_file_path, get_scheduler_from_cluster_name
 
 from sbatchman.config.project_config import get_project_config_dir, get_experiments_dir
 from ..schedulers.local import BaseConfig, LocalConfig, local_submit
@@ -21,7 +21,7 @@ from ..schedulers.pbs import PbsConfig, pbs_submit
 @dataclass
 class Job:
   config_name: str
-  hostname: str
+  cluster_name: str
   timestamp: str
   exp_dir: str
   command: str
@@ -34,7 +34,7 @@ class Job:
     """
     Returns the configuration of the job. It will specialize the class to either SlurmConfig, LocalConfig or PbsConfig
     """
-    return get_config(self.hostname, self.config_name)
+    return get_config(self.cluster_name, self.config_name)
 
   def parse_command_args(self):
     """
@@ -92,21 +92,21 @@ class Job:
     return None
   
 
-def get_config(hostname: str, config_name: str) -> BaseConfig:
+def get_config(cluster_name: str, config_name: str) -> BaseConfig:
   """
   Returns the configuration of the job. It will specialize the class to either SlurmConfig, LocalConfig or PbsConfig
   """
   configs_file_path = get_project_configs_file_path()
 
   if not configs_file_path.exists():
-    raise ConfigurationNotFoundError(f"Configuration '{configs_file_path}' for hostname '{hostname}' not found at '{configs_file_path}'.")
+    raise ConfigurationNotFoundError(f"Configuration '{configs_file_path}' for cluster '{cluster_name}' not found at '{configs_file_path}'.")
   
   configs = yaml.safe_load(open(configs_file_path, 'r'))
-  if hostname not in configs:
-    raise ConfigurationError(f"Could not find hostname '{hostname}' in configurations.yaml file ({configs_file_path})")
+  if cluster_name not in configs:
+    raise ConfigurationError(f"Could not find cluster '{cluster_name}' in configurations.yaml file ({configs_file_path})")
   
-  scheduler = configs[hostname]['scheduler']
-  configs = configs[hostname]['configs']
+  scheduler = configs[cluster_name]['scheduler']
+  configs = configs[cluster_name]['configs']
   if config_name not in configs:
     raise ConfigurationError(f"Could not find configuration '{config_name}' in configurations.yaml file ({configs_file_path})")
   
@@ -121,29 +121,29 @@ def get_config(hostname: str, config_name: str) -> BaseConfig:
     raise ConfigurationError(f"No class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
 
 
-def get_config_script_template(config_name: str, hostname: str) -> str:
-  config_path = get_project_config_dir() / hostname / f"{config_name}.sh"
+def get_config_script_template(config_name: str, cluster_name: str) -> str:
+  config_path = get_project_config_dir() / cluster_name / f"{config_name}.sh"
 
   if not config_path.exists():
-    raise ConfigurationNotFoundError(f"Configuration '{config_name}' for hostname '{hostname}' not found at '{config_path}'.")
+    raise ConfigurationNotFoundError(f"Configuration '{config_name}' for cluster '{cluster_name}' not found at '{config_path}'.")
 
   return open(config_path, "r").read()
   
 
-def launch_job(config_name: str, command: str, hostname: Optional[str] = None, tag: str = "default") -> Job:
+def launch_job(config_name: str, command: str, cluster_name: Optional[str] = None, tag: str = "default") -> Job:
   """
   Launches an experiment based on a configuration name.
   """
-  if not hostname:
+  if not cluster_name:
     try:
-      hostname = get_hostname()
-    except HostnameNotSetError:
+      cluster_name = get_cluster_name()
+    except ClusterNameNotSetError:
       raise ConfigurationError(
-        "Hostname not specified and not set globally. "
-        "Please provide --hostname or use 'sbatchman set-hostname <hostname>' to set a global default."
+        "Cluster name not specified and not set globally. "
+        "Please provide --cluster-name or use 'sbatchman set-cluster-name <cluster_name>' to set a global default."
       )
 
-  scheduler = get_scheduler_from_hostname(hostname)
+  scheduler = get_scheduler_from_cluster_name(cluster_name)
   template_script = get_config_script_template(config_name, scheduler)
 
   # Capture the Current Working Directory at the time of launch
@@ -151,9 +151,9 @@ def launch_job(config_name: str, command: str, hostname: Optional[str] = None, t
     
   # 2. Create a unique, nested directory for this experiment run
   timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-  # Directory structure: <hostname>/<config_name>/<tag>/<timestamp>
+  # Directory structure: <cluster_name>/<config_name>/<tag>/<timestamp>
   # Find a directory name that has not been used yet
-  base_exp_dir_local = Path(hostname) / config_name / tag / timestamp
+  base_exp_dir_local = Path(cluster_name) / config_name / tag / timestamp
   exp_dir_local = base_exp_dir_local
   exp_dir = get_experiments_dir() / exp_dir_local
   counter = 1
@@ -180,7 +180,7 @@ def launch_job(config_name: str, command: str, hostname: Optional[str] = None, t
 
   metadata = Job(
     config_name=config_name,
-    hostname=hostname,
+    cluster_name=cluster_name,
     timestamp=timestamp,
     exp_dir=str(exp_dir_local),
     command=command,
@@ -217,30 +217,30 @@ def launch_job(config_name: str, command: str, hostname: Optional[str] = None, t
 
 
 def _load_variable_values(var_value):
-    # If var_value is a list, return as is
-    if isinstance(var_value, list):
-        return var_value
-    # If var_value is a string and a file, read lines
-    elif isinstance(var_value, str):
-        path = Path(var_value)
-        if path.is_file():
-          with open(path, "r") as f:
-            return [line.strip().replace('\n', '') for line in f if line.strip()]
-        elif path.is_dir():
-          # Return sorted list of file names in the directory
-          return sorted([str(p.absolute()) for p in path.iterdir() if p.is_file()])
-        else:
-            raise JobSubmitError(
-                f"Variable value '{var_value}' is not a list, file, or directory.\n"
-                "YAML script semantics:\n"
-                "- Variables can be lists, a path to a file (one value per line), or a path to a directory (all file absolute paths used as values).\n"
-                "- The cartesian product of all variable values is used to generate jobs.\n"
-                "- Experiments can define configuration names (possibly using variables) and tags.\n"
-                "- 'command' and 'variables' can be redefined or extended in inner YAML tags.\n"
-                "- The '{var_name}' syntax is substituted with the actual value of 'var_name'."
-            )
+  # If var_value is a list, return as is
+  if isinstance(var_value, list):
+    return var_value
+  # If var_value is a string and a file, read lines
+  elif isinstance(var_value, str):
+    path = Path(var_value)
+    if path.is_file():
+      with open(path, "r") as f:
+        return [line.strip().replace('\n', '') for line in f if line.strip()]
+    elif path.is_dir():
+      # Return sorted list of file names in the directory
+      return sorted([str(p.absolute()) for p in path.iterdir() if p.is_file()])
     else:
-        return [var_value]
+      raise JobSubmitError(
+        f"Variable value '{var_value}' is not a list, file, or directory.\n"
+        "YAML script semantics:\n"
+        "- Variables can be lists, a path to a file (one value per line), or a path to a directory (all file absolute paths used as values).\n"
+        "- The cartesian product of all variable values is used to generate jobs.\n"
+        "- Experiments can define configuration names (possibly using variables) and tags.\n"
+        "- 'command' and 'variables' can be redefined or extended in inner YAML tags.\n"
+        "- The '{var_name}' syntax is substituted with the actual value of 'var_name'."
+      )
+  else:
+    return [var_value]
 
 
 def _merge_dicts(base, override):

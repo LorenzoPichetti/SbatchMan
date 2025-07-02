@@ -14,7 +14,7 @@ class BaseConfig(ABC):
   """Abstract base class for all scheduler configs."""
 
   name: str
-  hostname: str
+  cluster_name: str
   env: Optional[List[str]] = None
   modules: Optional[List[str]] = None
 
@@ -122,24 +122,24 @@ class BaseConfig(ABC):
       data = {}
 
     scheduler_name = self.get_scheduler_name()
-    if self.hostname in data:
-      if data[self.hostname].get('scheduler') != scheduler_name:
-        raise SchedulerMismatchError(f"Hostname '{self.hostname}' is already configured with scheduler '{data[self.hostname]['scheduler']}'. Cannot add a '{scheduler_name}' configuration.")
+    if self.cluster_name in data:
+      if data[self.cluster_name].get('scheduler') != scheduler_name:
+        raise SchedulerMismatchError(f"Cluster '{self.cluster_name}' is already configured with scheduler '{data[self.cluster_name]['scheduler']}'. Cannot add a '{scheduler_name}' configuration.")
     
-    if not overwrite and self.hostname in data and self.name in data[self.hostname].get('configs', {}):
-      raise ConfigurationError(f"Configuration '{self.name}' for hostname '{self.hostname}' already exists. Use '--overwrite' to update it.")
+    if not overwrite and self.cluster_name in data and self.name in data[self.cluster_name].get('configs', {}):
+      raise ConfigurationError(f"Configuration '{self.name}' for cluster '{self.cluster_name}' already exists. Use '--overwrite' to update it.")
     
-    data.setdefault(self.hostname, {})['scheduler'] = scheduler_name
-    data[self.hostname].setdefault('configs', {})
+    data.setdefault(self.cluster_name, {})['scheduler'] = scheduler_name
+    data[self.cluster_name].setdefault('configs', {})
 
     # Use asdict for clean conversion and filter keys
     param_dict = asdict(self)
     clean_config_params = {
       k: v for k, v in param_dict.items() 
-      if v is not None and k not in ['name', 'hostname', 'scheduler']
+      if v is not None and k not in ['name', 'cluster_name', 'scheduler']
     }
     clean_config_params['scheduler'] = scheduler_name
-    data[self.hostname]['configs'][self.name] = clean_config_params
+    data[self.cluster_name]['configs'][self.name] = clean_config_params
 
     with open(config_path, 'w') as f:
       yaml.dump(data, f, default_flow_style=False, sort_keys=False)
@@ -148,7 +148,7 @@ class BaseConfig(ABC):
   def _create_script(self) -> Path:
     """Saves the configuration script to a file inside a scheduler-specific folder."""
     script_content = self._generate_script()
-    config_dir = get_project_config_dir() / self.hostname
+    config_dir = get_project_config_dir() / self.cluster_name
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / f"{self.name}.sh"
 

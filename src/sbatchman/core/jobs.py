@@ -8,7 +8,7 @@ from sbatchman.core.launcher import Job
 from sbatchman.exceptions import ArchiveExistsError
 
 def list_jobs(
-  hostname: Optional[str] = None,
+  cluster_name: Optional[str] = None,
   config_name: Optional[str] = None,
   tag: Optional[str] = None,
   include_archived: bool = False
@@ -24,7 +24,7 @@ def list_jobs(
     with open(metadata_path, 'r') as f:
       job_dict = yaml.safe_load(f)
       # Apply filters
-      if hostname and not metadata_path.parts[-5] == hostname:
+      if cluster_name and not metadata_path.parts[-5] == cluster_name:
         continue
       if config_name and not metadata_path.parts[-4] == config_name:
         continue
@@ -39,7 +39,7 @@ def list_jobs(
       with open(metadata_path, 'r') as f:
         job_dict = yaml.safe_load(f)
         # Apply filters
-        if hostname and not metadata_path.parts[-5] == hostname:
+        if cluster_name and not metadata_path.parts[-5] == cluster_name:
           continue
         if config_name and not metadata_path.parts[-4] == config_name:
           continue
@@ -49,7 +49,7 @@ def list_jobs(
   
   return jobs
   
-def archive_jobs(archive_name: str, overwrite: bool = False, hostname: Optional[str] = None, config_name: Optional[str] = None, tag: Optional[str] = None) -> List[Job]:
+def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optional[str] = None, config_name: Optional[str] = None, tag: Optional[str] = None) -> List[Job]:
   """
   Archives jobs matching the filter criteria.
   """
@@ -62,20 +62,20 @@ def archive_jobs(archive_name: str, overwrite: bool = False, hostname: Optional[
         f"Archive '{archive_name}' already exists. Use --overwrite to replace it."
       )
   
-  jobs_to_archive = list_jobs(include_archived=False, hostname=hostname, config_name=config_name, tag=tag)
+  jobs_to_archive = list_jobs(include_archived=False, cluster_name=cluster_name, config_name=config_name, tag=tag)
 
   exp_dir_root = get_experiments_dir()
   
   for job in jobs_to_archive:
-    source_job_dir = exp_dir_root / job["exp_dir"]
+    source_job_dir = exp_dir_root / job.exp_dir
     if not source_job_dir.exists():
       continue
 
     # Update metadata before moving
-    job["archive_name"] = archive_name
+    job.archive_name = archive_name
     
     # Move to archive
-    dest_job_dir = archive_path / job["exp_dir"]
+    dest_job_dir = archive_path / job.exp_dir
     dest_job_dir.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(source_job_dir), str(dest_job_dir))
 

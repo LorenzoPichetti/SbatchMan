@@ -3,7 +3,7 @@ import shutil
 import yaml
 import platformdirs
 
-from sbatchman.exceptions import HostnameNotSetError
+from sbatchman.exceptions import ClusterNameNotSetError
 from sbatchman.schedulers.local import LocalConfig
 from sbatchman.schedulers.pbs import PbsConfig
 from sbatchman.schedulers.slurm import SlurmConfig
@@ -15,20 +15,20 @@ def get_global_config_path() -> Path:
   config_dir = Path(platformdirs.user_config_dir('sbatchman', 'sbatchman'))
   return config_dir / "config.yaml"
 
-def get_hostname() -> str:
-  """Reads and returns the hostname from the global configuration."""
+def get_cluster_name() -> str:
+  """Reads and returns the cluster name from the global configuration."""
   config_path = get_global_config_path()
   if not config_path.exists():
-    raise HostnameNotSetError
+    raise ClusterNameNotSetError
   with open(config_path, 'r') as f:
-    return yaml.safe_load(f).get('hostname', {})
+    return yaml.safe_load(f).get('cluster_name', {})
 
-def set_hostname(hostname: str):
-  """Writes the hostname to the global configuration file."""
+def set_cluster_name(cluster_name: str):
+  """Writes the cluster name to the global configuration file."""
   config_path = get_global_config_path()
   config_path.parent.mkdir(parents=True, exist_ok=True)
   config = {
-    "hostname": hostname,
+    "cluster_name": cluster_name,
   }
   with open(config_path, 'w') as f:
     yaml.dump(config, f, default_flow_style=False, sort_keys=False)

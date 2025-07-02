@@ -53,16 +53,16 @@ def main_callback(ctx: typer.Context):
     console.print(f"[bold red]Error:[/bold red] {e}")
     raise typer.Exit(code=1)
 
-@app.command("set-hostname")
-def set_hostname(
-  new_hostname: str = typer.Argument(..., help="The new name for this machine (hostname).")
+@app.command("set-cluster-name")
+def set_cluster_name(
+  new_cluster_name: str = typer.Argument(..., help="The new name for this machine.")
 ):
   """
-  Sets the machine of the machine (changes the global hostname used by SbatchMan).
+  Sets the machine of the machine (changes the global cluster name used by SbatchMan).
   """
   try:
-    global_config.set_hostname(new_hostname)
-    console.print(f"[green]✓[/green] Hostname changed to '[bold]{new_hostname}[/bold]'.")
+    global_config.set_cluster_name(new_cluster_name)
+    console.print(f"[green]✓[/green] Cluster name changed to '[bold]{new_cluster_name}[/bold]'.")
   except SbatchManError as e:
     console.print(f"[bold red]Error:[/bold red] {e}")
     raise typer.Exit(code=1)
@@ -82,7 +82,7 @@ def init(
 @configure_app.command("slurm")
 def configure_slurm(
   name: str = typer.Option(..., "--name", help="A unique name for this configuration."),
-  hostname: Optional[str] = typer.Option(None, "--hostname", help="The name of the machine where this configuration will be used."),
+  cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="The name of the machine where this configuration will be used."),
   partition: Optional[str] = typer.Option(None, help="SLURM partition name."),
   nodes: Optional[str] = typer.Option(None, help="SLURM number of nodes."),
   ntasks: Optional[str] = typer.Option(None, help="SLURM number of tasks."),
@@ -103,7 +103,7 @@ def configure_slurm(
   while True:
     try:
       config_path = api.create_slurm_config(
-        name=name, hostname=hostname,
+        name=name, cluster_name=cluster_name,
         partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem, account=account,
         time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation,
         env=env, modules=module, overwrite=overwrite
@@ -119,7 +119,7 @@ def configure_slurm(
 @configure_app.command("pbs")
 def configure_pbs(
   name: str = typer.Option(..., "--name", help="A unique name for this configuration."),
-  hostname: Optional[str] = typer.Option(None, "--hostname", help="The name of the machine where this configuration will be used."),
+  cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="The name of the machine where this configuration will be used."),
   queue: Optional[str] = typer.Option(None, help="PBS queue name."),
   cpus: Optional[int] = typer.Option(None, help="Number of CPUs."),
   mem: Optional[str] = typer.Option(None, help="Memory requirement (e.g., 16gb, 64gb)."),
@@ -131,7 +131,7 @@ def configure_pbs(
   """Creates a PBS configuration."""
   while True:
     try:
-      config_path = api.create_pbs_config(name=name, hostname=hostname, queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, modules=module, overwrite=overwrite)
+      config_path = api.create_pbs_config(name=name, cluster_name=cluster_name, queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, modules=module, overwrite=overwrite)
       _save_config_print(name, config_path)
       break
     except ProjectNotInitializedError:
@@ -143,7 +143,7 @@ def configure_pbs(
 @configure_app.command("local")
 def configure_local(
   name: str = typer.Option(..., "--name", help="A unique name for this configuration."),
-  hostname: Optional[str] = typer.Option(None, "--hostname", help="The name of the machine where this configuration will be used."),
+  cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="The name of the machine where this configuration will be used."),
   env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value)."),
   module: Optional[List[str]] = typer.Option(None, "--module", help="Module to load. Can be used multiple times."),
   overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configuration."),
@@ -151,7 +151,7 @@ def configure_local(
   """Creates a configuration for local execution."""
   while True:
     try:
-      config_path = api.create_local_config(name=name, env=env, modules=module, hostname=hostname, overwrite=overwrite)
+      config_path = api.create_local_config(name=name, env=env, modules=module, cluster_name=cluster_name, overwrite=overwrite)
       _save_config_print(name, config_path)
       break
     except ProjectNotInitializedError:

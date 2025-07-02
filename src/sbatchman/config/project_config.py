@@ -69,9 +69,9 @@ def get_experiments_dir() -> Path:
   path.mkdir(parents=True, exist_ok=True)
   return path
 
-def get_scheduler_from_hostname(hostname: str) -> str:
+def get_scheduler_from_cluster_name(cluster_name: str) -> str:
   """
-  Detects the scheduler type based on the hostname, as stored in the project configuration.
+  Detects the scheduler type based on the cluster name, as stored in the project configuration.
   Returns the scheduler name as a string.
   """
   config_path = get_project_configs_file_path()
@@ -82,13 +82,13 @@ def get_scheduler_from_hostname(hostname: str) -> str:
   with open(config_path, 'r') as f:
     all_configs = yaml.safe_load(f) or {}
   
-  if hostname not in all_configs:
-    raise ConfigurationError(f"No configurations found for hostname '{hostname}'.")
+  if cluster_name not in all_configs:
+    raise ConfigurationError(f"No configurations found for cluster '{cluster_name}'.")
   
-  return all_configs[hostname].get('scheduler', '')
+  return all_configs[cluster_name].get('scheduler', '')
 
 def get_archive_dir() -> Path:
-    """Returns the path to the archive directory."""
-    archive_dir = get_project_root() / "archive"
-    archive_dir.mkdir(exist_ok=True)
-    return archive_dir
+  """Returns the path to the archive directory."""
+  archive_dir = get_project_root() / "archive"
+  archive_dir.mkdir(exist_ok=True)
+  return archive_dir
