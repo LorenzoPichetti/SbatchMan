@@ -204,17 +204,15 @@ def launch_job(config: str, command: str, cluster_name: Optional[str] = None, ta
 
   try:
     # 5. Submit the job using the scheduler's own logic
-    job_id = None
     if scheduler == 'slurm':
-      job_id = slurm_submit(run_script_path, exp_dir)
+      metadata.job_id = slurm_submit(run_script_path, exp_dir)
     elif scheduler == 'pbs':
-      job_id = pbs_submit(run_script_path, exp_dir)
+      metadata.job_id = pbs_submit(run_script_path, exp_dir)
     elif scheduler == 'local':
-      job_id = local_submit(run_script_path, exp_dir)
+      metadata.job_id = local_submit(run_script_path, exp_dir)
     else:
       raise ConfigurationError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
     
-    metadata.job_id = job_id
   except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
     metadata.status = "FAILED_SUBMISSION"
     with open(exp_dir / "metadata.yaml", "w") as f:

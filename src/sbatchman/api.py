@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import List, Optional
+import pandas as pd
 
 from sbatchman.core import config_manager
 import sbatchman.core.jobs as jobs
@@ -169,7 +170,7 @@ def launch_jobs_from_file(jobs_file: Path) -> List[Job]:
   """
   return launcher.launch_jobs_from_file(jobs_file)
 
-def list_jobs(
+def jobs_list(
   cluster_name: Optional[str] = None,
   config_name: Optional[str] = None,
   tag: Optional[str] = None,
@@ -186,7 +187,31 @@ def list_jobs(
   Returns:
     A list of Job objects matching the filter criteria.
   """
-  return jobs.list_jobs(
+  return jobs.jobs_list(
+    cluster_name=cluster_name,
+    config_name=config_name,
+    tag=tag,
+    include_archived=include_archived
+  )
+
+def jobs_df(
+  cluster_name: Optional[str] = None,
+  config_name: Optional[str] = None,
+  tag: Optional[str] = None,
+  include_archived: bool = False
+) -> pd.DataFrame:
+  """Lists active and optionally archived jobs, with optional filtering.
+
+  Args:
+    cluster_name: If provided, only list jobs from this cluster.
+    config_name: If provided, only list jobs with this configuration name.
+    tag: If provided, only list jobs with this tag.
+    include_archived: If True, include jobs from all archives in the result.
+
+  Returns:
+    A list of Job objects matching the filter criteria.
+  """
+  return jobs.jobs_df(
     cluster_name=cluster_name,
     config_name=config_name,
     tag=tag,

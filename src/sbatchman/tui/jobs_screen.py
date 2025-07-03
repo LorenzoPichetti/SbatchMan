@@ -1,4 +1,4 @@
-from sbatchman.api import Job, list_jobs
+from sbatchman.api import Job, jobs_list
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, DataTable, TabbedContent, TabPane
 from textual.binding import Binding
@@ -74,7 +74,7 @@ class JobsScreen(Screen):
     #           except yaml.YAMLError:
     #             self.log(f"Error decoding YAML from {metadata_path}")
     
-    self.all_jobs = list_jobs()
+    self.all_jobs = jobs_list()
     self.update_tables()
 
   def update_tables(self):

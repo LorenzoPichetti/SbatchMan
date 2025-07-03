@@ -6,8 +6,9 @@ import yaml
 from sbatchman.config.project_config import get_archive_dir, get_experiments_dir
 from sbatchman.core.launcher import Job
 from sbatchman.exceptions import ArchiveExistsError
+import pandas as pd
 
-def list_jobs(
+def jobs_list(
   cluster_name: Optional[str] = None,
   config_name: Optional[str] = None,
   tag: Optional[str] = None,
@@ -48,6 +49,24 @@ def list_jobs(
         jobs.append(Job(**job_dict))
   
   return jobs
+
+def jobs_df(
+  cluster_name: Optional[str] = None,
+  config_name: Optional[str] = None,
+  tag: Optional[str] = None,
+  include_archived: bool = False
+) -> pd.DataFrame:
+  """
+  Returns a pandas DataFrame of jobs, with optional filtering.
+  """
+  jobs = jobs_list(
+    cluster_name=cluster_name,
+    config_name=config_name,
+    tag=tag,
+    include_archived=include_archived
+  )
+  jobs_dicts = [job.__dict__ for job in jobs]
+  return pd.DataFrame(jobs_dicts)
   
 def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optional[str] = None, config_name: Optional[str] = None, tag: Optional[str] = None) -> List[Job]:
   """
@@ -62,7 +81,7 @@ def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optio
         f"Archive '{archive_name}' already exists. Use --overwrite to replace it."
       )
   
-  jobs_to_archive = list_jobs(include_archived=False, cluster_name=cluster_name, config_name=config_name, tag=tag)
+  jobs_to_archive = jobs_list(include_archived=False, cluster_name=cluster_name, config_name=config_name, tag=tag)
 
   exp_dir_root = get_experiments_dir()
   
