@@ -4,7 +4,7 @@
 </p>
 With SbatchMan, you can easily run and manage code experiments across multiple remote clusters. It streamlines your workflow, letting you focus on your research instead of dealing with the complexities of job submission and cluster management.
 
-To get started, check out the [installation guide](install.md) to set up SbatchMan on your system. Then, follow the [tutorial](tutorial.md) to learn how to use SbatchMan effectively.
+To get started, check out the [installation guide](learn/install.md) to set up SbatchMan on your system. Then, follow the [tutorial](learn/tutorial.md) to learn how to use SbatchMan effectively.
 
 ## Features
 - **Job management**: Launch, monitor, and archive jobs with simple commands.
