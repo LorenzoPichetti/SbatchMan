@@ -1,3 +1,4 @@
+from sbatchman.schedulers.base import BaseConfig
 import typer
 from typing import List, Optional
 from rich.console import Console
@@ -36,8 +37,8 @@ def _handle_not_initialized():
     console.print("Aborted. Please run 'sbatchman init' in your desired project root.")
     raise typer.Exit(code=1)
 
-def _save_config_print(name: str, config_path: Path):
-  console.print(f"✅ Configuration '[bold cyan]{name}[/bold cyan]' saved to {config_path}")
+def _save_config_print(config: BaseConfig):
+  console.print(f"✅ Configuration '[bold cyan]{config.name}[/bold cyan]' saved to {config.template_path}")
 
 @app.callback()
 def main_callback(ctx: typer.Context):
@@ -102,13 +103,13 @@ def configure_slurm(
   """Creates a SLURM configuration."""
   while True:
     try:
-      config_path = api.create_slurm_config(
+      config = api.create_slurm_config(
         name=name, cluster_name=cluster_name,
         partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem, account=account,
         time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation,
         env=env, modules=module, overwrite=overwrite
       )
-      _save_config_print(name, config_path)
+      _save_config_print(config)
       break
     except ProjectNotInitializedError:
       _handle_not_initialized()
@@ -131,8 +132,8 @@ def configure_pbs(
   """Creates a PBS configuration."""
   while True:
     try:
-      config_path = api.create_pbs_config(name=name, cluster_name=cluster_name, queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, modules=module, overwrite=overwrite)
-      _save_config_print(name, config_path)
+      config = api.create_pbs_config(name=name, cluster_name=cluster_name, queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, modules=module, overwrite=overwrite)
+      _save_config_print(config)
       break
     except ProjectNotInitializedError:
       _handle_not_initialized()
@@ -151,8 +152,8 @@ def configure_local(
   """Creates a configuration for local execution."""
   while True:
     try:
-      config_path = api.create_local_config(name=name, env=env, modules=module, cluster_name=cluster_name, overwrite=overwrite)
-      _save_config_print(name, config_path)
+      config = api.create_local_config(name=name, env=env, modules=module, cluster_name=cluster_name, overwrite=overwrite)
+      _save_config_print(config)
       break
     except ProjectNotInitializedError:
       _handle_not_initialized()
@@ -180,7 +181,8 @@ def configure(
   """
   if file:
     try:
-      api.create_configs_from_file(file, overwrite)
+      for config in api.create_configs_from_file(file, overwrite):
+        _save_config_print(config)
       console.print(f"✅ Configurations from '[bold cyan]{file.name}[/bold cyan]' loaded successfully.")
     except SbatchManError as e:
       console.print(f"[bold red]Error:[/bold red] {e}")

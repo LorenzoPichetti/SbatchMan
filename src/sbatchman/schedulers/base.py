@@ -15,10 +15,14 @@ class BaseConfig(ABC):
 
   name: str
   cluster_name: str
+  template_path: Optional[Path] = None
   env: Optional[List[str]] = None
   modules: Optional[List[str]] = None
 
   _schedulers = {}
+
+  def __post_init__(self):
+    self.template_path = self._get_config_template_path()
 
   def _generate_jobid_update_line(self) -> str:
     """Returns the shell command to update job_id in metadata.yaml for this scheduler."""
@@ -140,6 +144,10 @@ class BaseConfig(ABC):
 
     # Use asdict for clean conversion and filter keys
     param_dict = asdict(self)
+    # Convert Path objects to strings
+    for k, v in param_dict.items():
+      if isinstance(v, Path):
+        param_dict[k] = str(v)
     clean_config_params = {
       k: v for k, v in param_dict.items() 
       if v is not None and k not in ['name', 'cluster_name', 'scheduler']
@@ -150,17 +158,18 @@ class BaseConfig(ABC):
     with open(config_path, 'w') as f:
       yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
+  def _get_config_template_path(self) -> Path:
+    config_dir = get_project_config_dir() / self.cluster_name
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / f"{self.name}.sh"
 
   def _create_script(self) -> Path:
     """Saves the configuration script to a file inside a scheduler-specific folder."""
     script_content = self._generate_script()
-    config_dir = get_project_config_dir() / self.cluster_name
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = config_dir / f"{self.name}.sh"
 
-    with open(config_path, "w") as f:
+    with open(self.template_path, "w") as f:
       f.write(script_content)
-    return config_path
+    return self.template_path
   
   def save_config(self, overwrite: bool = False) -> Path:
     """

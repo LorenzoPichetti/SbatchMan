@@ -5,6 +5,7 @@ from sbatchman.core import config_manager
 import sbatchman.core.jobs as jobs
 import sbatchman.core.launcher as launcher
 import sbatchman.config.project_config as project_config
+from sbatchman.schedulers.base import BaseConfig
 
 from .core.launcher import Job
 from .schedulers.local import LocalConfig
@@ -42,7 +43,7 @@ def create_slurm_config(
   env: Optional[List[str]] = None,
   modules: Optional[List[str]] = None,
   overwrite: bool = False,
-) -> Path:
+) -> SlurmConfig:
   """Creates and saves a SLURM configuration file.
 
   Args:
@@ -74,7 +75,8 @@ def create_slurm_config(
     time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation,
     env=env, modules=modules
   )
-  return config.save_config(overwrite)
+  config.save_config(overwrite)
+  return config
 
 def create_pbs_config(
   name: str,
@@ -86,7 +88,7 @@ def create_pbs_config(
   env: Optional[List[str]] = None,
   modules: Optional[List[str]] = None,
   overwrite: bool = False,
-) -> Path:
+) -> PbsConfig:
   """Creates and saves a PBS configuration file.
 
   Args:
@@ -107,7 +109,8 @@ def create_pbs_config(
   config = PbsConfig(
     name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, modules=modules
   )
-  return config.save_config(overwrite)
+  config.save_config(overwrite)
+  return config
 
 def create_local_config(
   name: str,
@@ -115,7 +118,7 @@ def create_local_config(
   env: Optional[List[str]] = None,
   modules: Optional[List[str]] = None,
   overwrite: bool = False,
-) -> Path:
+) -> LocalConfig:
   """Creates and saves a configuration file for local execution.
 
   Args:
@@ -131,7 +134,8 @@ def create_local_config(
     The path to the newly created configuration file.
   """
   config = LocalConfig(name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), env=env, modules=modules)
-  return config.save_config(overwrite)
+  config.save_config(overwrite)
+  return config
 
 def launch_job(config: str, tag: str, command: str, preprocess: Optional[str] = None, postprocess: Optional[str] = None) -> Job:
   """Launches a single job with the specified configuration.
@@ -213,11 +217,11 @@ def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optio
     tag=tag
   )
 
-def create_configs_from_file(file_path: Path, overwrite: bool = False):
+def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[BaseConfig]:
   """Creates multiple job configurations from a YAML file.
 
   Args:
     file_path: The path to the YAML configuration file.
     overwrite: If True, overwrite existing configurations.
   """
-  config_manager.create_configs_from_file(file_path, overwrite)
+  return config_manager.create_configs_from_file(file_path, overwrite)

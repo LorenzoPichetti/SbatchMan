@@ -6,7 +6,7 @@ from sbatchman.config.project_config import get_experiments_dir
 from sbatchman.tui.jobs_screen import JobsScreen
 
 class ExperimentTUI(App):
-  TITLE = "SBatchMan Status"
+  TITLE = "SbatchMan Status"
   
   def __init__(self, experiments_dir: Optional[Path] = None, **kwargs):
     super().__init__(**kwargs)

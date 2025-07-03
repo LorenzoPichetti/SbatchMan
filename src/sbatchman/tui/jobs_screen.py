@@ -49,7 +49,7 @@ class JobsScreen(Screen):
       table = self.query_one(table_id, DataTable)
       table.cursor_type = "row"
       table.add_column("Time", width=20, key="timestamp")
-      table.add_column("Name", width=20)
+      table.add_column("Config", width=20)
       table.add_column("Job ID", width=12)
       table.add_column("Status", width=12)
       table.add_column("Command")
@@ -103,7 +103,7 @@ class JobsScreen(Screen):
 
       row_data = (
         formatted_timestamp,
-        getattr(job, 'name', 'N/A'),
+        getattr(job, 'config_name', 'N/A'),
         getattr(job, 'job_id', 'N/A'),
         getattr(job, 'status', 'UNKNOWN'),
         getattr(job, 'command', '') or '',
