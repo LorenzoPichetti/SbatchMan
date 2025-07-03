@@ -76,9 +76,13 @@ class BaseConfig(ABC):
     
     # Run the command and update the status
     footer = [
-      "\n# User command",
+      "# Preprocess command",
+      '{PREPROCESS}',
+      "\n# Main command",
       'echo "Running command: {CMD}"',
       '{CMD}',
+      "\n# Postprocess command",
+      '{POSTPROCESS}',
       'EXIT_CODE=$?',
       "\n# Update status to FINISHED or FAILED",
       'if [ -f "{EXP_DIR}/metadata.yaml" ]; then',

@@ -133,21 +133,25 @@ def create_local_config(
   config = LocalConfig(name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), env=env, modules=modules)
   return config.save_config(overwrite)
 
-def launch_job(config_name: str, tag: str, command: str) -> Job:
+def launch_job(config: str, tag: str, command: str, preprocess: Optional[str] = None, postprocess: Optional[str] = None) -> Job:
   """Launches a single job with the specified configuration.
 
   Args:
     config_name: The name of the configuration to use for the job.
     tag: A tag to categorize the job.
     command: The command to execute.
+    preprocess: A command to run before the main job command.
+    postprocess: A command to run after the main job command.
 
   Returns:
     A Job object representing the launched job.
   """
   return launcher.launch_job(
-    config_name=config_name,
+    config=config,
     command=command,
-    tag=tag
+    tag=tag,
+    preprocess=preprocess,
+    postprocess=postprocess
   )
 
 def launch_jobs_from_file(jobs_file: Path) -> List[Job]:

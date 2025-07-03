@@ -5,7 +5,7 @@ import itertools
 import re
 import yaml
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, asdict
 import shlex
 
@@ -28,6 +28,8 @@ class Job:
   status: str
   scheduler: str
   job_id: str
+  preprocess: Optional[str] = None
+  postprocess: Optional[str] = None
   archive_name: Optional[str] = None
 
   def get_job_config(self) -> BaseConfig:
@@ -130,7 +132,7 @@ def get_config_script_template(config_name: str, cluster_name: str) -> str:
   return open(config_path, "r").read()
   
 
-def launch_job(config_name: str, command: str, cluster_name: Optional[str] = None, tag: str = "default") -> Job:
+def launch_job(config: str, command: str, cluster_name: Optional[str] = None, tag: str = "default", preprocess: Optional[str] = None, postprocess: Optional[str] = None) -> Job:
   """
   Launches an experiment based on a configuration name.
   """
@@ -144,7 +146,7 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
       )
 
   scheduler = get_scheduler_from_cluster_name(cluster_name)
-  template_script = get_config_script_template(config_name, scheduler)
+  template_script = get_config_script_template(config, scheduler)
 
   # Capture the Current Working Directory at the time of launch
   submission_cwd = Path.cwd()
@@ -153,7 +155,7 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
   timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
   # Directory structure: <cluster_name>/<config_name>/<tag>/<timestamp>
   # Find a directory name that has not been used yet
-  base_exp_dir_local = Path(cluster_name) / config_name / tag / timestamp
+  base_exp_dir_local = Path(cluster_name) / config / tag / timestamp
   exp_dir_local = base_exp_dir_local
   exp_dir = get_experiments_dir() / exp_dir_local
   counter = 1
@@ -171,6 +173,10 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     "{CWD}", str(submission_cwd.resolve())
   ).replace(
     "{CMD}", str(command)
+  ).replace(
+    "{PREPROCESS}", preprocess if preprocess else ""
+  ).replace(
+    "{POSTPROCESS}", postprocess if postprocess else ""
   )
   
   run_script_path = exp_dir / "run.sh"
@@ -179,7 +185,7 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
   run_script_path.chmod(0o755)
 
   metadata = Job(
-    config_name=config_name,
+    config_name=config,
     cluster_name=cluster_name,
     timestamp=timestamp,
     exp_dir=str(exp_dir_local),
@@ -188,6 +194,8 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     scheduler=scheduler,
     job_id="",
     archive_name=None,
+    preprocess=preprocess,
+    postprocess=postprocess
   )
 
   # 4. Write metadata.yaml before job submission
@@ -274,73 +282,101 @@ def launch_jobs_from_file(jobs_file_path: Path) -> List[Job]:
     config = yaml.safe_load(f)
 
   global_vars = config.get("variables", {})
-  global_command = config.get("command", None)
-  experiments = config.get("experiments", {})
+  expanded_global_vars = {k: _load_variable_values(v) for k, v in global_vars.items()}
 
-  # Prepare global variable values (expand files if needed)
-  expanded_global_vars = {}
-  for k, v in global_vars.items():
-    expanded_global_vars[k] = _load_variable_values(v)
+  launched_jobs = []
+  job_definitions = config.get("jobs", [])
 
-  jobs = []
+  for job_def in job_definitions:
+    job_config_template = job_def.get("config")
+    if not job_config_template:
+      continue # Skip job definition if it has no config
 
-  for exp_name_template, exp_data in experiments.items():
-    exp_command = exp_data.get("command", global_command)
-    exp_vars = exp_data.get("variables", {})
-    expanded_exp_vars = {}
-    for k, v in exp_vars.items():
-      expanded_exp_vars[k] = _load_variable_values(v)
+    job_command_template = job_def.get("command")
+    job_preprocess_template = job_def.get("preprocess")
+    job_postprocess_template = job_def.get("postprocess")
+    job_vars = job_def.get("variables", {})
+    expanded_job_vars = {k: _load_variable_values(v) for k, v in job_vars.items()}
 
-    merged_exp_vars = dict(expanded_global_vars)
-    merged_exp_vars.update(expanded_exp_vars)
+    # Merge global and job-specific variables
+    merged_job_vars = {**expanded_global_vars, **expanded_job_vars}
 
-    tags = exp_data.get("tags", {})
-    if tags:
-      for tag_name, tag_data in tags.items():
-        tag_vars = tag_data.get("variables", {})
-        expanded_tag_vars = {}
-        for k, v in tag_vars.items():
-          expanded_tag_vars[k] = _load_variable_values(v)
-        merged_vars = dict(merged_exp_vars)
-        merged_vars.update(expanded_tag_vars)
-        tag_command = tag_data.get("command", exp_command)
-
-        # Only use variables referenced in exp_name, command, or tag_command
-        used_vars = _extract_used_vars(exp_name_template, tag_command)
-        filtered_vars = {k: v for k, v in merged_vars.items() if k in used_vars}
-
-        if not filtered_vars:
-          continue  # No variables used, skip job generation
-
-        keys, values = zip(*filtered_vars.items()) if filtered_vars else ([], [])
-        for combination in itertools.product(*values):
-          var_dict = dict(zip(keys, combination))
-          exp_name = _substitute(exp_name_template, var_dict)
-          command = _substitute(tag_command, var_dict)
-          # print('='*40)
-          # print(f'{exp_name=}')
-          # print(f'{command=}')
-          # print(f'{tag_name=}')
-          # print('='*40)
-          job = launch_job(exp_name, command, tag=tag_name)
-          jobs.append(job)
+    matrix = job_def.get("matrix", [])
+    if not matrix:
+      # If no matrix, run with the job's own context
+      _launch_job_combinations(
+        job_config_template,
+        job_command_template,
+        "default",
+        job_preprocess_template,
+        job_postprocess_template,
+        merged_job_vars,
+        launched_jobs
+      )
     else:
-      used_vars = _extract_used_vars(exp_name_template, exp_command)
-      filtered_vars = {k: v for k, v in merged_exp_vars.items() if k in used_vars}
+      for entry in matrix:
+        tag_name = entry.get("tag")
+        if not tag_name:
+          continue # Skip matrix entry if it has no tag
 
-      if not filtered_vars:
-        continue  # No variables used, skip job generation
+        entry_command_template = entry.get("command", job_command_template)
+        entry_preprocess_template = entry.get("preprocess", job_preprocess_template)
+        entry_postprocess_template = entry.get("postprocess", job_postprocess_template)
+        entry_vars = entry.get("variables", {})
+        expanded_entry_vars = {k: _load_variable_values(v) for k, v in entry_vars.items()}
+        
+        # Merge all variables: global -> job -> entry
+        final_vars = {**merged_job_vars, **expanded_entry_vars}
 
-      keys, values = zip(*filtered_vars.items()) if filtered_vars else ([], [])
-      for combination in itertools.product(*values):
-        var_dict = dict(zip(keys, combination))
-        exp_name = _substitute(exp_name_template, var_dict)
-        command = _substitute(exp_command, var_dict)
-        # print('='*40)
-        # print(f'{exp_name=}')
-        # print(f'{command=}')
-        # print('='*40)
-        job = launch_job(exp_name, command)
-        jobs.append(job)
+        _launch_job_combinations(
+          job_config_template,
+          entry_command_template,
+          tag_name,
+          entry_preprocess_template,
+          entry_postprocess_template,
+          final_vars,
+          launched_jobs
+        )
 
-  return jobs
+  return launched_jobs
+
+def _launch_job_combinations(
+    config_template: str,
+    command_template: str,
+    tag: str,
+    preprocess_template: Optional[str],
+    postprocess_template: Optional[str],
+    variables: Dict[str, Any],
+    launched_jobs: List[Job]
+):
+    """
+    Generates and launches jobs for all combinations of variables.
+    """
+    if not command_template:
+        return
+
+    # Determine which variables are actually used in the templates
+    used_vars = _extract_used_vars(config_template, command_template, tag, preprocess_template, postprocess_template)
+    filtered_vars = {k: v for k, v in variables.items() if k in used_vars}
+
+    if not filtered_vars:
+      # If no variables are used, launch a single job
+      job_name = _substitute(config_template, {})
+      command = _substitute(command_template, {})
+      job_tag = _substitute(tag, {})
+      preprocess = _substitute(preprocess_template, {})
+      postprocess = _substitute(postprocess_template, {})
+      job = launch_job(job_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess)
+      launched_jobs.append(job)
+      return
+
+    keys, values = zip(*filtered_vars.items())
+    for combination in itertools.product(*values):
+      var_dict = dict(zip(keys, combination))
+      job_name = _substitute(config_template, var_dict)
+      command = _substitute(command_template, var_dict)
+      job_tag = _substitute(tag, var_dict)
+      preprocess = _substitute(preprocess_template, var_dict)
+      postprocess = _substitute(postprocess_template, var_dict)
+      job = launch_job(job_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess)
+      launched_jobs.append(job)

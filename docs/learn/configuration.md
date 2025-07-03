@@ -1,4 +1,4 @@
-# Configuration
+# Advanced configuration
 
 This guide covers the different ways to create and manage job configurations in `SbatchMan`. You can either use a YAML file for batch configuration or programmatically create configurations using the Python API.
 

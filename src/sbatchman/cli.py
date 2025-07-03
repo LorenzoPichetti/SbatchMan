@@ -190,25 +190,29 @@ def configure(
 
 @app.command("launch")
 def launch(
-  jobs_file: Optional[Path] = typer.Option(None, "--jobs_file", help="YAML file that describes a batch of experiments."),
-  config_name: Optional[str] = typer.Option(None, "--config_name", help="Configuration name."),
+  file: Optional[Path] = typer.Option(None, "--file", help="YAML file that describes a batch of experiments."),
+  config: Optional[str] = typer.Option(None, "--config", help="Configuration name."),
   tag: str = typer.Option("default", "--tag", help="Tag for this experiment (default: 'default')."),
   command: Optional[str] = typer.Argument(None, help="The executable and its parameters, enclosed in quotes."),
+  preprocess: Optional[str] = typer.Option(None, "--preprocess", help="Command to run before the main job command."),
+  postprocess: Optional[str] = typer.Option(None, "--postprocess", help="Command to run after the main job command.")
 ):
   """Launches an experiment (or a batch of experiments) using a predefined configuration."""
 
   try:
     # Call the API/launcher
-    if jobs_file:
-      jobs = api.launch_jobs_from_file(jobs_file)
+    if file:
+      jobs = api.launch_jobs_from_file(file)
       console.print(f"✅ Submitted successfully {len(jobs)} jobs.")
-    elif config_name and tag and command:
+    elif config and tag and command:
         job = api.launch_job(
-          config_name=config_name,
+          config=config,
           command=command,
-          tag=tag
+          tag=tag,
+          preprocess=preprocess,
+          postprocess=postprocess
         )
-        console.print(f"✅ Experiment for config '[bold cyan]{config_name}[/bold cyan]' submitted successfully.")
+        console.print(f"✅ Experiment for config '[bold cyan]{config}[/bold cyan]' submitted successfully.")
         console.print(f"   ┣━ Job ID: {job.job_id}")
         console.print(f"   ┗━ Exp. Dir: {job.exp_dir}")
     else:
