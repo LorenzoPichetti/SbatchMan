@@ -1,4 +1,5 @@
 site_name: SbatchMan
+site_url: !ENV READTHEDOCS_CANONICAL_URL
 theme:
   name: material
   features:
