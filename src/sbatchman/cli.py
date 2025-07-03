@@ -160,6 +160,34 @@ def configure_local(
       console.print(f"[bold red]Error:[/bold red] {e}")
       raise typer.Exit(code=1)
 
+@configure_app.callback(invoke_without_command=True)
+def configure(
+  ctx: typer.Context,
+  file: Optional[Path] = typer.Option(
+    None,
+    "--file",
+    exists=True,
+    file_okay=True,
+    dir_okay=False,
+    readable=True,
+    help="YAML file with multiple configurations.",
+  ),
+  overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configurations when using --file."),
+):
+  """
+  Create or update job configurations.
+  You can either specify a scheduler (slurm, pbs, local) or provide a --file.
+  """
+  if file:
+    try:
+      api.create_configs_from_file(file, overwrite)
+      console.print(f"✅ Configurations from '[bold cyan]{file.name}[/bold cyan]' loaded successfully.")
+    except SbatchManError as e:
+      console.print(f"[bold red]Error:[/bold red] {e}")
+      raise typer.Exit(1)
+  elif ctx.invoked_subcommand is None:
+    console.print(ctx.get_help())
+
 @app.command("launch")
 def launch(
   jobs_file: Optional[Path] = typer.Option(None, "--jobs_file", help="YAML file that describes a batch of experiments."),

@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import List, Optional
 
+from sbatchman.core import config_manager
 import sbatchman.core.jobs as jobs
 import sbatchman.core.launcher as launcher
 import sbatchman.config.project_config as project_config
@@ -207,3 +208,12 @@ def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optio
     config_name=config_name,
     tag=tag
   )
+
+def create_configs_from_file(file_path: Path, overwrite: bool = False):
+  """Creates multiple job configurations from a YAML file.
+
+  Args:
+    file_path: The path to the YAML configuration file.
+    overwrite: If True, overwrite existing configurations.
+  """
+  config_manager.create_configs_from_file(file_path, overwrite)

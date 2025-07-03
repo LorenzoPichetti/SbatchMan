@@ -4,6 +4,15 @@ Learn how to use SbatchMan in this **step-by-step Tutorial**!
 
 It covers everything you need to know to get you started with SbatchMan, from setting up your cluster configuration to launching jobs and collecting results.
 
+## 📚 Initialize SbatchMan
+To initialize SbatchMan, run the following command in the project root directory:
+
+```bash
+sbatchman init
+```
+
+This command will create a `SbatchMan` directory in your project, which will contain all the necessary files and configurations for managing your jobs.
+
 ## ⚙️ Create a Configuration
 
 First, set up your cluster configuration. This is where you define the parameters for your cluster, such as the partition, time limit, and number of GPUs. For example, to create a configuration for a cluster named `my_gpu_cluster`:
@@ -53,12 +62,10 @@ The `--tag` option lets you organize your jobs by assigning a label to them. Tag
 For example, if you change the training dataset or number of epochs, you can relaunch the job with a new tag:
 
 ```bash
-```bash
 sbatchman launch \
   --config simple_gpu_config \
   --tag <span style="color:red">mnist_training_20_epochs</span> \
   --command "python train.py <span style="color:red">--epochs 20</span> --batch-size 32"
-```
 ```
 
 ## 🖥️ Monitor Your Jobs

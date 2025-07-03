@@ -13,6 +13,7 @@ To get started, check out the [installation guide](learn/install.md) to set up S
 - **Command-line interface**: Interact with SbatchMan through a user-friendly CLI.
 - **Python API**: Integrate SbatchMan into your Python scripts to parse job results effortlessly.
 - **Archive utility**: Keep track of your past experiments and their results.
+- **Version control friendly**: All configurations and logs are stored locally within your project directory, making it easy to track experiments with Git or other version control systems.
 
 ### User Interface
 
