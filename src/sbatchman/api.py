@@ -151,7 +151,7 @@ def launch_job(config: str, tag: str, command: str, preprocess: Optional[str] = 
     command=command,
     tag=tag,
     preprocess=preprocess,
-    postprocess=postprocess
+    postprocess=postprocess,
   )
 
 def launch_jobs_from_file(jobs_file: Path) -> List[Job]:

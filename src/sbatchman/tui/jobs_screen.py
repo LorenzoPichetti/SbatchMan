@@ -1,3 +1,4 @@
+from sbatchman.api import Job, list_jobs
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, DataTable, TabbedContent, TabPane
 from textual.binding import Binding
@@ -5,13 +6,15 @@ from textual.screen import Screen
 from textual.coordinate import Coordinate
 from textual.widgets.data_table import RowDoesNotExist
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
 
 from sbatchman.config.project_config import get_experiments_dir
 from sbatchman.tui.log_screen import LogScreen
 
 class JobsScreen(Screen):
+  all_jobs: List[Job]
+
   """The main screen with job tables."""
   BINDINGS = [
     Binding("q", "app.quit", "Quit"),
@@ -55,23 +58,23 @@ class JobsScreen(Screen):
     self.timer = self.set_interval(5, self.load_and_update_jobs)
 
   def load_and_update_jobs(self) -> None:
-    experiments = []
-    if self.experiments_root.exists():
-      for config_dir in self.experiments_root.iterdir():
-        if not config_dir.is_dir(): continue
-        import yaml
-        for exp_dir in config_dir.iterdir():
-          metadata_path = exp_dir / "metadata.yaml"
-          if exp_dir.is_dir() and metadata_path.exists():
-            with open(metadata_path, "r") as f:
-              try:
-                data = yaml.safe_load(f)
-                data['exp_dir'] = str(exp_dir)
-                experiments.append(data)
-              except yaml.YAMLError:
-                self.log(f"Error decoding YAML from {metadata_path}")
+    # experiments = []
+    # if self.experiments_root.exists():
+    #   for config_dir in self.experiments_root.iterdir():
+    #     if not config_dir.is_dir(): continue
+    #     import yaml
+    #     for exp_dir in config_dir.iterdir():
+    #       metadata_path = exp_dir / "metadata.yaml"
+    #       if exp_dir.is_dir() and metadata_path.exists():
+    #         with open(metadata_path, "r") as f:
+    #           try:
+    #             data = yaml.safe_load(f)
+    #             data['exp_dir'] = str(exp_dir)
+    #             experiments.append(data)
+    #           except yaml.YAMLError:
+    #             self.log(f"Error decoding YAML from {metadata_path}")
     
-    self.all_jobs = experiments
+    self.all_jobs = list_jobs()
     self.update_tables()
 
   def update_tables(self):
@@ -83,13 +86,13 @@ class JobsScreen(Screen):
     
     current_keys = set()
     for job in self.all_jobs:
-      key = job.get('exp_dir')
+      key = job.exp_dir
       if not key:
         continue
       
       current_keys.add(key)
       
-      timestamp_str = job.get('timestamp', '')
+      timestamp_str = job.timestamp
       formatted_timestamp = timestamp_str
       if timestamp_str:
         try:
@@ -100,15 +103,15 @@ class JobsScreen(Screen):
 
       row_data = (
         formatted_timestamp,
-        job.get('name', 'N/A'),
-        job.get('job_id', 'N/A'),
-        job.get('status', 'UNKNOWN'),
-        job.get('command') or '',
+        getattr(job, 'name', 'N/A'),
+        getattr(job, 'job_id', 'N/A'),
+        getattr(job, 'status', 'UNKNOWN'),
+        getattr(job, 'command', '') or '',
       )
 
-      if job.get('status') in ["QUEUED", "SUBMITTING"]:
+      if getattr(job, 'status', None) in ["QUEUED", "SUBMITTING"]:
         target_table = tables["queued-table"]
-      elif job.get('status') == "RUNNING":
+      elif getattr(job, 'status', None) == "RUNNING":
         target_table = tables["running-table"]
       else:
         target_table = tables["finished-table"]

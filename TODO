@@ -154,3 +154,6 @@ experiments:
       atomics:
         command: python script.py --file {small_dim} --n {n} --m {m} --atomic
 -- END OK BATCH JOBS file
+
+
+document pre and post processing commands

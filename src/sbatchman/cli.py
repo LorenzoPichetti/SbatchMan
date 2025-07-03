@@ -194,10 +194,13 @@ def launch(
   config: Optional[str] = typer.Option(None, "--config", help="Configuration name."),
   tag: str = typer.Option("default", "--tag", help="Tag for this experiment (default: 'default')."),
   command: Optional[str] = typer.Argument(None, help="The executable and its parameters, enclosed in quotes."),
-  preprocess: Optional[str] = typer.Option(None, "--preprocess", help="Command to run before the main job command."),
-  postprocess: Optional[str] = typer.Option(None, "--postprocess", help="Command to run after the main job command.")
+  preprocess: Optional[str] = typer.Option(None, "--preprocess", help="Command to run before the main job (optional)."),
+  postprocess: Optional[str] = typer.Option(None, "--postprocess", help="Command to run after the main job (optional)."),
 ):
-  """Launches an experiment (or a batch of experiments) using a predefined configuration."""
+  """Launches an experiment (or a batch of experiments) using a predefined configuration.
+
+  You can specify --preprocess and/or --postprocess to run commands before/after the main job.
+  """
 
   try:
     # Call the API/launcher
@@ -210,7 +213,7 @@ def launch(
           command=command,
           tag=tag,
           preprocess=preprocess,
-          postprocess=postprocess
+          postprocess=postprocess,
         )
         console.print(f"✅ Experiment for config '[bold cyan]{config}[/bold cyan]' submitted successfully.")
         console.print(f"   ┣━ Job ID: {job.job_id}")

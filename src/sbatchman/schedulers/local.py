@@ -29,6 +29,6 @@ def local_submit(script_path: Path, exp_dir: Path) -> str:
       command_list,
       stdout=out,
       stderr=err,
-      preexec_fn=lambda: __import__("os").setsid() # Detach from parent
+      # preexec_fn=lambda: __import__("os").setsid() # Detach from parent
     )
   return str(process.pid)

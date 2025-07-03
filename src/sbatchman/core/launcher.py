@@ -29,7 +29,7 @@ class Job:
   scheduler: str
   job_id: str
   preprocess: Optional[str] = None
-  postprocess: Optional[str] = None
+  postprocess: Optional[str] = None 
   archive_name: Optional[str] = None
 
   def get_job_config(self) -> BaseConfig:
@@ -146,7 +146,7 @@ def launch_job(config: str, command: str, cluster_name: Optional[str] = None, ta
       )
 
   scheduler = get_scheduler_from_cluster_name(cluster_name)
-  template_script = get_config_script_template(config, scheduler)
+  template_script = get_config_script_template(config, cluster_name)
 
   # Capture the Current Working Directory at the time of launch
   submission_cwd = Path.cwd()
@@ -172,11 +172,11 @@ def launch_job(config: str, command: str, cluster_name: Optional[str] = None, ta
   ).replace(
     "{CWD}", str(submission_cwd.resolve())
   ).replace(
+    "{PREPROCESS}", str(preprocess) if preprocess is not None else ''
+  ).replace(
     "{CMD}", str(command)
   ).replace(
-    "{PREPROCESS}", preprocess if preprocess else ""
-  ).replace(
-    "{POSTPROCESS}", postprocess if postprocess else ""
+    "{POSTPROCESS}", str(postprocess) if postprocess is not None else ''
   )
   
   run_script_path = exp_dir / "run.sh"
@@ -195,7 +195,7 @@ def launch_job(config: str, command: str, cluster_name: Optional[str] = None, ta
     job_id="",
     archive_name=None,
     preprocess=preprocess,
-    postprocess=postprocess
+    postprocess=postprocess,
   )
 
   # 4. Write metadata.yaml before job submission
@@ -282,8 +282,13 @@ def launch_jobs_from_file(jobs_file_path: Path) -> List[Job]:
     config = yaml.safe_load(f)
 
   global_vars = config.get("variables", {})
+  global_command = config.get("command", None)
+  global_preprocess = config.get("preprocess", None)
+  global_postprocess = config.get("postprocess", None)
+  
+  # Prepare global variable values (expand files if needed)
   expanded_global_vars = {k: _load_variable_values(v) for k, v in global_vars.items()}
-
+  
   launched_jobs = []
   job_definitions = config.get("jobs", [])
 
@@ -292,18 +297,19 @@ def launch_jobs_from_file(jobs_file_path: Path) -> List[Job]:
     if not job_config_template:
       continue # Skip job definition if it has no config
 
-    job_command_template = job_def.get("command")
-    job_preprocess_template = job_def.get("preprocess")
-    job_postprocess_template = job_def.get("postprocess")
+    job_command_template = job_def.get("command", global_command)
+    job_preprocess_template = job_def.get("preprocess", global_preprocess)
+    job_postprocess_template = job_def.get("postprocess", global_postprocess)
     job_vars = job_def.get("variables", {})
+
     expanded_job_vars = {k: _load_variable_values(v) for k, v in job_vars.items()}
 
     # Merge global and job-specific variables
     merged_job_vars = {**expanded_global_vars, **expanded_job_vars}
 
-    matrix = job_def.get("matrix", [])
-    if not matrix:
-      # If no matrix, run with the job's own context
+    config_jobs = job_def.get("config_jobs", [])
+    if not config_jobs:
+      # If no config_jobs, run with the job's own context
       _launch_job_combinations(
         job_config_template,
         job_command_template,
@@ -314,7 +320,7 @@ def launch_jobs_from_file(jobs_file_path: Path) -> List[Job]:
         launched_jobs
       )
     else:
-      for entry in matrix:
+      for entry in config_jobs:
         tag_name = entry.get("tag")
         if not tag_name:
           continue # Skip matrix entry if it has no tag
@@ -361,22 +367,36 @@ def _launch_job_combinations(
 
     if not filtered_vars:
       # If no variables are used, launch a single job
-      job_name = _substitute(config_template, {})
+      config_name = _substitute(config_template, {})
       command = _substitute(command_template, {})
       job_tag = _substitute(tag, {})
       preprocess = _substitute(preprocess_template, {})
       postprocess = _substitute(postprocess_template, {})
-      job = launch_job(job_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess)
-      launched_jobs.append(job)
+      print('='*40)
+      print(f'{config_name=}')
+      print(f'{preprocess=}')
+      print(f'{command=}')
+      print(f'{postprocess=}')
+      print(f'{job_tag=}')
+      print('='*40)
+      # job = launch_job(job_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess)
+      # launched_jobs.append(job)
       return
 
     keys, values = zip(*filtered_vars.items())
     for combination in itertools.product(*values):
       var_dict = dict(zip(keys, combination))
-      job_name = _substitute(config_template, var_dict)
+      config_name = _substitute(config_template, var_dict)
       command = _substitute(command_template, var_dict)
       job_tag = _substitute(tag, var_dict)
       preprocess = _substitute(preprocess_template, var_dict)
       postprocess = _substitute(postprocess_template, var_dict)
-      job = launch_job(job_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess)
-      launched_jobs.append(job)
+      print('='*40)
+      print(f'{config_name=}')
+      print(f'{preprocess=}')
+      print(f'{command=}')
+      print(f'{postprocess=}')
+      print(f'{job_tag=}')
+      print('='*40)
+      # job = launch_job(job_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess)
+      # launched_jobs.append(job)

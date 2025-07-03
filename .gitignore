@@ -13,3 +13,9 @@ dist/
 *.egg
 
 site/
+
+# Dev
+SbatchMan/
+datasets/
+jobs.yaml
+modes.txt

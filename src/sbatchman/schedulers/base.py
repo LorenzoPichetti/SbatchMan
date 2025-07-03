@@ -76,9 +76,9 @@ class BaseConfig(ABC):
     
     # Run the command and update the status
     footer = [
-      "# Preprocess command",
+      "\n# (Optional) Preprocess command",
       '{PREPROCESS}',
-      "\n# Main command",
+      "\n# User command",
       'echo "Running command: {CMD}"',
       '{CMD}',
       "\n# Postprocess command",
@@ -92,6 +92,8 @@ class BaseConfig(ABC):
       '    sed -i \'s/status: .*/status: FAILED/\' {EXP_DIR}/metadata.yaml',
       '  fi',
       'fi',
+      "\n# (Optional) Postprocess command",
+      '{POSTPROCESS}',
       'exit $EXIT_CODE',
     ]
 
