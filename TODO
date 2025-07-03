@@ -4,7 +4,7 @@ OK configurable via sbatchman init and asked at installation
 
 OK add to sbatchman configure option to pass modules to be loaded
 
-Add preprocess/postprocess to lob launch command
+OK Add preprocess/postprocess to lob launch command
 
 # SBatchman commands
 configure

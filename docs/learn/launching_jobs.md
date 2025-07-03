@@ -71,10 +71,6 @@ Variables can be defined in three ways:
 
 Here is a complete example of a batch submission file:
 
-#### Example
-
-Here is a complete example of a batch submission file:
-
 ```yaml
 # Global variables applicable to all jobs
 variables:
@@ -92,12 +88,10 @@ jobs:
       - tag: "shortDiam"
         variables:
           dataset: "datasets/short_diam/{scale}.graph"
-
       - tag: "largeDiam"
         variables:
           dataset: "datasets/large_diam/{scale}.graph"
         postprocess: "echo 'Finished large diameter test.'"
-
       - tag: "atomics_test"
         # This command overrides the one defined in the parent job
         command: "python script.py --file datasets/short_diam/{scale}.graph --atomic"
