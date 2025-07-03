@@ -247,7 +247,7 @@ def delete_jobs(
   config_name: Optional[str] = None,
   tag: Optional[str] = None,
   archive_name: Optional[str] = None,
-  all_archived: bool = False,
+  archived: bool = False,
   not_archived: bool = False,
 ) -> int:
   """Deletes jobs matching the filter criteria.
@@ -256,8 +256,9 @@ def delete_jobs(
     cluster_name: If provided, only delete jobs from this cluster.
     config_name: If provided, only delete jobs with this configuration name.
     tag: If provided, only delete jobs with this tag.
-    from_active: If True, delete jobs from the active experiments directory.
-    from_archived: If True, delete jobs from the archive.
+    archive_name: If provided, only delete jobs from this archive.
+    archived: If True, delete only archived jobs.
+    not_archived: If True, delete only active jobs.
 
   Returns:
     The number of jobs that were successfully deleted.
@@ -267,7 +268,7 @@ def delete_jobs(
     config_name=config_name,
     tag=tag,
     archive_name=archive_name,
-    all_archived=all_archived,
+    archived=archived,
     not_archived=not_archived,
   )
 

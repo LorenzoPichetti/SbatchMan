@@ -262,23 +262,28 @@ def archive(
     console.print(f"[bold red]Error:[/bold red] {e}")
     raise typer.Exit(1)
 
-@app.command("delete")
-def delete(
+@app.command("delete-jobs")
+def delete_jobs(
   cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="Delete jobs from this cluster."),
   config_name: Optional[str] = typer.Option(None, "--config", help="Delete jobs with this configuration name."),
   tag: Optional[str] = typer.Option(None, "--tag", help="Delete jobs with this tag."),
   archive_name: Optional[str] = typer.Option(None, "--archive", help="Delete jobs from this archive."),
-  all_archived: bool = typer.Option(False, "--all-archived", help="Delete only archived jobs."), 
+  archived: bool = typer.Option(False, "--archived", help="Delete only archived jobs."), 
   not_archived: bool = typer.Option(False, "--not-archived", help="Delete only active jobs."),
 ):
   """Deletes jobs matching the specified criteria."""
+
+  if not archived and not not_archived:
+    console.print("[bold red]You must specify at least one of: --archived or --not-archived[/bold red]")
+    raise typer.Exit(1)
+  
   try:
     deleted_count = api.delete_jobs(
       cluster_name=cluster_name,
       config_name=config_name,
       tag=tag,
       archive_name=archive_name,
-      all_archived=all_archived,
+      archived=archived,
       not_archived=not_archived,
     )
     console.print(f"[green]✓[/green] Successfully deleted {deleted_count} jobs.")

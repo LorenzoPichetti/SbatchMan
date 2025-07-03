@@ -115,7 +115,7 @@ def delete_jobs(
   config_name: Optional[str] = None,
   tag: Optional[str] = None,
   archive_name: Optional[str] = None,
-  all_archived: bool = False,
+  archived: bool = False,
   not_archived: bool = False,
 ) -> int:
   """
@@ -138,7 +138,7 @@ def delete_jobs(
     tag=tag,
     archive_name=archive_name,
     from_active=not_archived,
-    from_archived=all_archived
+    from_archived=archived
   )
 
   if not jobs_to_delete:
@@ -153,7 +153,24 @@ def delete_jobs(
     else:
       job_dir = exp_dir_root / job.exp_dir
     
+
     if job_dir.exists():
       shutil.rmtree(job_dir)
+    
+    # Recursively delete empty parent directories
+    parent_dir = job_dir.parent
+    stop_dir = None
+    if job.archive_name:
+      stop_dir = archive_root
+    else:
+      stop_dir = exp_dir_root
+
+    try:
+      while parent_dir.is_dir() and not any(parent_dir.iterdir()) and parent_dir != stop_dir:
+        shutil.rmtree(parent_dir)
+        parent_dir = parent_dir.parent
+    except FileNotFoundError:
+      # This can happen in concurrent scenarios, it's safe to ignore.
+      pass
 
   return len(jobs_to_delete)
