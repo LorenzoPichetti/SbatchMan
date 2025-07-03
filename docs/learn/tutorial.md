@@ -48,15 +48,17 @@ sbatchman launch \
   --command "python train.py --epochs 10 --batch-size 32"
 ```
 
-The `--tag` option lets you group related jobs together, making it easier to manage and track them. A use case for tags is to differentiate between different runs of the same experiment, such as changing hyperparameters or datasets.
+The `--tag` option lets you organize your jobs by assigning a label to them. Tags are useful for tracking different experiments or runs of the same job, allowing you to easily filter and manage your jobs later on. A common use case for tags is to differentiate between different configurations of the same experiment, such as changing parameters or datasets.
 
 For example, if you change the training dataset or number of epochs, you can relaunch the job with a new tag:
 
 ```bash
+```bash
 sbatchman launch \
   --config simple_gpu_config \
-  --tag mnist_training_20_epochs \
-  --command "python train.py --epochs 20 --batch-size 64"
+  --tag <span style="color:red">mnist_training_20_epochs</span> \
+  --command "python train.py <span style="color:red">--epochs 20</span> --batch-size 32"
+```
 ```
 
 ## 🖥️ Monitor Your Jobs

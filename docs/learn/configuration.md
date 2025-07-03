@@ -1,10 +1,14 @@
-# Advanced Configuration
+# Configuration
 
-While `SbatchMan` allows you to create configurations one by one from the command line, you can also define multiple configurations for various clusters at once using a single YAML file. This is especially useful for setting up complex projects or sharing configurations with your team.
+This guide covers the different ways to create and manage job configurations in `SbatchMan`. You can either use a YAML file for batch configuration or programmatically create configurations using the Python API.
 
-## The Configuration File
+## Configuring with a YAML File
 
-To add multiple configurations, you can use the `configure` command with the `--file` option, pointing to your YAML configuration file.
+For managing multiple configurations across different clusters, a YAML file is the most convenient method. This is especially useful for setting up complex projects or sharing configurations with your team.
+
+### The `configure` Command
+
+To add multiple configurations from a file, you can use the `configure` command with the `--file` option, pointing to your YAML configuration file.
 
 ```bash
 sbatchman configure --file my_configs.yaml
@@ -12,11 +16,11 @@ sbatchman configure --file my_configs.yaml
 
 This command will parse the file and create or replace the specified configurations.
 
-## YAML File Structure
+### YAML File Structure
 
 The configuration file is organized by cluster. Each top-level key represents a `cluster_name`.
 
-### Cluster Block
+#### Cluster Block
 
 Each cluster block must contain a `scheduler` and a `configs` section. You can also specify a `default_conf` section to set default parameters for all configurations within that cluster.
 
@@ -47,7 +51,7 @@ Here is the general structure:
 -   **`default_conf` (Optional)**: A dictionary of default parameters that apply to all configurations under this cluster.
 -   **`configs`**: A dictionary where each key is a unique configuration name. The values are the specific parameters for that configuration, which will override any defaults set in `default_conf`.
 
-### Example Configuration File
+#### Example Configuration File
 
 Here is an example `my_configs.yaml` file defining configurations for two different clusters, `baldo` (using SLURM) and `hpc-unitn` (using PBS).
 
@@ -87,37 +91,62 @@ hpc-unitn:
       walltime: "12:00:00"
 ```
 
-### Available Parameters
+## Configuring with the Python API
 
-The parameters you can use depend on the scheduler specified for the cluster.
+`SbatchMan` also provides a Python API for creating configurations programmatically. This is useful for dynamic configuration generation within scripts or other tools.
 
-#### SLURM (`scheduler: slurm`)
+### SLURM Configuration
 
--   `partition`
--   `nodes`
--   `ntasks`
--   `cpus_per_task`
--   `mem`
--   `account`
--   `time`
--   `gpus`
--   `constraint`
--   `nodelist`
--   `qos`
--   `reservation`
--   `env` (list of strings)
--   `modules` (list of strings)
+To create a configuration for a SLURM cluster, use the `create_slurm_config` function.
 
-#### PBS (`scheduler: pbs`)
+```python
+from sbatchman import api
 
--   `queue`
--   `cpus`
--   `mem`
--   `walltime`
--   `env` (list of strings)
--   `modules` (list of strings)
+# Create a basic SLURM config
+api.create_slurm_config(
+    name="my_slurm_job",
+    cluster_name="baldo",
+    partition="gpu_queue",
+    cpus_per_task=4,
+    mem="16G",
+    gpus=1,
+    time="01-00:00:00",
+    modules=["gcc/10.2.0", "cuda/11.4"],
+    overwrite=True
+)
+```
 
-#### Local (`scheduler: local`)
+### PBS Configuration
 
--   `env` (list of strings)
--   `modules` (list of strings)
+To create a configuration for a PBS cluster, use the `create_pbs_config` function.
+
+```python
+from sbatchman import api
+
+# Create a basic PBS config
+api.create_pbs_config(
+    name="my_pbs_job",
+    cluster_name="hpc-unitn",
+    queue="default_queue",
+    cpus=2,
+    mem="8gb",
+    walltime="12:00:00",
+    overwrite=True
+)
+```
+
+### Local Configuration
+
+For running jobs on your local machine, you can create a `local` configuration.
+
+```python
+from sbatchman import api
+
+# Create a local config
+api.create_local_config(
+    name="my_local_job",
+    cluster_name="my-laptop", # Defaults to hostname
+    env=["MY_VAR=my_value"],
+    overwrite=True
+)
+```

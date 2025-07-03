@@ -2,7 +2,7 @@
 <p align="center">
   <img src="images/sbatchman.png" alt="SbatchMan Logo" width="100"/>
 </p>
-With SbatchMan, you can easily run and manage code experiments across multiple remote clusters. It streamlines your workflow, letting you focus on your research instead of dealing with the complexities of job submission and cluster management.
+SbatchMan simplifies the process of running and managing code experiments on multiple remote clusters. It streamlines your workflow, allowing you to focus on your research rather than the complexities of job submission and cluster management.
 
 To get started, check out the [installation guide](learn/install.md) to set up SbatchMan on your system. Then, follow the [tutorial](learn/tutorial.md) to learn how to use SbatchMan effectively.
 
@@ -18,4 +18,4 @@ To get started, check out the [installation guide](learn/install.md) to set up S
 
 ![SbatchMan TUI Screenshot](images/tui.png)
 
-*The SbatchMan TUI provides an interactive way to manage your jobs and clusters directly from your terminal.*
+*The SbatchMan TUI provides an interactive way to view the status of your jobs directly from the terminal.*
