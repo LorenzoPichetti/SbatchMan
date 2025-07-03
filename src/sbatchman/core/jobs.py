@@ -12,7 +12,9 @@ def jobs_list(
   cluster_name: Optional[str] = None,
   config_name: Optional[str] = None,
   tag: Optional[str] = None,
-  include_archived: bool = False
+  archive_name: Optional[str] = None,
+  from_active: bool = True,
+  from_archived: bool = False,
 ) -> List[Job]:
   """
   Lists active and optionally archived jobs, with optional filtering.
@@ -21,20 +23,22 @@ def jobs_list(
   exp_dir = get_experiments_dir()
   
   # Scan active jobs
-  for metadata_path in exp_dir.glob("**/metadata.yaml"):
-    with open(metadata_path, 'r') as f:
-      job_dict = yaml.safe_load(f)
-      # Apply filters
-      if cluster_name and not metadata_path.parts[-5] == cluster_name:
-        continue
-      if config_name and not metadata_path.parts[-4] == config_name:
-        continue
-      if tag and not metadata_path.parts[-3] == tag:
-        continue
-      jobs.append(Job(**job_dict))
+  if from_active:
+    exp_dir = get_experiments_dir()
+    for metadata_path in exp_dir.glob("**/metadata.yaml"):
+      with open(metadata_path, 'r') as f:
+        job_dict = yaml.safe_load(f)
+        # Apply filters
+        if cluster_name and not metadata_path.parts[-5] == cluster_name:
+          continue
+        if config_name and not metadata_path.parts[-4] == config_name:
+          continue
+        if tag and not metadata_path.parts[-3] == tag:
+          continue
+        jobs.append(Job(**job_dict))
 
   # Scan archived jobs
-  if include_archived:
+  if from_archived:
     archive_root = get_archive_dir()
     for metadata_path in archive_root.glob("*/**/metadata.yaml"):
       with open(metadata_path, 'r') as f:
@@ -45,6 +49,8 @@ def jobs_list(
         if config_name and not metadata_path.parts[-4] == config_name:
           continue
         if tag and not metadata_path.parts[-3] == tag:
+          continue
+        if archive_name and not metadata_path.parts[-6] == archive_name:
           continue
         jobs.append(Job(**job_dict))
   
@@ -63,7 +69,7 @@ def jobs_df(
     cluster_name=cluster_name,
     config_name=config_name,
     tag=tag,
-    include_archived=include_archived
+    from_archived=include_archived
   )
   jobs_dicts = [job.__dict__ for job in jobs]
   return pd.DataFrame(jobs_dicts)
@@ -81,7 +87,7 @@ def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optio
         f"Archive '{archive_name}' already exists. Use --overwrite to replace it."
       )
   
-  jobs_to_archive = jobs_list(include_archived=False, cluster_name=cluster_name, config_name=config_name, tag=tag)
+  jobs_to_archive = jobs_list(from_archived=False, cluster_name=cluster_name, config_name=config_name, tag=tag)
 
   exp_dir_root = get_experiments_dir()
   
@@ -103,3 +109,51 @@ def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optio
       yaml.safe_dump(job, f, default_flow_style=False)
 
   return jobs_to_archive
+
+def delete_jobs(
+  cluster_name: Optional[str] = None,
+  config_name: Optional[str] = None,
+  tag: Optional[str] = None,
+  archive_name: Optional[str] = None,
+  all_archived: bool = False,
+  not_archived: bool = False,
+) -> int:
+  """
+  Deletes jobs matching the filter criteria.
+
+  Args:
+    cluster_name: Filter by cluster name.
+    config_name: Filter by configuration name.
+    tag: Filter by tag.
+    archive_name: If provided, only delete jobs from this archive.
+    all_archived: If True, delete only archived jobs.
+    not_archived: If True, delete only active jobs.
+
+  Returns:
+    The number of deleted jobs.
+  """
+  jobs_to_delete = jobs_list(
+    cluster_name=cluster_name,
+    config_name=config_name,
+    tag=tag,
+    archive_name=archive_name,
+    from_active=not_archived,
+    from_archived=all_archived
+  )
+
+  if not jobs_to_delete:
+    return 0
+
+  exp_dir_root = get_experiments_dir()
+  archive_root = get_archive_dir()
+
+  for job in jobs_to_delete:
+    if job.archive_name:
+      job_dir = archive_root / job.archive_name / job.exp_dir
+    else:
+      job_dir = exp_dir_root / job.exp_dir
+    
+    if job_dir.exists():
+      shutil.rmtree(job_dir)
+
+  return len(jobs_to_delete)

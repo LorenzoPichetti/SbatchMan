@@ -238,5 +238,55 @@ def status(
     console.print(f"[bold red]Error:[/bold red] {e}")
     raise typer.Exit(1)
 
+@app.command("archive")
+def archive(
+    archive_name: str = typer.Argument(..., help="The name of the archive to create."),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing archive with the same name."),
+    cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="Archive jobs from this cluster."),
+    config_name: Optional[str] = typer.Option(None, "--config", help="Archive jobs with this configuration name."),
+    tag: Optional[str] = typer.Option(None, "--tag", help="Archive jobs with this tag."),
+):
+  """Archives jobs, moving them from the active experiments directory to an archive location."""
+  try:
+    archived_count = api.archive_jobs(
+      archive_name=archive_name,
+      overwrite=overwrite,
+      cluster_name=cluster_name,
+      config_name=config_name,
+      tag=tag
+    )
+    console.print(f"[green]✓[/green] Successfully archived {len(archived_count)} jobs.")
+  except ProjectNotInitializedError:
+    _handle_not_initialized()
+  except SbatchManError as e:
+    console.print(f"[bold red]Error:[/bold red] {e}")
+    raise typer.Exit(1)
+
+@app.command("delete")
+def delete(
+  cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="Delete jobs from this cluster."),
+  config_name: Optional[str] = typer.Option(None, "--config", help="Delete jobs with this configuration name."),
+  tag: Optional[str] = typer.Option(None, "--tag", help="Delete jobs with this tag."),
+  archive_name: Optional[str] = typer.Option(None, "--archive", help="Delete jobs from this archive."),
+  all_archived: bool = typer.Option(False, "--all-archived", help="Delete only archived jobs."), 
+  not_archived: bool = typer.Option(False, "--not-archived", help="Delete only active jobs."),
+):
+  """Deletes jobs matching the specified criteria."""
+  try:
+    deleted_count = api.delete_jobs(
+      cluster_name=cluster_name,
+      config_name=config_name,
+      tag=tag,
+      archive_name=archive_name,
+      all_archived=all_archived,
+      not_archived=not_archived,
+    )
+    console.print(f"[green]✓[/green] Successfully deleted {deleted_count} jobs.")
+  except ProjectNotInitializedError:
+    _handle_not_initialized()
+  except SbatchManError as e:
+    console.print(f"[bold red]Error:[/bold red] {e}")
+    raise typer.Exit(1)
+
 if __name__ == "__main__":
   app()

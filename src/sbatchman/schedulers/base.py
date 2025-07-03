@@ -167,6 +167,9 @@ class BaseConfig(ABC):
     """Saves the configuration script to a file inside a scheduler-specific folder."""
     script_content = self._generate_script()
 
+    if self.template_path is None:
+      raise ConfigurationError("Template path is not set. This should not happen.")
+
     with open(self.template_path, "w") as f:
       f.write(script_content)
     return self.template_path

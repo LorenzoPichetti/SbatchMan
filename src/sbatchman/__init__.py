@@ -7,11 +7,14 @@ from .api import init_project, \
     launch_job, jobs_list, jobs_df, \
     archive_jobs
 from .exceptions import SbatchManError, ProjectNotInitializedError, ProjectExistsError
+from .core.launcher import Job
 
 __all__ = [
     "SbatchManError",
     "ProjectNotInitializedError",
     "ProjectExistsError",
+
+    "Job",
 
     "init_project",
 

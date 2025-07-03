@@ -191,7 +191,7 @@ def jobs_list(
     cluster_name=cluster_name,
     config_name=config_name,
     tag=tag,
-    include_archived=include_archived
+    from_archived=include_archived
   )
 
 def jobs_df(
@@ -215,7 +215,7 @@ def jobs_df(
     cluster_name=cluster_name,
     config_name=config_name,
     tag=tag,
-    include_archived=include_archived
+    include_archived=include_archived,
   )
 
 def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optional[str] = None, config_name: Optional[str] = None, tag: Optional[str] = None) -> List[Job]:
@@ -240,6 +240,35 @@ def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optio
     cluster_name=cluster_name,
     config_name=config_name,
     tag=tag
+  )
+
+def delete_jobs(
+  cluster_name: Optional[str] = None,
+  config_name: Optional[str] = None,
+  tag: Optional[str] = None,
+  archive_name: Optional[str] = None,
+  all_archived: bool = False,
+  not_archived: bool = False,
+) -> int:
+  """Deletes jobs matching the filter criteria.
+
+  Args:
+    cluster_name: If provided, only delete jobs from this cluster.
+    config_name: If provided, only delete jobs with this configuration name.
+    tag: If provided, only delete jobs with this tag.
+    from_active: If True, delete jobs from the active experiments directory.
+    from_archived: If True, delete jobs from the archive.
+
+  Returns:
+    The number of jobs that were successfully deleted.
+  """
+  return jobs.delete_jobs(
+    cluster_name=cluster_name,
+    config_name=config_name,
+    tag=tag,
+    archive_name=archive_name,
+    all_archived=all_archived,
+    not_archived=not_archived,
   )
 
 def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[BaseConfig]:
