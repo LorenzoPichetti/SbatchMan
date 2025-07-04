@@ -125,8 +125,7 @@ def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optio
     shutil.move(str(source_job_dir), str(dest_job_dir))
 
     # Rewrite metadata in new location
-    with open(dest_job_dir / "metadata.yaml", "w") as f:
-      yaml.safe_dump(job, f, default_flow_style=False)
+    job.write_metadata()
 
   return jobs_to_archive
 
@@ -217,7 +216,7 @@ def update_jobs_status() -> int:
 
       if new_status != job.status:
         job.status = new_status
-        job.save_metadata()
+        job.write_metadata()
         updated_count += 1
 
     except Exception:

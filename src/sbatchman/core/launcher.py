@@ -87,7 +87,7 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     f.write(final_script_content)
   run_script_path.chmod(0o755)
 
-  metadata = Job(
+  job = Job(
     config_name=config_name,
     cluster_name=cluster_name,
     timestamp=timestamp,
@@ -101,28 +101,27 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     postprocess=postprocess,
   )
 
-  # 4. Write metadata.yaml before job submission
-  with open(exp_dir / "metadata.yaml", "w") as f:
-    yaml.safe_dump(asdict(metadata), f, default_flow_style=False)
+  job.write_metadata()
 
   try:
     # 5. Submit the job using the scheduler's own logic
     if scheduler == 'slurm':
-      metadata.job_id = slurm_submit(run_script_path, exp_dir)
+      job.job_id = slurm_submit(run_script_path, exp_dir)
     elif scheduler == 'pbs':
-      metadata.job_id = pbs_submit(run_script_path, exp_dir)
+      job.job_id = pbs_submit(run_script_path, exp_dir)
     elif scheduler == 'local':
-      metadata.job_id = local_submit(run_script_path, exp_dir)
+      job.job_id = local_submit(run_script_path, exp_dir)
     else:
       raise ConfigurationError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
     
+    job.write_job_id()
+  
   except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
-    metadata.status = Status.FAILED_SUBMISSION
-    with open(exp_dir / "metadata.yaml", "w") as f:
-      yaml.safe_dump(asdict(metadata), f, default_flow_style=False)
+    job.status = Status.FAILED_SUBMISSION
+    job.write_metadata()
     raise
   finally:    
-    return metadata
+    return job
 
 
 def _load_variable_values(var_value):
@@ -260,7 +259,7 @@ def _launch_job_combinations(
     Generates and launches jobs for all combinations of variables.
     """
     if not command_template:
-        return
+      return
 
     # Determine which variables are actually used in the templates
     used_vars = _extract_used_vars(config_template, command_template, tag, preprocess_template, postprocess_template)

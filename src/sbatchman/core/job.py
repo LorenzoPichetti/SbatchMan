@@ -5,13 +5,14 @@ from typing import Optional
 from dataclasses import dataclass, asdict
 import shlex
 
-from sbatchman.config.project_config import get_experiments_dir, get_project_configs_file_path
+from sbatchman.config.project_config import get_archive_dir, get_experiments_dir, get_project_configs_file_path
 from sbatchman.core.status import Status
 from sbatchman.exceptions import ConfigurationError, ConfigurationNotFoundError
 from sbatchman.schedulers.pbs import PbsConfig
 from sbatchman.schedulers.slurm import SlurmConfig
 from sbatchman.schedulers.local import LocalConfig
 from sbatchman.schedulers.base import BaseConfig
+import subprocess
 
 @dataclass
 class Job:
@@ -111,23 +112,48 @@ class Job:
         return f.read()
     return None
 
-  def save_metadata(self):
-    """Saves the current job state to its metadata.yaml file."""
-    # Determine if the job is in an archive or in the active experiments dir
+  def get_metadata_path(self) -> Path:
+    """
+    Returns the path to the metadata.yaml file for this job.
+    If the job is archived, it will return the path in the archive directory.
+    Otherwise, it returns the path in the active experiments directory.
+    """
     if self.archive_name:
-      from sbatchman.config.project_config import get_archive_dir
       base_dir = get_archive_dir() / self.archive_name
     else:
       base_dir = get_experiments_dir()
 
-    metadata_path = base_dir / self.exp_dir / "metadata.yaml"
-    
-    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    return base_dir / self.exp_dir / "metadata.yaml"
 
-    with open(metadata_path, "w") as f:
+  def write_metadata(self):
+    """Saves the current job state to its metadata.yaml file."""
+    path = self.get_metadata_path()
+    
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(path, "w") as f:
       job_dict = asdict(self)
       # Convert Path objects to strings for clean YAML representation
       for key, value in job_dict.items():
         if isinstance(value, Path):
           job_dict[key] = str(value)
       yaml.dump(job_dict, f, default_flow_style=False)
+
+  def write_job_id(self):
+    """
+    Updates the job_id in the metadata.yaml file.
+    This is used to update the job_id after the job has been submitted.
+    """
+
+    path = self.get_metadata_path()
+
+    if path.exists():
+      # Use sed to update the job_id in-place to avoid overwriting other fields
+      # that might have been changed manually or by other processes.
+      command = [
+        "sed",
+        "-i",
+        f"s/^job_id: \\d*/job_id: {shlex.quote(self.job_id)}/",
+        str(path)
+      ]
+      subprocess.run(command, check=True, capture_output=True, text=True)
