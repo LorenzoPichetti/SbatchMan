@@ -21,7 +21,7 @@ class Job:
   timestamp: str
   exp_dir: str
   command: str
-  status: Status
+  status: str
   scheduler: str
   job_id: str
   preprocess: Optional[str] = None
@@ -148,12 +148,12 @@ class Job:
     path = self.get_metadata_path()
 
     if path.exists():
-      # Use sed to update the job_id in-place to avoid overwriting other fields
-      # that might have been changed manually or by other processes.
-      command = [
-        "sed",
-        "-i",
-        f"s/^job_id: \\d*/job_id: {shlex.quote(self.job_id)}/",
-        str(path)
-      ]
-      subprocess.run(command, check=True, capture_output=True, text=True)
+      with open(path, 'r') as f:
+        lines = f.readlines()
+
+      with open(path, 'w') as f:
+        for line in lines:
+          if line.strip().startswith('job_id:'):
+            f.write(f"job_id: {self.job_id}\n")
+          else:
+            f.write(line)

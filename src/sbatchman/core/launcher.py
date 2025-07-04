@@ -93,7 +93,7 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     timestamp=timestamp,
     exp_dir=str(exp_dir_local),
     command=command,
-    status=Status.SUBMITTING,
+    status=str(Status.SUBMITTING),
     scheduler=scheduler,
     job_id="",
     archive_name=None,
@@ -117,7 +117,7 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     job.write_job_id()
   
   except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
-    job.status = Status.FAILED_SUBMISSION
+    job.status = str(Status.FAILED_SUBMISSION)
     job.write_metadata()
     raise
   finally:    

@@ -17,6 +17,7 @@ def jobs_list(
   archive_name: Optional[str] = None,
   from_active: bool = True,
   from_archived: bool = False,
+  update_jobs: bool = True
 ) -> List[Job]:
   """
   Lists active and/or archived jobs, with optional filtering.
@@ -27,6 +28,7 @@ def jobs_list(
     archive_name: If provided, only include jobs from this archive.
     from_active: If True, include active jobs.
     from_archived: If True, include archived jobs.
+    update_jobs: If True, update the status of active jobs before listing.
   Returns:
     A list of Job objects matching the filter criteria.
   Raises:
@@ -212,7 +214,7 @@ def update_jobs_status() -> int:
 
     try:
       config = job.get_job_config()
-      new_status = config.get_job_status(job.job_id)
+      new_status = str(config.get_job_status(job.job_id))
 
       if new_status != job.status:
         job.status = new_status
