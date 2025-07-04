@@ -8,7 +8,8 @@ from typing import Any, Dict, List, Optional
 from dataclasses import asdict
 
 from sbatchman.core.job import Job, Status
-from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobSubmitError
+from sbatchman.core.jobs_manager import job_exists, jobs_list
+from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_project_config_dir, get_scheduler_from_cluster_name
 
@@ -17,7 +18,7 @@ from sbatchman.schedulers.local import local_submit
 from sbatchman.schedulers.pbs import pbs_submit
 from sbatchman.schedulers.slurm import slurm_submit
 
-def launch_job(config_name: str, command: str, cluster_name: Optional[str] = None, tag: str = "default", preprocess: Optional[str] = None, postprocess: Optional[str] = None) -> Job:
+def launch_job(config_name: str, command: str, cluster_name: Optional[str] = None, tag: str = "default", preprocess: Optional[str] = None, postprocess: Optional[str] = None, force: bool = False) -> Job:
   """
   Launches an experiment based on a configuration name.
   Args:
@@ -35,13 +36,14 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     ConfigurationNotFoundError: If the configuration file does not exist.
     JobSubmitError: If there is an error during job submission.
   """
+
   if not cluster_name:
     try:
       cluster_name = get_cluster_name()
     except ClusterNameNotSetError:
       raise ConfigurationError(
         "Cluster name not specified and not set globally. "
-        "Please provide --cluster-name or use 'sbatchman set-cluster-name <cluster_name>' to set a global default."
+        "Please provide '--cluster-name' or use 'sbatchman set-cluster-name <cluster_name>' to set a global default."
       )
 
   scheduler = get_scheduler_from_cluster_name(cluster_name)
@@ -50,6 +52,13 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
   if not config_path.exists():
     raise ConfigurationNotFoundError(f"Configuration '{config_name}' for cluster '{cluster_name}' not found at '{config_path}'.")
   template_script = open(config_path, "r").read()
+
+
+  if job_exists(command, config_name, cluster_name, tag, preprocess, postprocess) and not force:
+    raise JobExistsError(
+      f"An identical job already exists for config '{config_name}' with tag '{tag}'. "
+      "Use '--force' to submit it anyway"
+    )
 
   # Capture the Current Working Directory at the time of launch
   submission_cwd = Path.cwd()
@@ -96,6 +105,7 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     status=str(Status.SUBMITTING),
     scheduler=scheduler,
     job_id="",
+    tag=tag,
     archive_name=None,
     preprocess=preprocess,
     postprocess=postprocess,
@@ -177,7 +187,17 @@ def _extract_used_vars(*templates):
       var_names.update(re.findall(r"{(\w+)}", template))
   return var_names
 
-def launch_jobs_from_file(jobs_file_path: Path) -> List[Job]:
+def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job]:
+  """  Launches jobs based on a YAML configuration file.
+  Args:
+    jobs_file_path: Path to the YAML file containing job definitions.
+    force: If True, will overwrite existing jobs with the same configuration.
+  Returns:
+    A list of Job objects representing the launched jobs.
+  Raises:
+    ConfigurationError: If the jobs file is not found or has invalid syntax.
+  """
+
   with open(jobs_file_path, "r") as f:
     config = yaml.safe_load(f)
 
@@ -217,7 +237,8 @@ def launch_jobs_from_file(jobs_file_path: Path) -> List[Job]:
         job_preprocess_template,
         job_postprocess_template,
         merged_job_vars,
-        launched_jobs
+        launched_jobs,
+        force,
       )
     else:
       for entry in config_jobs:
@@ -241,7 +262,8 @@ def launch_jobs_from_file(jobs_file_path: Path) -> List[Job]:
           entry_preprocess_template,
           entry_postprocess_template,
           final_vars,
-          launched_jobs
+          launched_jobs,
+          force,
         )
 
   return launched_jobs
@@ -253,7 +275,8 @@ def _launch_job_combinations(
     preprocess_template: Optional[str],
     postprocess_template: Optional[str],
     variables: Dict[str, Any],
-    launched_jobs: List[Job]
+    launched_jobs: List[Job],
+    force: bool = False,
 ):
     """
     Generates and launches jobs for all combinations of variables.
@@ -279,8 +302,13 @@ def _launch_job_combinations(
       # print(f'{postprocess=}')
       # print(f'{job_tag=}')
       # print('='*40)
-      job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess)
-      launched_jobs.append(job)
+      try:
+        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force)
+        launched_jobs.append(job)
+      except JobExistsError as e:
+        print(f"Skipping job: {e.message}")
+      except JobSubmitError as e:
+        print(f"Failed to submit job: {e.message}")
       return
 
     keys, values = zip(*filtered_vars.items())
@@ -298,5 +326,10 @@ def _launch_job_combinations(
       # print(f'{postprocess=}')
       # print(f'{job_tag=}')
       # print('='*40)
-      job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess)
-      launched_jobs.append(job)
+      try:
+        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force)
+        launched_jobs.append(job)
+      except JobExistsError as e:
+        print(f"Skipping job: {e.message}")
+      except JobSubmitError as e:
+        print(f"Failed to submit job: {e.message}")

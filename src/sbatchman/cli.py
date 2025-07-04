@@ -212,7 +212,9 @@ def launch(
   tag: str = typer.Option("default", "--tag", help="Tag for this experiment (default: 'default')."),
   command: Optional[str] = typer.Argument(None, help="The executable and its parameters, enclosed in quotes."),
   preprocess: Optional[str] = typer.Option(None, "--preprocess", help="Command to run before the main job (optional)."),
-  postprocess: Optional[str] = typer.Option(None, "--postprocess", help="Command to run after the main job (optional)."),
+  postprocess: Optional[str] = typer.Option(None, "--postprocess", 
+  help="Command to run after the main job (optional)."),
+  force: bool = typer.Option(False, "--force", help="Force submission even if identical jobs already exist.")
 ):
   """Launches an experiment (or a batch of experiments) using a predefined configuration.
 
@@ -231,6 +233,7 @@ def launch(
           tag=tag,
           preprocess=preprocess,
           postprocess=postprocess,
+          force=force
         )
         console.print(f"✅ Experiment for config '[bold cyan]{config}[/bold cyan]' submitted successfully.")
         console.print(f"   ┣━ Job ID: {job.job_id}")

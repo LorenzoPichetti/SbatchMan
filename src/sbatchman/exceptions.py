@@ -49,3 +49,9 @@ class ClusterNameNotSetError(SbatchManError):
   def __init__(self, message="Cluster name not set. Please run 'sbatchman set-cluster-name'."):
     self.message = message
     super().__init__(self.message)
+
+class JobExistsError(SbatchManError):
+  """Raised when an identical job already exists."""
+  def __init__(self, message: str):
+    self.message = message
+    super().__init__(self.message)

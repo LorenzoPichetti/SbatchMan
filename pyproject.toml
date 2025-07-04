@@ -6,7 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "sbatchman"
 version = "0.1.3"
 authors = [
-  { name="Hicrest laboratory", email="hicrest@unitn.it" },
+  { name="Salvatore Andaloro", email="sbatchman@sasso.dev" },
+  { name="Thomas Pasquali", email="thomas.pasquali@unitn.it" },
+  { name="Lorenzo Pichetti" },
 ]
 description = "A utility to create, launch and monitor code experiments on SLURM, PBS, or local machines."
 readme = "README.md"

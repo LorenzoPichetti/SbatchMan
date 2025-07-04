@@ -1,6 +1,3 @@
-"""A utility to create, launch, and monitor code experiments."""
-
-import yaml
 from .config.project_config import init_project
 from .core.config_manager import create_configs_from_file, create_local_config, create_slurm_config, create_pbs_config
 from .core.launcher import launch_job, launch_jobs_from_file

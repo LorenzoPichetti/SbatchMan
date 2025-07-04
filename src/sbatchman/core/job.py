@@ -23,6 +23,7 @@ class Job:
   command: str
   status: str
   scheduler: str
+  tag: str
   job_id: str
   preprocess: Optional[str] = None
   postprocess: Optional[str] = None 
