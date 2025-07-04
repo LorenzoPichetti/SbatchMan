@@ -16,7 +16,7 @@ Once `pipx` is installed, you can install `sbatchman` from PyPI:
 pipx install sbatchman
 ```
 
-Great, you now have `SbatchMan` installed! You can verify the installation by running:
+Great, you now have `SbatchMan` installed! You can check out the available commands by running:
 ```bash
 sbatchman --help
 ```

@@ -59,7 +59,6 @@ class JobsScreen(Screen):
     self.timer = self.set_interval(5, self.load_and_update_jobs)
 
   def load_and_update_jobs(self) -> None:
-    update_jobs_status()
     self.all_jobs = jobs_list()
     self.update_tables()
 

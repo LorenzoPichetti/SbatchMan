@@ -7,6 +7,7 @@ from pathlib import Path
 import sbatchman as sbtc
 from sbatchman.config import global_config
 from sbatchman.exceptions import ProjectNotInitializedError, SbatchManError
+import importlib.metadata
 
 from .tui.tui import run_tui
 
@@ -40,8 +41,22 @@ def _handle_not_initialized():
 def _save_config_print(config: BaseConfig):
   console.print(f"✅ Configuration '[bold cyan]{config.name}[/bold cyan]' saved to {config.template_path}")
 
+def version_callback(value: bool):
+  if not value:
+    return
+  try:
+    sbatchman_version = importlib.metadata.version("sbatchman")
+    console.print(f"SbatchMan version: [bold cyan]{sbatchman_version}[/bold cyan]")
+  except importlib.metadata.PackageNotFoundError:
+    console.print("[bold red]Error:[/bold red] Could not determine the version. Is SbatchMan installed correctly?")
+    raise typer.Exit(1)
+  raise typer.Exit()
+
 @app.callback()
-def main_callback(ctx: typer.Context):
+def main_callback(
+    ctx: typer.Context,
+    version: Optional[bool] = typer.Option(None, "--version", callback=version_callback, is_eager=True, help="Show the version and exit."),
+  ):
   """
   SbatchMan CLI main callback.
   Handles global exceptions.

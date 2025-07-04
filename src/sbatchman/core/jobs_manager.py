@@ -20,7 +20,7 @@ def jobs_list(
   update_jobs: bool = True
 ) -> List[Job]:
   """
-  Lists active and/or archived jobs, with optional filtering.
+  Lists active and/or archived jobs, with optional filtering. Updates the status of active jobs by default.
   Args:
     cluster_name: Filter by cluster name.
     config_name: Filter by configuration name.
@@ -36,6 +36,9 @@ def jobs_list(
   """
   jobs = []
   exp_dir = get_experiments_dir()
+
+  if update_jobs:
+    update_jobs_status()
   
   # Scan active jobs
   if from_active:
@@ -204,7 +207,7 @@ def update_jobs_status() -> int:
     The number of jobs whose status was updated.
   """
   current_cluster = get_cluster_name()
-  active_jobs = jobs_list(cluster_name=current_cluster, from_active=True, from_archived=False)
+  active_jobs = jobs_list(cluster_name=current_cluster, from_active=True, from_archived=False, update_jobs=False)
   
   updated_count = 0
 
