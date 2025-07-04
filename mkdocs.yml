@@ -9,6 +9,7 @@ theme:
     - content.code.copy
     - search.suggest
     - header.autohide
+    - navigation.footer
   palette:
     - scheme: default
       primary: black   # ⬅️ Black top bar (in light mode)
@@ -55,12 +56,13 @@ plugins:
             show_if_no_docstring: true
             merge_init_into_class: true
 nav:
-  - Home: index.md
+  - Installation:
+    - Install: install/install.md
+    - Setup: install/setup.md
   - Learn:
-    - Installation: learn/install.md
     - Tutorial: learn/tutorial.md
     - Advanced configuration: learn/configuration.md
     - Advanced job submission: learn/launching_jobs.md
     - Aliases: learn/aliases.md
-    - Development guide: learn/development.md
   - API: api.md
+  - Development Guide: development.md

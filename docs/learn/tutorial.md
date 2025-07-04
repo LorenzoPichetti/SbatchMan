@@ -4,6 +4,65 @@ Learn how to use SbatchMan in this **step-by-step Tutorial**!
 
 It covers everything you need to know to get you started with SbatchMan, from setting up your cluster configuration to launching jobs and collecting results.
 
+## 💡 SbatchMan Core Concepts
+
+- **Project**:  
+  A directory where SbatchMan will store all metadata, configurations, and job records.  
+  When you run `sbatchman init`, a `SbatchMan` folder is created in the current working directory. This folder is a SbatchMan "project"
+
+- **Configuration**:  
+  A named set of cluster/job parameters (like environment variables, partition, walltime, GPUs, etc.), stored in `SbatchMan/configs/`.
+    - Each configuration has a *name*.
+    - Configurations are reusable for different jobs.
+    - Each configuration has corresponding *template shell script*.
+    - All configurations details are stored into a YAML file
+
+- **Tag**:  
+  A label you assign to batch jobs. Tags help you organize, filter, and track experiments or runs.  
+  **Example**: you have two programs `A` and `B`. Both shall run under the same configuration called `ExampleConfig`. Later, you'd like to retrieve results for experiments on programs `A` and `B` separately. You can achieve this by simply assigning two different tags to the jobs you run. 
+
+- **Job**:  
+  A single execution of a command on a cluster or your local machine, tracked by SbatchMan.  
+  Each job is linked to a **configuration** and can have a **tag**.  
+  For each job, SbatchMan stores the **status**, **stdout**, **stderr** etc.
+
+---
+
+## 📂 Internal File & Folder Structure
+
+```
+# this is your project folder
+SbatchMan/
+├── archive/                        # Archived jobs
+├── configs/                        # All configurations and templates
+│   ├── <cluster_name>/
+│   │   ├── <configuration_template_1>.sh
+│   │   └── <configuration_template_2>.sh
+│   ├── configurations.yaml         # Central registry of all configurations
+│   └── <another_cluster_name>/
+│       ├── <configuration_template_3>.sh
+│       └── <configuration_template_4>.sh
+└── experiments/                    # All job runs and their results
+    └── <cluster_name>/
+        ├── <configuration_name>/
+        │   └── <tag>/
+        │       ├── <run_timestamp_1>/
+        │       │   ├── metadata.yaml      # Job metadata (config, tags, etc.)
+        │       │   ├── run.sh             # The actual script submitted
+        │       │   ├── stderr.log         # Error output
+        │       │   └── stdout.log         # Standard output
+        │       ├── <run_timestamp_2>/
+        │       │   └── ...
+        │       └── ...
+        └── ...
+```
+
+- **configs/**: Contains all configuration files and template scripts, organized by cluster.
+- **experiments/**: Stores all job runs, grouped by configuration and tag. Each run has its own timestamped folder with logs and metadata.
+- **archive/**: Used for archiving completed or old jobs.
+
+This structure makes it easy to manage, reproduce, and analyze your experiments across different clusters and configurations.
+
 ## 📚 Initialize SbatchMan
 To initialize SbatchMan, run the following command in the project root directory:
 
