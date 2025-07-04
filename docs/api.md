@@ -1,1 +1,1 @@
-::: sbatchman.api
+::: sbatchman

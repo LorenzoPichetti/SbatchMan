@@ -1,4 +1,3 @@
-# src/exp_kit/launcher.py
 import subprocess
 import datetime
 import itertools
@@ -6,135 +5,35 @@ import re
 import yaml
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, asdict
-import shlex
+from dataclasses import asdict
 
-from sbatchman.exceptions import ConfigurationError, ConfigurationNotFoundError, ClusterNameNotSetError, JobSubmitError
+from sbatchman.core.job import Job, Status
+from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobSubmitError
 from sbatchman.config.global_config import get_cluster_name
-from sbatchman.config.project_config import get_project_configs_file_path, get_scheduler_from_cluster_name
+from sbatchman.config.project_config import get_project_config_dir, get_scheduler_from_cluster_name
 
-from sbatchman.config.project_config import get_project_config_dir, get_experiments_dir
-from ..schedulers.local import BaseConfig, LocalConfig, local_submit
-from ..schedulers.slurm import SlurmConfig, slurm_submit
-from ..schedulers.pbs import PbsConfig, pbs_submit
+from sbatchman.config.project_config import get_experiments_dir
+from sbatchman.schedulers.local import local_submit
+from sbatchman.schedulers.pbs import pbs_submit
+from sbatchman.schedulers.slurm import slurm_submit
 
-@dataclass
-class Job:
-  config_name: str
-  cluster_name: str
-  timestamp: str
-  exp_dir: str
-  command: str
-  status: str
-  scheduler: str
-  job_id: str
-  preprocess: Optional[str] = None
-  postprocess: Optional[str] = None 
-  archive_name: Optional[str] = None
-
-  def get_job_config(self) -> BaseConfig:
-    """
-    Returns the configuration of the job. It will specialize the class to either SlurmConfig, LocalConfig or PbsConfig
-    """
-    return get_config(self.cluster_name, self.config_name)
-
-  def parse_command_args(self):
-    """
-    Parses the command string if it is a simple CLI command (no pipes, redirections, or shell operators).
-    Returns (executable, args_dict) where args_dict maps argument names to values.
-    """
-    if any(op in self.command for op in ['|', '>', '<', ';', '&&', '||']):
-      return None, None
-
-    tokens = shlex.split(self.command)
-    if not tokens:
-      return None, None
-
-    executable = tokens[0]
-    args_dict = {}
-    key = None
-    for token in tokens[1:]:
-      if token.startswith('--'):
-        if '=' in token:
-          k, v = token[2:].split('=', 1)
-          args_dict[k] = v
-          key = None
-        else:
-          key = token[2:]
-          args_dict[key] = True
-      elif token.startswith('-') and len(token) > 1:
-        key = token[1:]
-        args_dict[key] = True
-      else:
-        if key:
-          args_dict[key] = token
-          key = None
-    return executable, args_dict
-
-  def get_stdout(self) -> Optional[str]:
-    """
-    Returns the contents of the stdout log file for this job, or None if not found.
-    """
-    exp_dir_path = get_experiments_dir() / self.exp_dir
-    stdout_path = exp_dir_path / "stdout.log"
-    if stdout_path.exists():
-      with open(stdout_path, "r") as f:
-        return f.read()
-    return None
-
-  def get_stderr(self) -> Optional[str]:
-    """
-    Returns the contents of the stderr log file for this job, or None if not found.
-    """
-    exp_dir_path = get_experiments_dir() / self.exp_dir
-    stderr_path = exp_dir_path / "stderr.log"
-    if stderr_path.exists():
-      with open(stderr_path, "r") as f:
-        return f.read()
-    return None
-  
-
-def get_config(cluster_name: str, config_name: str) -> BaseConfig:
-  """
-  Returns the configuration of the job. It will specialize the class to either SlurmConfig, LocalConfig or PbsConfig
-  """
-  configs_file_path = get_project_configs_file_path()
-
-  if not configs_file_path.exists():
-    raise ConfigurationNotFoundError(f"Configuration '{configs_file_path}' for cluster '{cluster_name}' not found at '{configs_file_path}'.")
-  
-  configs = yaml.safe_load(open(configs_file_path, 'r'))
-  if cluster_name not in configs:
-    raise ConfigurationError(f"Could not find cluster '{cluster_name}' in configurations.yaml file ({configs_file_path})")
-  
-  scheduler = configs[cluster_name]['scheduler']
-  configs = configs[cluster_name]['configs']
-  if config_name not in configs:
-    raise ConfigurationError(f"Could not find configuration '{config_name}' in configurations.yaml file ({configs_file_path})")
-  
-  config_dict = configs[config_name]
-  if scheduler == 'slurm':
-    return SlurmConfig(**config_dict)
-  elif scheduler == 'pbs':
-    return PbsConfig(**config_dict)
-  elif scheduler == 'local':
-    return LocalConfig(**config_dict)
-  else:
-    raise ConfigurationError(f"No class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
-
-
-def get_config_script_template(config_name: str, cluster_name: str) -> str:
-  config_path = get_project_config_dir() / cluster_name / f"{config_name}.sh"
-
-  if not config_path.exists():
-    raise ConfigurationNotFoundError(f"Configuration '{config_name}' for cluster '{cluster_name}' not found at '{config_path}'.")
-
-  return open(config_path, "r").read()
-  
-
-def launch_job(config: str, command: str, cluster_name: Optional[str] = None, tag: str = "default", preprocess: Optional[str] = None, postprocess: Optional[str] = None) -> Job:
+def launch_job(config_name: str, command: str, cluster_name: Optional[str] = None, tag: str = "default", preprocess: Optional[str] = None, postprocess: Optional[str] = None) -> Job:
   """
   Launches an experiment based on a configuration name.
+  Args:
+    config_name: The name of the configuration to use.
+    command: The command to run for this job.
+    cluster_name: Optional; if not provided, will use the global cluster name.
+    tag: A tag for this experiment run, used in directory structure.
+    preprocess: Optional; a command to run before the main command.
+    postprocess: Optional; a command to run after the main command.
+  Returns:
+    A Job object representing the launched job.
+  Raises:
+    ConfigurationError: If the configuration is not found or if the cluster name is not set.
+    ClusterNameNotSetError: If the cluster name is not set globally and not provided.
+    ConfigurationNotFoundError: If the configuration file does not exist.
+    JobSubmitError: If there is an error during job submission.
   """
   if not cluster_name:
     try:
@@ -146,7 +45,11 @@ def launch_job(config: str, command: str, cluster_name: Optional[str] = None, ta
       )
 
   scheduler = get_scheduler_from_cluster_name(cluster_name)
-  template_script = get_config_script_template(config, cluster_name)
+
+  config_path = get_project_config_dir() / cluster_name / f"{config_name}.sh"
+  if not config_path.exists():
+    raise ConfigurationNotFoundError(f"Configuration '{config_name}' for cluster '{cluster_name}' not found at '{config_path}'.")
+  template_script = open(config_path, "r").read()
 
   # Capture the Current Working Directory at the time of launch
   submission_cwd = Path.cwd()
@@ -155,7 +58,7 @@ def launch_job(config: str, command: str, cluster_name: Optional[str] = None, ta
   timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
   # Directory structure: <cluster_name>/<config_name>/<tag>/<timestamp>
   # Find a directory name that has not been used yet
-  base_exp_dir_local = Path(cluster_name) / config / tag / timestamp
+  base_exp_dir_local = Path(cluster_name) / config_name / tag / timestamp
   exp_dir_local = base_exp_dir_local
   exp_dir = get_experiments_dir() / exp_dir_local
   counter = 1
@@ -185,12 +88,12 @@ def launch_job(config: str, command: str, cluster_name: Optional[str] = None, ta
   run_script_path.chmod(0o755)
 
   metadata = Job(
-    config_name=config,
+    config_name=config_name,
     cluster_name=cluster_name,
     timestamp=timestamp,
     exp_dir=str(exp_dir_local),
     command=command,
-    status="SUBMITTING",
+    status=Status.SUBMITTING,
     scheduler=scheduler,
     job_id="",
     archive_name=None,
@@ -214,7 +117,7 @@ def launch_job(config: str, command: str, cluster_name: Optional[str] = None, ta
       raise ConfigurationError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
     
   except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
-    metadata.status = "FAILED_SUBMISSION"
+    metadata.status = Status.FAILED_SUBMISSION
     with open(exp_dir / "metadata.yaml", "w") as f:
       yaml.safe_dump(asdict(metadata), f, default_flow_style=False)
     raise

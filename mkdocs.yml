@@ -41,10 +41,19 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
+          paths: [src]
+          inventories:
+          - https://docs.python.org/3/objects.inv
           options:
-            show_source: true
             separate_signature: true
-
+            show_signature_annotations: true
+            signature_crossrefs: true
+            show_symbol_type_heading: true
+            group_by_category: true
+            show_symbol_type_toc: true
+            show_source: false
+            show_if_no_docstring: true
+            merge_init_into_class: true
 nav:
   - Home: index.md
   - Learn:

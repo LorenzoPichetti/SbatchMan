@@ -1,8 +1,9 @@
-# src/exp_kit/schedulers/local.py
 from dataclasses import dataclass
+from pathlib import Path
 import subprocess
 from typing import List
-from pathlib import Path
+
+from sbatchman.core.status import Status
 
 from .base import BaseConfig
 
@@ -14,10 +15,17 @@ class LocalConfig(BaseConfig):
     return ["# Local execution script"]
 
   @staticmethod
+  def get_job_status(job_id: str) -> Status:
+    """
+    For local jobs, status is not tracked post-submission.
+    """
+    return Status.UNKNOWN
+
+  @staticmethod
   def get_scheduler_name() -> str:
     """Returns the name of the scheduler this parameters class is associated with."""
     return "local"
-
+  
 def local_submit(script_path: Path, exp_dir: Path) -> str:
   """Runs the job in the background on the local machine."""
   stdout_log = exp_dir / "stdout.log"

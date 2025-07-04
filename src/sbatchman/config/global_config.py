@@ -4,11 +4,6 @@ import yaml
 import platformdirs
 
 from sbatchman.exceptions import ClusterNameNotSetError
-from sbatchman.schedulers.local import LocalConfig
-from sbatchman.schedulers.pbs import PbsConfig
-from sbatchman.schedulers.slurm import SlurmConfig
-
-# --- Global Configuration Functions ---
 
 def get_global_config_path() -> Path:
   """Returns the path to the global sbatchman config.yaml file using platformdirs."""
@@ -48,7 +43,7 @@ def detect_scheduler() -> str:
     The name of the detected scheduler class.
   """
   if shutil.which("sbatch"):
-    return SlurmConfig.get_scheduler_name()
+    return "slurm"
   if shutil.which("qsub"):
-    return PbsConfig.get_scheduler_name()
-  return LocalConfig.get_scheduler_name()
+    return "pbs"
+  return "local"

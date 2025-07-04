@@ -1,11 +1,27 @@
-# src/exp_kit/schedulers/pbs.py
-import re
-import subprocess
-from typing import List, Dict, Optional, Tuple
 from pathlib import Path
+import subprocess
+from typing import List, Optional
 from dataclasses import dataclass
 
+from sbatchman.core.status import Status
+
 from .base import BaseConfig
+
+PBS_STATUS_MAP = {
+  # Queued states
+  'Q': Status.QUEUED,    # Queued
+  'H': Status.QUEUED,    # Held
+  'T': Status.QUEUED,    # Transit (being moved)
+  'W': Status.QUEUED,    # Waiting
+  'S': Status.QUEUED,    # Suspended
+
+  # Running states
+  'R': Status.RUNNING,   # Running
+  'E': Status.RUNNING,   # Exiting (job is finishing up)
+
+  # Terminal state
+  'C': Status.COMPLETED, # Completed
+}
 
 @dataclass
 class PbsConfig(BaseConfig):
@@ -35,17 +51,44 @@ class PbsConfig(BaseConfig):
     return lines
   
   @staticmethod
+  def get_job_status(job_id: str) -> Status:
+    """
+    Returns the status of a PBS job.
+    """
+    process = subprocess.run(
+      f"qstat -f {job_id}",
+      shell=True,
+      capture_output=True,
+      text=True
+    )
+    returncode = process.returncode
+    stdout = process.stdout.strip()
+    if returncode == 0 and stdout:
+      job_state = None
+      exit_status = None
+      for line in stdout.split('\n'):
+        line = line.strip()
+        if "job_state =" in line:
+          job_state = line.split("=")[1].strip()
+        elif "exit_status =" in line:
+          exit_status = int(line.split("=")[1].strip())
+
+      if job_state:
+        # If job is completed, check exit status to determine if it failed
+        if job_state == 'C':
+          if exit_status is not None and exit_status != 0:
+            return Status.FAILED
+          return Status.COMPLETED
+        
+        return PBS_STATUS_MAP.get(job_state, Status.UNKNOWN)
+
+    return Status.UNKNOWN
+
+  @staticmethod
   def get_scheduler_name() -> str:
     """Returns the name of the scheduler this parameters class is associated with."""
     return "pbs"
-
-def _parse_job_id(submission_output: str) -> str:
-  """Parses the job ID from the qsub command's output."""
-  job_id = submission_output.strip().split('.')[0]
-  if not job_id:
-    raise ValueError(f"Could not parse job ID from qsub output: {submission_output}")
-  return job_id
-
+  
 def pbs_submit(script_path: Path, exp_dir: Path) -> str:
   """Submits the job to PBS."""
   command_list = ["qsub", str(script_path)]
@@ -56,4 +99,7 @@ def pbs_submit(script_path: Path, exp_dir: Path) -> str:
     check=True,
     cwd=exp_dir,
   )
-  return _parse_job_id(result.stdout)
+  job_id = result.stdout.strip().split('.')[0]
+  if job_id:
+    return job_id
+  raise ValueError(f"Could not parse job ID from qsub output: {result.stdout}")

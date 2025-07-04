@@ -1,4 +1,3 @@
-# src/exp_kit/schedulers/base.py
 from abc import ABC, abstractmethod
 from typing import List, Optional
 from pathlib import Path
@@ -6,6 +5,7 @@ from dataclasses import asdict, dataclass
 
 import yaml
 
+from sbatchman.core.status import Status
 from sbatchman.exceptions import ConfigurationError, SchedulerMismatchError
 from sbatchman.config.project_config import get_project_config_dir, get_project_configs_file_path
 
@@ -85,13 +85,11 @@ class BaseConfig(ABC):
       "\n# User command",
       'echo "Running command: {CMD}"',
       '{CMD}',
-      "\n# Postprocess command",
-      '{POSTPROCESS}',
       'EXIT_CODE=$?',
-      "\n# Update status to FINISHED or FAILED",
+      "\n# Update status to COMPLETED or FAILED",
       'if [ -f "{EXP_DIR}/metadata.yaml" ]; then',
       '  if [ $EXIT_CODE -eq 0 ]; then',
-      '    sed -i \'s/status: .*/status: FINISHED/\' {EXP_DIR}/metadata.yaml',
+      '    sed -i \'s/status: .*/status: COMPLETED/\' {EXP_DIR}/metadata.yaml',
       '  else',
       '    sed -i \'s/status: .*/status: FAILED/\' {EXP_DIR}/metadata.yaml',
       '  fi',
@@ -121,7 +119,7 @@ class BaseConfig(ABC):
     """
     pass
 
-  def _update_main_config_yaml(self, overwrite: bool = False):
+  def _update_main_config(self, overwrite: bool = False):
     """Reads, updates, and writes to the central configurations.yaml file."""
     config_path = get_project_configs_file_path()
 
@@ -163,7 +161,7 @@ class BaseConfig(ABC):
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / f"{self.name}.sh"
 
-  def _create_script(self) -> Path:
+  def _write_script(self) -> Path:
     """Saves the configuration script to a file inside a scheduler-specific folder."""
     script_content = self._generate_script()
 
@@ -181,5 +179,14 @@ class BaseConfig(ABC):
     Returns:
       The path to the created configuration script file.
     """
-    self._update_main_config_yaml(overwrite)
-    return self._create_script()
+    self._update_main_config(overwrite)
+    return self._write_script()
+  
+  @staticmethod
+  @abstractmethod
+  def get_job_status(job_id: str) -> Status:
+    """
+    Returns the status of a job for this scheduler.
+    This must be implemented by subclasses.
+    """
+    pass

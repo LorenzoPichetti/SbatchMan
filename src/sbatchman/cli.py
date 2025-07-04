@@ -4,7 +4,7 @@ from typing import List, Optional
 from rich.console import Console
 from pathlib import Path
 
-import sbatchman.api as api
+import sbatchman as sbtc
 from sbatchman.config import global_config
 from sbatchman.exceptions import ProjectNotInitializedError, SbatchManError
 
@@ -28,7 +28,7 @@ def _handle_not_initialized():
   )
   if init_choice:
     try:
-      api.init_project(Path.cwd())
+      sbtc.init_project(Path.cwd())
       console.print("[green]✓[/green] SbatchMan project created successfully. Please re-run your previous command.")
     except SbatchManError as e:
       console.print(f"[bold red]Error:[/bold red] {e}")
@@ -74,7 +74,7 @@ def init(
 ):
   """Initializes a SbatchMan project and sets up global configuration if needed."""
   try:
-    api.init_project(path)
+    sbtc.init_project(path)
     console.print(f"[green]✓[/green] SbatchMan project initialized successfully in {path / 'SbatchMan'}")
   except SbatchManError as e:
     console.print(f"[bold red]Error:[/bold red] {e}")
@@ -103,7 +103,7 @@ def configure_slurm(
   """Creates a SLURM configuration."""
   while True:
     try:
-      config = api.create_slurm_config(
+      config = sbtc.create_slurm_config(
         name=name, cluster_name=cluster_name,
         partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem, account=account,
         time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation,
@@ -132,7 +132,7 @@ def configure_pbs(
   """Creates a PBS configuration."""
   while True:
     try:
-      config = api.create_pbs_config(name=name, cluster_name=cluster_name, queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, modules=module, overwrite=overwrite)
+      config = sbtc.create_pbs_config(name=name, cluster_name=cluster_name, queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, modules=module, overwrite=overwrite)
       _save_config_print(config)
       break
     except ProjectNotInitializedError:
@@ -152,7 +152,7 @@ def configure_local(
   """Creates a configuration for local execution."""
   while True:
     try:
-      config = api.create_local_config(name=name, env=env, modules=module, cluster_name=cluster_name, overwrite=overwrite)
+      config = sbtc.create_local_config(name=name, env=env, modules=module, cluster_name=cluster_name, overwrite=overwrite)
       _save_config_print(config)
       break
     except ProjectNotInitializedError:
@@ -181,7 +181,7 @@ def configure(
   """
   if file:
     try:
-      for config in api.create_configs_from_file(file, overwrite):
+      for config in sbtc.create_configs_from_file(file, overwrite):
         _save_config_print(config)
       console.print(f"✅ Configurations from '[bold cyan]{file.name}[/bold cyan]' loaded successfully.")
     except SbatchManError as e:
@@ -207,11 +207,11 @@ def launch(
   try:
     # Call the API/launcher
     if file:
-      jobs = api.launch_jobs_from_file(file)
+      jobs = sbtc.launch_jobs_from_file(file)
       console.print(f"✅ Submitted successfully {len(jobs)} jobs.")
     elif config and tag and command:
-        job = api.launch_job(
-          config=config,
+        job = sbtc.launch_job(
+          config_name=config,
           command=command,
           tag=tag,
           preprocess=preprocess,
@@ -248,7 +248,7 @@ def archive(
 ):
   """Archives jobs, moving them from the active experiments directory to an archive location."""
   try:
-    archived_count = api.archive_jobs(
+    archived_count = sbtc.archive_jobs(
       archive_name=archive_name,
       overwrite=overwrite,
       cluster_name=cluster_name,
@@ -278,7 +278,7 @@ def delete_jobs(
     raise typer.Exit(1)
   
   try:
-    deleted_count = api.delete_jobs(
+    deleted_count = sbtc.delete_jobs(
       cluster_name=cluster_name,
       config_name=config_name,
       tag=tag,
@@ -287,6 +287,19 @@ def delete_jobs(
       not_archived=not_archived,
     )
     console.print(f"[green]✓[/green] Successfully deleted {deleted_count} jobs.")
+  except ProjectNotInitializedError:
+    _handle_not_initialized()
+  except SbatchManError as e:
+    console.print(f"[bold red]Error:[/bold red] {e}")
+    raise typer.Exit(1)
+
+@app.command("update-jobs-status")
+def update_jobs_status(
+):
+  """Updates the status of all jobs in the experiments directory."""
+  try:
+    updated_count = sbtc.update_jobs_status()
+    console.print(f"[green]✓[/green] Successfully updated status for {updated_count} jobs.")
   except ProjectNotInitializedError:
     _handle_not_initialized()
   except SbatchManError as e:

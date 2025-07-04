@@ -1,4 +1,4 @@
-from sbatchman.api import Job, jobs_list
+from sbatchman import Job, jobs_list, update_jobs_status
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, DataTable, TabbedContent, TabPane
 from textual.binding import Binding
@@ -10,6 +10,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from sbatchman.config.project_config import get_experiments_dir
+from sbatchman.core.launcher import Status
 from sbatchman.tui.log_screen import LogScreen
 
 class JobsScreen(Screen):
@@ -58,22 +59,7 @@ class JobsScreen(Screen):
     self.timer = self.set_interval(5, self.load_and_update_jobs)
 
   def load_and_update_jobs(self) -> None:
-    # experiments = []
-    # if self.experiments_root.exists():
-    #   for config_dir in self.experiments_root.iterdir():
-    #     if not config_dir.is_dir(): continue
-    #     import yaml
-    #     for exp_dir in config_dir.iterdir():
-    #       metadata_path = exp_dir / "metadata.yaml"
-    #       if exp_dir.is_dir() and metadata_path.exists():
-    #         with open(metadata_path, "r") as f:
-    #           try:
-    #             data = yaml.safe_load(f)
-    #             data['exp_dir'] = str(exp_dir)
-    #             experiments.append(data)
-    #           except yaml.YAMLError:
-    #             self.log(f"Error decoding YAML from {metadata_path}")
-    
+    update_jobs_status()
     self.all_jobs = jobs_list()
     self.update_tables()
 
@@ -108,10 +94,9 @@ class JobsScreen(Screen):
         getattr(job, 'status', 'UNKNOWN'),
         getattr(job, 'command', '') or '',
       )
-
-      if getattr(job, 'status', None) in ["QUEUED", "SUBMITTING"]:
+      if getattr(job, 'status', None) in [Status.SUBMITTING, Status.QUEUED]:
         target_table = tables["queued-table"]
-      elif getattr(job, 'status', None) == "RUNNING":
+      elif getattr(job, 'status', None) == Status.RUNNING:
         target_table = tables["running-table"]
       else:
         target_table = tables["finished-table"]

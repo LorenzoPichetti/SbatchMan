@@ -1,11 +1,41 @@
-# src/exp_kit/schedulers/slurm.py
+from pathlib import Path
 import re
 import subprocess
-from typing import List, Dict, Optional, Tuple
-from pathlib import Path
+from typing import List, Optional
 from dataclasses import dataclass
 
+from sbatchman.core.status import Status
+
 from .base import BaseConfig
+
+SLURM_STATUS_MAP = {
+  # Pending states
+  "PENDING": Status.QUEUED,
+  "CONFIGURING": Status.QUEUED,
+  "REQUEUED": Status.QUEUED,
+  "RESIZING": Status.QUEUED, # Often precedes running
+  "SUSPENDED": Status.QUEUED,
+
+  # Running states
+  "RUNNING": Status.RUNNING,
+  "COMPLETING": Status.RUNNING,
+
+  # Terminal states (Success)
+  "COMPLETED": Status.COMPLETED,
+
+  # Terminal states (Failure)
+  "FAILED": Status.FAILED,
+  "NODE_FAIL": Status.FAILED,
+  "PREEMPTED": Status.FAILED,
+  "SPECIAL_EXIT": Status.FAILED,
+
+  # Terminal states (Cancelled/Timeout)
+  "CANCELLED": Status.CANCELLED,
+  "DEADLINE": Status.TIMEOUT,
+  "TIMEOUT": Status.TIMEOUT,
+  "STOPPED": Status.CANCELLED,
+  "REVOKED": Status.CANCELLED,
+}
 
 @dataclass
 class SlurmConfig(BaseConfig):
@@ -44,19 +74,32 @@ class SlurmConfig(BaseConfig):
     if r := self.reservation: lines.append(f"#SBATCH --reservation={r}")
     
     return lines
+  
+  @staticmethod
+  def get_job_status(job_id: str) -> Status:
+    """
+    Returns the status of a SLURM job.
+    """
+    process = subprocess.run(
+      f"sacct  -j {job_id} -o State -D -n",
+      shell=True,
+      capture_output=True,
+      text=True
+    )
+    returncode = process.returncode
+    stdout = process.stdout.strip()
+    
+    if returncode == 0 and stdout:
+      return SLURM_STATUS_MAP.get(stdout.strip().split('\n')[0], Status.UNKNOWN)
+    # If the job is not in the queue, it might be completed or failed.
+    # The calling function will handle this logic.
+    return Status.UNKNOWN
 
   @staticmethod
   def get_scheduler_name() -> str:
     """Returns the name of the scheduler this parameters class is associated with."""
     return "slurm"
-
-def _parse_job_id(submission_output: str) -> str:
-  """Parses the job ID from the sbatch command's output."""
-  match = re.search(r"Submitted batch job (\d+)", submission_output)
-  if match:
-    return match.group(1)
-  raise ValueError(f"Could not parse job ID from sbatch output: {submission_output}")
-
+  
 def slurm_submit(script_path: Path, exp_dir: Path) -> str:
   """Submits the job to SLURM."""
   command_list = ["sbatch", str(script_path)]
@@ -67,4 +110,9 @@ def slurm_submit(script_path: Path, exp_dir: Path) -> str:
     check=True,
     cwd=exp_dir,
   )
-  return _parse_job_id(result.stdout)
+
+  # Parse the job ID from the sbatch output
+  match = re.search(r"Submitted batch job (\d+)", result.stdout)
+  if match:
+    return match.group(1)
+  raise ValueError(f"Could not parse job ID from sbatch output: {result.stdout}")

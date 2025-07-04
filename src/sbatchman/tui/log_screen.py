@@ -1,4 +1,4 @@
-from textual.app import App, ComposeResult
+from textual.app import ComposeResult
 from textual.widgets import Header, Footer, Log, Markdown
 from textual.containers import Vertical
 from textual.binding import Binding

@@ -1,10 +1,12 @@
 import shutil
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import yaml
 
+from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_archive_dir, get_experiments_dir
-from sbatchman.core.launcher import Job
+from sbatchman.core.job import Job
+from sbatchman.core.status import TERMINAL_STATES
 from sbatchman.exceptions import ArchiveExistsError
 import pandas as pd
 
@@ -17,7 +19,18 @@ def jobs_list(
   from_archived: bool = False,
 ) -> List[Job]:
   """
-  Lists active and optionally archived jobs, with optional filtering.
+  Lists active and/or archived jobs, with optional filtering.
+  Args:
+    cluster_name: Filter by cluster name.
+    config_name: Filter by configuration name.
+    tag: Filter by tag.
+    archive_name: If provided, only include jobs from this archive.
+    from_active: If True, include active jobs.
+    from_archived: If True, include archived jobs.
+  Returns:
+    A list of Job objects matching the filter criteria.
+  Raises:
+    ArchiveExistsError: If an archive with the specified name already exists and overwrite is False.
   """
   jobs = []
   exp_dir = get_experiments_dir()
@@ -64,6 +77,13 @@ def jobs_df(
 ) -> pd.DataFrame:
   """
   Returns a pandas DataFrame of jobs, with optional filtering.
+  Args:
+    cluster_name: Filter by cluster name.
+    config_name: Filter by configuration name.
+    tag: Filter by tag.
+    include_archived: If True, include archived jobs in the DataFrame.
+  Returns:
+    A pandas DataFrame containing job metadata.
   """
   jobs = jobs_list(
     cluster_name=cluster_name,
@@ -126,7 +146,7 @@ def delete_jobs(
     config_name: Filter by configuration name.
     tag: Filter by tag.
     archive_name: If provided, only delete jobs from this archive.
-    all_archived: If True, delete only archived jobs.
+    archived: If True, delete only archived jobs.
     not_archived: If True, delete only active jobs.
 
   Returns:
@@ -174,3 +194,34 @@ def delete_jobs(
       pass
 
   return len(jobs_to_delete)
+
+def update_jobs_status() -> int:
+  """
+  Updates the status of active jobs on the current cluster by querying the scheduler.
+  
+  Returns:
+    The number of jobs whose status was updated.
+  """
+  current_cluster = get_cluster_name()
+  active_jobs = jobs_list(cluster_name=current_cluster, from_active=True, from_archived=False)
+  
+  updated_count = 0
+
+  for job in active_jobs:
+    if job.status in TERMINAL_STATES:
+      continue
+
+    try:
+      config = job.get_job_config()
+      new_status = config.get_job_status(job.job_id)
+
+      if new_status != job.status:
+        job.status = new_status
+        job.save_metadata()
+        updated_count += 1
+
+    except Exception:
+      # Ignore errors (e.g., config not found) and continue
+      continue
+          
+  return updated_count
