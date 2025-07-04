@@ -1,9 +1,6 @@
-from enum import StrEnum
+from enum import Enum
 
-import yaml
-
-
-class Status(StrEnum):
+class Status(Enum):
   SUBMITTING = "SUBMITTING"
   FAILED_SUBMISSION = "FAILED_SUBMISSION"
   QUEUED = "QUEUED"

@@ -1,3 +1,4 @@
+import yaml
 from sbatchman import Job, jobs_list, update_jobs_status
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, DataTable, TabbedContent, TabPane
@@ -49,9 +50,9 @@ class JobsScreen(Screen):
     for table_id in ["#queued-table", "#running-table", "#finished-table"]:
       table = self.query_one(table_id, DataTable)
       table.cursor_type = "row"
-      table.add_column("Time", width=20, key="timestamp")
-      table.add_column("Config", width=20)
-      table.add_column("Job ID", width=12)
+      table.add_column("Time", width=19, key="timestamp")
+      table.add_column("Config")
+      table.add_column("Job ID", width=10)
       table.add_column("Status", width=12)
       table.add_column("Command")
     
@@ -138,6 +139,6 @@ class JobsScreen(Screen):
       coord = active_table.cursor_coordinate
       try:
         exp_dir_str = active_table.coordinate_to_cell_key(coord).row_key.value or ''
-        self.app.push_screen(LogScreen(exp_dir= self.experiments_root / exp_dir_str))
+        self.app.push_screen(LogScreen(job=Job(**yaml.safe_load(open(self.experiments_root / exp_dir_str / "metadata.yaml", 'r')))))
       except RowDoesNotExist:
         pass

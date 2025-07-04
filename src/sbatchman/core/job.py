@@ -1,4 +1,3 @@
-from enum import Enum
 import yaml
 from pathlib import Path
 from typing import Optional
