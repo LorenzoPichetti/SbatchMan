@@ -62,4 +62,5 @@ nav:
     - Advanced configuration: learn/configuration.md
     - Advanced job submission: learn/launching_jobs.md
     - Aliases: learn/aliases.md
+    - Development guide: learn/development.md
   - API: api.md
