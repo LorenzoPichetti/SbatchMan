@@ -26,6 +26,7 @@ theme:
   font:
     text: Roboto
     code: Roboto Mono
+  language: en
 
 markdown_extensions:
   - admonition
@@ -39,6 +40,8 @@ markdown_extensions:
 
 plugins:
   - search
+  - git-revision-date-localized:
+      type: timeago
   - mkdocstrings:
       handlers:
         python:
