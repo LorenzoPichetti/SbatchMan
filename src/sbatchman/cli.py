@@ -111,8 +111,8 @@ def configure_slurm(
   nodelist: Optional[str] = typer.Option(None, help="SLURM nodelist."),
   qos: Optional[str] = typer.Option(None, help="SLURM quality of service (qos)."),
   reservation: Optional[str] = typer.Option(None, help="SLURM reservation."),
-  env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times."),
-  module: Optional[List[str]] = typer.Option(None, "--module", help="Module to load. Can be used multiple times."),
+  env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times (e.g., --env VAR1=value1 --env VAR2=value2)."),
+  module: Optional[List[str]] = typer.Option(None, "--module", help="Module to load. Can be used multiple times (e.g. --module GCC/13.3.0 --module CUDA/12.5.0)."),
   overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configuration."),
 ):
   """Creates a SLURM configuration."""
@@ -140,8 +140,8 @@ def configure_pbs(
   cpus: Optional[int] = typer.Option(None, help="Number of CPUs."),
   mem: Optional[str] = typer.Option(None, help="Memory requirement (e.g., 16gb, 64gb)."),
   walltime: Optional[str] = typer.Option(None, help="Walltime (e.g., 01:00:00)."),
-  env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value)."),
-  module: Optional[List[str]] = typer.Option(None, "--module", help="Module to load. Can be used multiple times."),
+  env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times (e.g., --env VAR1=value1 --env VAR2=value2)."),
+  module: Optional[List[str]] = typer.Option(None, "--module", help="Module to load. Can be used multiple times (e.g. --module GCC/13.3.0 --module CUDA/12.5.0)."),
   overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configuration."),
 ):
   """Creates a PBS configuration."""
@@ -160,14 +160,13 @@ def configure_pbs(
 def configure_local(
   name: str = typer.Option(..., "--name", help="A unique name for this configuration."),
   cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="The name of the machine where this configuration will be used."),
-  env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value)."),
-  module: Optional[List[str]] = typer.Option(None, "--module", help="Module to load. Can be used multiple times."),
+  env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times (e.g., --env VAR1=value1 --env VAR2=value2)."),
   overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configuration."),
 ):
   """Creates a configuration for local execution."""
   while True:
     try:
-      config = sbtc.create_local_config(name=name, env=env, modules=module, cluster_name=cluster_name, overwrite=overwrite)
+      config = sbtc.create_local_config(name=name, env=env, cluster_name=cluster_name, overwrite=overwrite)
       _save_config_print(config)
       break
     except ProjectNotInitializedError:

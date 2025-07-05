@@ -11,7 +11,7 @@ python3 -m pipx ensurepath
 ```
 You may need to restart your terminal for the changes to take effect.
 
-Once `pipx` is installed, you can install `sbatchman` from PyPI:
+Once `pipx` is installed, you can install `sbatchman` from [PyPI](https://pypi.org/project/sbatchman/):
 ```bash
 pipx install sbatchman
 ```

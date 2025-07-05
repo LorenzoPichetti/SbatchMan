@@ -24,6 +24,8 @@ If you'd like to contribute or simply modify the internal behavior of SbatchMan:
 git clone git@github.com:LorenzoPichetti/SbatchMan.git
 ```
 
+GitHub repository: [https://github.com/LorenzoPichetti/SbatchMan](https://github.com/LorenzoPichetti/SbatchMan)
+
 ### Install Locally
 
 From the `SbatchMan` root folder, run: 

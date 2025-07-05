@@ -17,6 +17,12 @@ Then, follow the [tutorial](learn/tutorial.md) to learn how to use SbatchMan eff
 - **Archive utility**: Keep track of your past experiments and their results.
 - **User friendly**: All configurations and logs are stored locally within your project directory, making it easy to manually inspect the commands and results.
 
+### Supported Workload Managers
+
+- **SLURM**
+- **PBS**
+- SbatchMan also allows to create configurations and run jobs on your local machine.
+
 ### User Interface
 
 *The SbatchMan TUI provides an interactive way to view the status of your jobs directly from the terminal.*

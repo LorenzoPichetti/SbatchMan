@@ -1,6 +1,6 @@
 # Advanced configuration
 
-This guide covers the different ways to create and manage job configurations in `SbatchMan`. You can either use a YAML file for batch configuration or programmatically create configurations using the Python API.
+This guide covers the different ways to create and manage configurations in `SbatchMan`. You can either use a YAML file for batch configurations or programmatically create configurations using the Python API.
 
 ## Configuring with a YAML File
 
@@ -53,10 +53,10 @@ Here is the general structure:
 
 #### Example Configuration File
 
-Here is an example `my_configs.yaml` file defining configurations for two different clusters, `baldo` (using SLURM) and `hpc-unitn` (using PBS).
+Here is an example `my_configs.yaml` file defining configurations for two different clusters, `clusterA` (using SLURM) and `clusterB` (using PBS).
 
 ```yaml
-baldo:
+clusterA:
   scheduler: slurm
   default_conf:
     account: "default_account"
@@ -76,7 +76,7 @@ baldo:
       gpus: 1
       time: "02-00:00:00"
 
-hpc-unitn:
+clusterB:
   scheduler: pbs
   default_conf:
     queue: "default_queue"
@@ -100,53 +100,59 @@ hpc-unitn:
 To create a configuration for a SLURM cluster, use the `create_slurm_config` function.
 
 ```python
-from sbatchman import api
+import sbatchman as sbm
 
 # Create a basic SLURM config
-api.create_slurm_config(
-    name="my_slurm_job",
-    cluster_name="baldo",
-    partition="gpu_queue",
-    cpus_per_task=4,
-    mem="16G",
-    gpus=1,
-    time="01-00:00:00",
-    modules=["gcc/10.2.0", "cuda/11.4"],
-    overwrite=True
+sbm.create_slurm_config(
+  name="my_slurm_conf",
+  cluster_name="my_slurm_cluster",
+  partition="gpu_queue",
+  cpus_per_task=4,
+  mem="16G",
+  gpus=1,
+  time="01-00:00:00",
+  modules=["gcc/10.2.0", "cuda/11.4"],
+  overwrite=True
 )
 ```
+
+For more details, refer to the [API](/api/#sbatchman.create_slurm_config) page.
 
 ### PBS Configuration
 
 To create a configuration for a PBS cluster, use the `create_pbs_config` function.
 
 ```python
-from sbatchman import api
+import sbatchman as sbm
 
 # Create a basic PBS config
-api.create_pbs_config(
-    name="my_pbs_job",
-    cluster_name="hpc-unitn",
-    queue="default_queue",
-    cpus=2,
-    mem="8gb",
-    walltime="12:00:00",
-    overwrite=True
+sbm.create_pbs_config(
+  name="my_pbs_conf",
+  cluster_name="my_pbs_cluster",
+  queue="default_queue",
+  cpus=2,
+  mem="8gb",
+  walltime="12:00:00",
+  overwrite=True
 )
 ```
+
+For more details, refer to the [API](/api/#sbatchman.create_pbs_config) page.
 
 ### Local Configuration
 
 For running jobs on your local machine, you can create a `local` configuration.
 
 ```python
-from sbatchman import api
+import sbatchman as sbm
 
 # Create a local config
-api.create_local_config(
-    name="my_local_job",
-    cluster_name="my-laptop", # Defaults to hostname
-    env=["MY_VAR=my_value"],
-    overwrite=True
+sbm.create_local_config(
+  name="my_local_conf",
+  cluster_name="my-laptop",
+  env=["MY_VAR=my_value"],
+  overwrite=True
 )
 ```
+
+For more details, refer to the [API](/api/#sbatchman.create_local_config) page.

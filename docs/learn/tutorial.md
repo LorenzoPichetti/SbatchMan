@@ -6,22 +6,22 @@ It covers everything you need to know to get you started with SbatchMan, from se
 
 ## 💡 SbatchMan Core Concepts
 
-- **Project**:  
+- **Project**  
   A directory where SbatchMan will store all metadata, configurations, and job records.  
-  When you run `sbatchman init`, a `SbatchMan` folder is created in the current working directory. This folder is a SbatchMan "project"
+  When you run `sbatchman init`, a `SbatchMan` folder is created in the current working directory. This folder is a SbatchMan "project".
 
-- **Configuration**:  
-  A named set of cluster/job parameters (like environment variables, partition, walltime, GPUs, etc.), stored in `SbatchMan/configs/`.
+- **Configuration**  
+  A named set of cluster/job parameters (like environment variables, partition, walltime, GPUs, etc.), that will be stored in `SbatchMan/configs/`.
     - Each configuration has a *name*.
     - Configurations are reusable for different jobs.
-    - Each configuration has corresponding *template shell script*.
-    - All configurations details are stored into a YAML file
+    - Each configuration has a corresponding *template shell script*.
+    - All configurations details are stored into a YAML file.
 
-- **Tag**:  
-  A label you assign to batch jobs. Tags help you organize, filter, and track experiments or runs.  
+- **Tag**  
+  A label you assign to a batch of jobs. Tags help you organize, filter, and track jobs.  
   **Example**: you have two programs `A` and `B`. Both shall run under the same configuration called `ExampleConfig`. Later, you'd like to retrieve results for experiments on programs `A` and `B` separately. You can achieve this by simply assigning two different tags to the jobs you run. 
 
-- **Job**:  
+- **Job**  
   A single execution of a command on a cluster or your local machine, tracked by SbatchMan.  
   Each job is linked to a **configuration** and can have a **tag**.  
   For each job, SbatchMan stores the **status**, **stdout**, **stderr** etc.
@@ -35,46 +35,50 @@ It covers everything you need to know to get you started with SbatchMan, from se
 SbatchMan/
 ├── archive/                        # Archived jobs
 ├── configs/                        # All configurations and templates
-│   ├── <cluster_name>/
-│   │   ├── <configuration_template_1>.sh
-│   │   └── <configuration_template_2>.sh
 │   ├── configurations.yaml         # Central registry of all configurations
+│   ├── <cluster_name>/
+│   │   ├── <configuration_name_1>.sh  # Configuration template script
+│   │   └── <configuration_name_2>.sh
 │   └── <another_cluster_name>/
-│       ├── <configuration_template_3>.sh
-│       └── <configuration_template_4>.sh
+│       ├── <configuration_name_1>.sh
+│       └── <configuration_name_2>.sh
 └── experiments/                    # All job runs and their results
     └── <cluster_name>/
         ├── <configuration_name>/
         │   └── <tag>/
-        │       ├── <run_timestamp_1>/
+        │       ├── <job_timestamp_1>/
         │       │   ├── metadata.yaml      # Job metadata (config, tags, etc.)
         │       │   ├── run.sh             # The actual script submitted
         │       │   ├── stderr.log         # Error output
         │       │   └── stdout.log         # Standard output
-        │       ├── <run_timestamp_2>/
+        │       ├── <job_timestamp_2>/
         │       │   └── ...
         │       └── ...
         └── ...
 ```
 
-- **configs/**: Contains all configuration files and template scripts, organized by cluster.
-- **experiments/**: Stores all job runs, grouped by configuration and tag. Each run has its own timestamped folder with logs and metadata.
-- **archive/**: Used for archiving completed or old jobs.
+- `configs/` Contains all configuration files and template scripts, organized by cluster.
+- `experiments/` Stores all job runs, grouped by configuration and tag. Each run has its own timestamped folder with logs and metadata.
+- `archive/` Used for archiving completed or old jobs.
 
 This structure makes it easy to manage, reproduce, and analyze your experiments across different clusters and configurations.
 
 ## 📚 Initialize SbatchMan
-To initialize SbatchMan, run the following command in the project root directory:
+
+To initialize SbatchMan, run the following command in your project root directory:
 
 ```bash
 sbatchman init
 ```
 
-This command will create a `SbatchMan` directory in your project, which will contain all the necessary files and configurations for managing your jobs.
+This command will create a `SbatchMan` directory for your project, which will contain all the necessary files and configurations for managing your jobs.
+
+> **IMPORTANT NOTE:** whenever you call `sbatchman` command, SbatchMan will look for a project directory (`SbatchMan`) starting from the current working directory (CWD) and exploring parents directories up to the user home (e.g. in linux `$HOME`).  
 
 ## ⚙️ Create a Configuration
 
-First, set up your cluster configuration. This is where you define the parameters for your cluster, such as the partition, time limit, and number of GPUs. For example, to create a configuration for a cluster named `my_gpu_cluster`:
+First, set up your cluster configuration(s). This is where you define the parameters for your cluster, such as environment variables, partition, time limit, and number of GPUs.  
+For example, to create a configuration for a cluster named `my_gpu_cluster`:
 
 ```bash
 sbatchman configure slurm \
@@ -82,8 +86,11 @@ sbatchman configure slurm \
   --partition gpu \
   --time 02:00:00 \
   --gpus 1 \
-  --cluster-name my_gpu_cluster
+  --module GCC/13.3.0 \
+  --module CUDA/12.5.0 \
+  --cluster-name my_gpu_slurm_cluster
 ```
+
 For a PBS cluster, you can use a similar command:
 
 ```bash
@@ -92,7 +99,16 @@ sbatchman configure pbs \
   --queue gpu \
   --walltime 02:00:00 \
   --gpus 1 \
-  --cluster-name my_gpu_cluster
+  --cluster-name my_gpu_pbs_cluster
+```
+
+For local development:
+
+```bash
+sbatchman configure local \
+  --name simple_local_config \
+  --env VAR1=value1 --env VAR2=value2 \
+  --cluster-name my_local_machine
 ```
 
 You can check out all the available options for configuring your cluster by running:
@@ -103,7 +119,9 @@ sbatchman configure slurm --help
 sbatchman configure pbs --help
 ```
 
-If you need to change the configuration later, run the `configure` command again with the same `--name` option. SbatchMan will replace the existing configuration with the new one.
+If you need to change the configuration later, run the `configure` command again with the same `--name` option and the `--overwrite` flag. SbatchMan will replace the existing configuration with the new one.
+
+> **IMPORTANT NOTE:** if you do not specify `--cluster-name`, SbatchMan will use the name you set via the `sbatchman set-cluster-name` (see the [Setup Page](/install/setup) for more details).
 
 ## 🚀 Launch Your Code
 
@@ -116,6 +134,8 @@ sbatchman launch \
   --command "python train.py --epochs 10 --batch-size 32"
 ```
 
+> **NOTE:** depending on the cluster where you run this command, the configuration will change accordingly.
+
 The `--tag` option lets you organize your jobs by assigning a label to them. Tags are useful for tracking different experiments or runs of the same job, allowing you to easily filter and manage your jobs later on. A common use case for tags is to differentiate between different configurations of the same experiment, such as changing parameters or datasets.
 
 For example, if you change the training dataset or number of epochs, you can relaunch the job with a new tag:
@@ -123,8 +143,8 @@ For example, if you change the training dataset or number of epochs, you can rel
 ```bash
 sbatchman launch \
   --config simple_gpu_config \
-  --tag <span style="color:red">mnist_training_20_epochs</span> \
-  --command "python train.py <span style="color:red">--epochs 20</span> --batch-size 32"
+  --tag mnist_training_20_epochs \
+  --command "python train.py --epochs 20 --batch-size 32"
 ```
 
 ## 🖥️ Monitor Your Jobs
@@ -135,11 +155,13 @@ You can check the status of your jobs with:
 sbatchman status
 ```
 
-This command will show you all the jobs submitted to the cluster, with a live view of their log files.
+This command will show you all the submitted jobs and their detail through an interactive Terminal UI (TUI).
 
 ## 🏆 Collect Results
 
-Once the job is finished, you will find the logs in the `results` directory. To parse the results, you can use the Python library offered by SbatchMan. For example, you can read the logs and extract metrics like accuracy or loss:
+Once the jobs are completed, you will find all their data into the project sub-directory `SbatchMan/experiments`.  
+Of course, you won't need to parse them manually. To parse the results, you can use the Python library offered by SbatchMan.  
+For example, you can read the logs and extract metrics like accuracy or loss:
 
 ```python
 from sbatchman import Job, list_jobs
@@ -148,7 +170,7 @@ job = list_jobs(
   config_name="simple_gpu_config",
   tag="mnist_training_20_epochs"
 )[0]
-print(job.get_log())
+print(job.get_stdout())
 ```
 
 Here you can see the power of tags: you can easily filter jobs by their tags, making it simple to find the results of specific experiments.
@@ -163,6 +185,8 @@ for job in jobs_with_tag:
   print(f"Job ID: {job.id}, Status: {job.status}, Log: {job.get_log()}")
 ```
 
+For more details, refer to the [API](/api/#sbatchman.Job) page.
+
 ## 📦 Archiving Jobs
 To archive jobs, you can use the `archive` command. This is useful for keeping your job history organized and manageable. For example, to archive all jobs with the tag `mnist_training`:
 ```bash
@@ -173,7 +197,13 @@ sbatchman archive \
   --config-name simple_gpu_config
 ```
 
-Archived jobs will be moved to a specified directory, and will not appear in the job list, unless you specify the `archived` option in the `list_jobs` function.
+Archived jobs will be moved to the `SbatchMan/archive` directory, and will not appear in the job list, unless you specify the `archived` option in the `list_jobs` function.
+
+You can check out all the available options by running:
+
+```bash
+sbatchman archive --help
+```
 
 ## 🎉 Conclusion
-This is a basic example of how to use SbatchMan to manage your experiments on a remote cluster. You can extend this by adding more configurations, automating job submissions, or using the Python API to integrate SbatchMan into your existing workflows.
+This is a basic example of how to use SbatchMan to manage your experiments on multiple remote clusters. You can extend this by adding more configurations, automating job submissions, or using the Python API to integrate SbatchMan into your existing workflows.
