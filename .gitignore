@@ -1,8 +1,24 @@
-sout
-outputs
-metadata
-sbatchscripts
+# Byte-compiled / optimized / C extensions
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
 
-sourceFile.sh
-*.kdev4
-.kdev4/SbatchMan.kdev4
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+site/
+
+# Dev
+experiments/
+configs/
+archive/
+SbatchMan/
+datasets/
+jobs.yaml
+modes.txt

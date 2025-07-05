@@ -1,146 +1,102 @@
+<p align="center">
+    <img src="https://raw.githubusercontent.com/LorenzoPichetti/SbatchMan/refs/heads/rewrite/docs/images/sbatchman.png" alt="SbatchMan" width="124">
+<p>
+
 # SbatchMan
-A framework for managing slurm scripts 
+A utility to create, launch, and monitor code experiments on SLURM, PBS, or local machines.
 
-### Description:
-This repository serves as a foundational environment setup for the [YourProjectName] project. It includes scripts and configurations to initialize the environment necessary for seamless development and execution within the project's ecosystem.
+## 🚀 Installation
 
-### Getting Started:
+The recommended way to install `SbatchMan` is with `pipx`. This will install the package and its dependencies in an isolated environment.
 
-To utilize the resources provided by this repository, follow the steps outlined below:
-
-1. **Clone Repository:**
-    ```bash
-    git clone https://github.com/LorenzoPichetti/SbatchMan.git
-    ```
-
-2. **Navigate to Repository:**
-    ```bash
-    cd SbatchMan
-    ```
-
-3. **Initialize Environment:**
-    Execute the `initEnv.sh` script to set up the environment variables and directory structure required for the project:
-    ```bash
-    ./initEnv.sh
-    ```
-
-4. **Source Configuration File:**
-    Source the generated `sourceFile.sh` to activate the environment variables in your current session:
-    ```bash
-    source sourceFile.sh
-    ```
-
-### Environment Variables:
-
-- **SbM_HOME**: Represents the root directory of the project.
-- **SbM_SOUT**: Directory for storing output files generated during project execution.
-- **SbM_UTILS**: Contains utility scripts necessary for various project tasks.
-- **SbM_SBATCH**: Directory for storing Slurm batch scripts.
-- **SbM_EXPTABLE**: Path to the experiment table file.
-- **SbM_METADATA_HOME**: Root directory for metadata storage.
-
-### Generating Experiments:
-
-To generate experiments use the `newExperiment.sh` script. Below is an explanation of its usage:
-
+If you don't have `pipx`, you can install it with:
 ```bash
-#!/bin/bash
+python3 -m pip install --user pipx
+python3 -m pipx ensurepath
+```
+You may need to restart your terminal for the changes to take effect.
 
-./SbatchMan/newExperiment.sh -p medium -a my.slurm.account -t 02:00:00 -e Exp-2proc  -n 1 -c 2 -g 2 -b bin/myBin -d 1
-./SbatchMan/newExperiment.sh -p medium -a my.slurm.account -t 02:00:00 -e Exp-4proc  -n 1 -c 4 -g 4 -b bin/myBin -d 1
-./SbatchMan/newExperiment.sh -p medium -a my.slurm.account -t 02:00:00 -e Exp-8proc  -n 1 -c 8 -g 8 -b bin/myBin -d 1
-./SbatchMan/newExperiment.sh -p medium -a my.slurm.account -t 02:00:00 -e Exp-16proc  -n 2 -c 8 -g 8 -b bin/myBin -d 1
+Once `pipx` is installed, you can install `sbatchman` from PyPI:
+```bash
+pipx install sbatchman
 ```
 
-#### `newExperiment.sh` Usage:
+Now try running `sbatchman --help`!
 
-The `newExperiment.sh` script is used to generate experiments with specified parameters. Below is a brief description of its usage:
-
-- **Mandatory Arguments**:
-  - `-p <partition_name>`: Specify the SLURM partition name.
-  - `-a <slurm_account>`: Specify the SLURM account.
-  - `-t <time in HH:MM:SS>`: Specify the SLURM max time (HH:MM:SS).
-  - `-e <exp-name>`: Specify the experiment name.
-  - `-b <binary>`: Specify the binary path.
-  - `-n <nnodes>`: Specify the number of required SLURM nodes.
-  - `-c <ntasks>`: Specify the number of required SLURM tasks.
-  - `-g <ngpus>`: Specify the number of required GPUs.
-
-- **Optional Arguments**:
-  - `-M <MPI-version>`: Specify the SLURM MPI version (--mpi=).
-  - `-d <cpus-per-task>`: Specify the number of CPUs per task.
-  - `-s <constraint>`: Specify the SLURM constraint.
-  - `-m <memory>`: Specify the allocated memory.
-  - `-q <qos>`: Specify the SLURM QoS.
-  - `-S <qos>`: Specify a non-standard ServiceLevel (i.e. export NCCL_IB_SL).
-
-Ensure you provide all mandatory arguments when generating experiments. You can refer to the example provided for guidance on how to structure your experiment generation commands.
-
+For development, clone the repository and install the package in editable mode from the local repository:
 ```bash
-./SbatchMan/newExperiment.sh -p <partition_name> -a <slurm_account> -M <MPI-version> -t <time in HH:MM:SS> -e <exp-name> -n <nnodes> -c <ntasks> -g <ngpus> -b <binary>
+# For developers
+pip install -e .
+```
+This allows you to make changes to the code and have them reflected immediately without needing to reinstall.
+
+## 🛠️ Usage
+
+The tool is organized into three main commands: `configure`, `launch`, and `status`.
+
+### ⚙️ Configure an Experiment
+Before launching an experiment, you need to create a configuration for your target environment (SLURM, PBS, or local). The `configure` command helps you create and save these settings.
+
+When you first run this command in a project directory, `SbatchMan` will ask for confirmation to create a `sbatchman` directory. This directory will store all your configurations and experiment results.
+
+Check out the available options for each environment:
+```bash
+sbatchman configure slurm --help # Show options for SLURM
+sbatchman configure pbs --help   # Show options for PBS
+sbatchman configure local --help # Show options for local execution
 ```
 
-## `submit.sh`
+The configuration file will be saved in the `sbatchman/configs` directory with the name you provided. You can use this name later to launch your experiment. If you need to change the configuration, you can simply run the `configure` command again with the same name, and it will overwrite the existing configuration.
 
-### Description:
-The `submit.sh` script facilitates the submission of experiments to a SLURM-based HPC system. It automates the process of selecting the appropriate SLURM batch script and managing experiment metadata.
+#### SLURM Example:
 
-### Usage:
 ```bash
-./submit.sh [--verbose] [--expname <expname>] --binary <binary> <binary_arguments>
+sbatchman configure slurm --name my-gpu-job \
+--partition gpu_queue \
+--cpus-per-task 4 \
+--mem "16G" \
+--gpus 1 \
+--time "01:00:00" \
+--env "CUDA_VISIBLE_DEVICES=0"
 ```
 
-### Options:
-
-- `--verbose`: Use verbose submission process.
-- `--expname <expname>`: Specifies the name of the experiment.
-- `--binary <binary>`: Specifies the binary path.
-- `<binary_arguments>`: Additional arguments required by the binary.
-
-### Script Logic:
-
-1. **Argument Validation:**
-   - The script first checks if the correct number of arguments has been provided. If not, it displays usage instructions and exits with an error.
-   
-2. **Parsing Arguments:**
-   - The script parses the command-line arguments using a `while` loop and a `case` statement. It identifies the `--binary` and `--expname` flags and assigns their corresponding values to variables.
-
-3. **Finding SLURM Batch Script:**
-   - The script searches for the SLURM batch script associated with the specified binary in the experiment table (`SbM_EXPTABLE`). It checks if the binary is listed in the table and retrieves the corresponding SLURM batch script.
-
-4. **Generating Token:**
-   - A unique token is generated for the experiment based on its parameters using the `genToken.sh` script. This token serves as an identifier for the experiment.
-
-5. **Creating Metadata Directory:**
-   - The script creates a directory to store experiment metadata. The directory path is constructed based on the hostname and experiment name.
-
-6. **Initializing Metadata Files:**
-   - Metadata files (`finished.txt`, `notFinished.txt`, `submitted.txt`, `notSubmitted.txt`, `launched.txt`, and `notLaunched.txt`) are initialized for the experiment. These files track the status of the experiment throughout its lifecycle.
-
-7. **Submitting Experiment:**
-   - Before submitting the experiment, the script checks if it is already in the SLURM queue. If not, it submits the experiment to the SLURM queue using the appropriate batch script. The experiment ID and status are recorded in the metadata files.
-
-### Example Usage:
+#### PBS Example:
 ```bash
-./submit.sh --expname AxBC-3d-2 --binary src/axbc2d -p medium -a flavio.vella -M pmix -t 02:00:00 -n 1 -c 2 -g 2 -d 1
+sbatchman configure pbs --name my-pbs-job \
+--queue standard \
+--cpus 4 \
+--mem "16gb" \
+--walltime "01:00:00"
 ```
 
-### Notes:
+#### Local Example:
+```bash
+sbatchman configure local --name my-local-job \
+--env "MY_VAR=hello"
+```
 
-- **Configuration Requirements:**
-  - Before using `submit.sh`, ensure that the `SbM_EXPTABLE` file is correctly configured with experiment details, including binary paths and associated SLURM batch scripts.
+### 쏘 Launch an Experiment
 
-- **Testing Mode:**
-  - To test the script without submitting an actual experiment, use the `--test` flag. This flag prints the submission command without executing it.
+Use the configuration name to launch your code.
+```bash
+sbatchman launch --config my-gpu-job \
+"python my_project/train.py --learning-rate 0.001 --epochs 50"
+```
 
-- **Metadata Files:**
-  - The script creates and manages several metadata files to track the status of experiments (`finished.txt`, `notFinished.txt`, `submitted.txt`, `notSubmitted.txt`, `launched.txt`, and `notLaunched.txt`). These files are located in the experiment's metadata directory.
+The command to execute must be passed in quotes.
 
-- **Troubleshooting:**
-  - If an error occurs during submission, check the metadata files and SLURM queue for relevant information. The metadata files provide insights into the experiment's status and history.
+### 📊 Check Experiment Status
 
-- **Customization:**
-  - You can customize the behavior of `submit.sh` by modifying the script logic or adding additional features to meet specific requirements.
+To monitor your experiments, launch the interactive interface:
+```bash
+sbatchman status
+```
 
-- **Documentation:**
-  - Refer to the script documentation and comments for detailed information on its usage, options, and internal logic.
+The TUI provides a real-time view of your jobs, categorized into queued, running, and finished states. You can navigate through the list of jobs and select one to view its live standard output and error logs.
+
+**⌨️ Keybindings:**
+- **Up/Down Arrows**: Navigate through jobs and tabs.
+- **Enter**: View logs for the selected job.
+- **q**: Go back to the previous view or quit the application.
+
+![SbatchMan TUI](https://raw.githubusercontent.com/LorenzoPichetti/SbatchMan/refs/heads/rewrite/docs/images/tui.png)

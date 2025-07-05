@@ -1,0 +1,44 @@
+name: Publish Python Package to PyPI
+
+# This workflow runs when a new release is created on GitHub.
+on:
+  release:
+    types: [created]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    # PyPI's Trusted Publishing feature (OIDC) is used to authenticate.
+    # This is more secure than storing a long-lived API token as a secret.
+    # To use this, you must configure this repository as a "trusted publisher"
+    # on your package's PyPI page.
+    # See: https://docs.pypi.org/trusted-publishers/
+    permissions:
+      id-token: write # This is required for OIDC authentication with PyPI
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # Use a specific Python version that meets the project's requirements.
+          # The pyproject.toml specifies >=3.8.
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build package
+        # This command builds the source distribution (sdist) and wheel
+        # from the pyproject.toml file and places them in the dist/ directory.
+        run: python -m build
+
+      - name: Publish package to PyPI
+        # This action uses the OIDC token to securely upload the package.
+        # It automatically finds the built packages in the dist/ directory.
+        uses: pypa/gh-action-pypi-publish@release/v1

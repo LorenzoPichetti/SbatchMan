@@ -1,0 +1,7 @@
+#stdout_title,
+#stderr_title {
+  padding: 0;
+  margin: 0;
+  height: auto;
+  content-align: left middle;
+}
