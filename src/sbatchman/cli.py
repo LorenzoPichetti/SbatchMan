@@ -223,7 +223,7 @@ def launch(
   try:
     # Call the API/launcher
     if file:
-      jobs = sbtc.launch_jobs_from_file(file)
+      jobs = sbtc.launch_jobs_from_file(file, force=force)
       console.print(f"✅ Submitted successfully {len(jobs)} jobs.")
     elif config and tag and command:
         job = sbtc.launch_job(

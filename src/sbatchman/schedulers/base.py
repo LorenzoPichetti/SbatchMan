@@ -28,11 +28,11 @@ class BaseConfig(ABC):
     """Returns the shell command to update job_id in metadata.yaml for this scheduler."""
     scheduler = self.get_scheduler_name()
     if scheduler == "slurm":
-      return 'sed -i "s/^job_id: \\d*/job_id: $SLURM_JOB_ID/" "{EXP_DIR}/metadata.yaml"'
+      return 'sed -i "s/job_id: [0-9]*/job_id: $SLURM_JOB_ID/" "{EXP_DIR}/metadata.yaml"'
     elif scheduler == "pbs":
-      return 'sed -i "s/^job_id: \\d*/job_id: $PBS_JOBID/" "{EXP_DIR}/metadata.yaml"'
+      return 'sed -i "s/job_id: [0-9]*/job_id: $PBS_JOBID/" "{EXP_DIR}/metadata.yaml"'
     elif scheduler == "local":
-      return 'sed -i "s/^job_id: \\d*/job_id: $$/" "{EXP_DIR}/metadata.yaml"'
+      return 'sed -i "s/job_id: [0-9]*/job_id: $$/" "{EXP_DIR}/metadata.yaml"'
     else:
       return "# No job_id update for unknown scheduler"
 
@@ -67,7 +67,7 @@ class BaseConfig(ABC):
       self._generate_jobid_update_line(),
       "\n# Update status to RUNNING",
       'if [ -f "{EXP_DIR}/metadata.yaml" ]; then',
-      'sed -i \'s/status: \\w*/status: RUNNING/\' {EXP_DIR}/metadata.yaml',
+      ' sed -i \'s/status: \\w*/status: RUNNING/\' {EXP_DIR}/metadata.yaml',
       'fi',
     ]
 

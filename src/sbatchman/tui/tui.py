@@ -7,6 +7,7 @@ from sbatchman.tui.jobs_screen import JobsScreen
 
 class ExperimentTUI(App):
   TITLE = "SbatchMan Status"
+  CSS_PATH = "style.tcss"
   
   def __init__(self, experiments_dir: Optional[Path] = None, **kwargs):
     super().__init__(**kwargs)

@@ -6,6 +6,7 @@ The `sbatchman` CLI provides powerful functionality, but the commands can be len
 
 | Command                         | Alias   |
 |---------------------------------|---------|
+| `sbatchman`                     | `sbm`  |
 | `sbatchman init`                | `sbmi`  |
 | `sbatchman launch`              | `sbml`  |
 | `sbatchman status`              | `sbms`  |
@@ -31,6 +32,8 @@ else
 fi
 cat << 'EOF' >> "$SHELL_RC"
 # SbatchMan CLI Aliases
+alias sbm='sbatchman'
+alias sbmh='sbatchman --help'
 alias sbmi='sbatchman init'
 alias sbmih='sbatchman init --help'
 alias sbml='sbatchman launch'

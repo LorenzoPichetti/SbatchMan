@@ -1,8 +1,9 @@
 from textual.app import ComposeResult
-from textual.widgets import Header, Footer, Log, Markdown
+from textual.widgets import Footer, Log, Markdown
 from textual.containers import Vertical
 from textual.binding import Binding
 from textual.screen import Screen
+from textual.events import MouseDown
 
 from sbatchman.core.job import Job
 
@@ -25,15 +26,12 @@ class LogScreen(Screen):
     self.stderr_lines = []
     self.stdout_page = 0
     self.stderr_page = 0
-    self.focused_log = "stdout"  # "stdout" or "stderr"
+    self.focused_log = "stdout"
 
   def compose(self) -> ComposeResult:
-    yield Markdown(
-      "**Note:** Output is paged. Use [n]ext/[p]revious to scroll, [Tab] to switch between STDOUT/STDERR, [q] to quit."
-    )
     yield Vertical(
-      Markdown("### STDOUT"), Log(id="stdout_log", highlight=True),
-      Markdown("### STDERR"), Log(id="stderr_log", highlight=True),
+      Markdown("**STDOUT**", id="stdout_title"), Log(id="stdout_log", highlight=True),
+      Markdown("**STDERR**", id="stderr_title"), Log(id="stderr_log", highlight=True),
       id="log_view"
     )
     yield Footer()
@@ -56,6 +54,8 @@ class LogScreen(Screen):
   def display_page(self):
     stdout_log = self.query_one("#stdout_log", Log)
     stderr_log = self.query_one("#stderr_log", Log)
+    stdout_title = self.query_one("#stdout_title", Markdown)
+    stderr_title = self.query_one("#stderr_title", Markdown)
 
     # Clear logs
     stdout_log.clear()
@@ -67,25 +67,21 @@ class LogScreen(Screen):
     e_start = self.stderr_page * self.PAGE_SIZE
     e_end = e_start + self.PAGE_SIZE
 
-    # Write current page, add page info
-    stdout_log.write(
-      f"[Page {self.stdout_page + 1}/{max(1, (len(self.stdout_lines) - 1) // self.PAGE_SIZE + 1)}]"
-      + ("\n" if self.stdout_lines else "")
-      + "\n".join(self.stdout_lines[s_start:s_end])
-    )
-    stderr_log.write(
-      f"[Page {self.stderr_page + 1}/{max(1, (len(self.stderr_lines) - 1) // self.PAGE_SIZE + 1)}]"
-      + ("\n" if self.stderr_lines else "")
-      + "\n".join(self.stderr_lines[e_start:e_end])
-    )
+    # Total page counts
+    stdout_total_pages = max(1, (len(self.stdout_lines) - 1) // self.PAGE_SIZE + 1)
+    stderr_total_pages = max(1, (len(self.stderr_lines) - 1) // self.PAGE_SIZE + 1)
 
-    # Optionally highlight the focused log
+    # Update Markdown headers with page info and active status
     if self.focused_log == "stdout":
-      stdout_log.border_title = "STDOUT (active)"
-      stderr_log.border_title = "STDERR"
+      stdout_title.update(f"**STDOUT** [Page {self.stdout_page + 1}/{stdout_total_pages}] (active)")
+      stderr_title.update(f"**STDERR** [Page {self.stderr_page + 1}/{stderr_total_pages}]")
     else:
-      stdout_log.border_title = "STDOUT"
-      stderr_log.border_title = "STDERR (active)"
+      stdout_title.update(f"**STDOUT** [Page {self.stdout_page + 1}/{stdout_total_pages}]")
+      stderr_title.update(f"**STDERR** [Page {self.stderr_page + 1}/{stderr_total_pages}] (active)")
+
+    # Write log content
+    stdout_log.write("\n".join(self.stdout_lines[s_start:s_end]))
+    stderr_log.write("\n".join(self.stderr_lines[e_start:e_end]))
 
   def action_next_page(self):
     if self.focused_log == "stdout":
@@ -108,3 +104,14 @@ class LogScreen(Screen):
   def action_toggle_focus(self):
     self.focused_log = "stderr" if self.focused_log == "stdout" else "stdout"
     self.display_page()
+
+  def on_mouse_down(self, event: MouseDown) -> None:
+    # FIXME doesn't work...
+    if event.widget and event.widget.id:
+      target_id = event.widget.id
+      if target_id == "stdout_log" and self.focused_log != "stdout":
+        self.focused_log = "stdout"
+        self.display_page()
+      elif target_id == "stderr_log" and self.focused_log != "stderr":
+        self.focused_log = "stderr"
+        self.display_page()

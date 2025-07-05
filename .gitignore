@@ -15,6 +15,9 @@ dist/
 site/
 
 # Dev
+experiments/
+configs/
+archive/
 SbatchMan/
 datasets/
 jobs.yaml

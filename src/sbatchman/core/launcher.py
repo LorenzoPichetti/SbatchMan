@@ -5,10 +5,10 @@ import re
 import yaml
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from dataclasses import asdict
+from rich.console import Console
 
 from sbatchman.core.job import Job, Status
-from sbatchman.core.jobs_manager import job_exists, jobs_list
+from sbatchman.core.jobs_manager import job_exists
 from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_project_config_dir, get_scheduler_from_cluster_name
@@ -17,6 +17,8 @@ from sbatchman.config.project_config import get_experiments_dir
 from sbatchman.schedulers.local import local_submit
 from sbatchman.schedulers.pbs import pbs_submit
 from sbatchman.schedulers.slurm import slurm_submit
+
+console = Console()
 
 def launch_job(config_name: str, command: str, cluster_name: Optional[str] = None, tag: str = "default", preprocess: Optional[str] = None, postprocess: Optional[str] = None, force: bool = False) -> Job:
   """
@@ -102,9 +104,9 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     timestamp=timestamp,
     exp_dir=str(exp_dir_local),
     command=command,
-    status=str(Status.SUBMITTING),
+    status=Status.SUBMITTING.value,
     scheduler=scheduler,
-    job_id="",
+    job_id=0,
     tag=tag,
     archive_name=None,
     preprocess=preprocess,
@@ -120,6 +122,7 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     elif scheduler == 'pbs':
       job.job_id = pbs_submit(run_script_path, exp_dir)
     elif scheduler == 'local':
+      console.print(f"✅ Submitting job with command '[bold cyan]{job.command}[/bold cyan]'.")
       job.job_id = local_submit(run_script_path, exp_dir)
     else:
       raise ConfigurationError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
@@ -127,7 +130,7 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     job.write_job_id()
   
   except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
-    job.status = str(Status.FAILED_SUBMISSION)
+    job.status = Status.FAILED_SUBMISSION.value
     job.write_metadata()
     raise
   finally:    

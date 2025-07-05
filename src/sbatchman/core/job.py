@@ -23,7 +23,7 @@ class Job:
   status: str
   scheduler: str
   tag: str
-  job_id: str
+  job_id: int
   preprocess: Optional[str] = None
   postprocess: Optional[str] = None 
   archive_name: Optional[str] = None
@@ -135,7 +135,7 @@ class Job:
       job_dict = asdict(self)
       # Convert Path objects to strings for clean YAML representation
       for key, value in job_dict.items():
-        if isinstance(value, Path):
+        if isinstance(value, Path) or isinstance(value, Status):
           job_dict[key] = str(value)
       yaml.dump(job_dict, f, default_flow_style=False)
 
@@ -148,12 +148,18 @@ class Job:
     path = self.get_metadata_path()
 
     if path.exists():
-      with open(path, 'r') as f:
+      
+      print('metadata')
+      with open(path, 'r') as f: 
         lines = f.readlines()
-
-      with open(path, 'w') as f:
-        for line in lines:
-          if line.strip().startswith('job_id:'):
-            f.write(f"job_id: {self.job_id}\n")
-          else:
-            f.write(line)
+        print(lines)
+      print(["sed", "-i", f"s/^job_id: [0-9]*/job_id: {int(self.job_id)}/"])
+      print('='*40)
+      subprocess.run(["sed", "-i", f"s/^job_id: [0-9]*/job_id: {int(self.job_id)}/", str(path)], check=True)
+      # with open(path, 'rw') as f:
+      #   lines = f.readlines()
+      #   for line in lines:
+      #     if line.strip().startswith('job_id:'):
+      #       f.write(f"job_id: {int(self.job_id)}\n")
+      #     else:
+      #       f.write(line)
