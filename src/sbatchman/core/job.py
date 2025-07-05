@@ -148,13 +148,6 @@ class Job:
     path = self.get_metadata_path()
 
     if path.exists():
-      
-      print('metadata')
-      with open(path, 'r') as f: 
-        lines = f.readlines()
-        print(lines)
-      print(["sed", "-i", f"s/^job_id: [0-9]*/job_id: {int(self.job_id)}/"])
-      print('='*40)
       subprocess.run(["sed", "-i", f"s/^job_id: [0-9]*/job_id: {int(self.job_id)}/", str(path)], check=True)
       # with open(path, 'rw') as f:
       #   lines = f.readlines()
