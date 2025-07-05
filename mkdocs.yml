@@ -59,6 +59,7 @@ plugins:
             show_if_no_docstring: true
             merge_init_into_class: true
 nav:
+  - index.md
   - Installation:
     - Install: install/install.md
     - Setup: install/setup.md

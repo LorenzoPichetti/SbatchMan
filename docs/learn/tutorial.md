@@ -121,7 +121,7 @@ sbatchman configure pbs --help
 
 If you need to change the configuration later, run the `configure` command again with the same `--name` option and the `--overwrite` flag. SbatchMan will replace the existing configuration with the new one.
 
-> **IMPORTANT NOTE:** if you do not specify `--cluster-name`, SbatchMan will use the name you set via the `sbatchman set-cluster-name` (see the [Setup Page](/install/setup) for more details).
+> **IMPORTANT NOTE:** if you do not specify `--cluster-name`, SbatchMan will use the name you set via the `sbatchman set-cluster-name` (see the [Setup Page](../install/setup.md) for more details).
 
 ## 🚀 Launch Your Code
 
@@ -185,7 +185,7 @@ for job in jobs_with_tag:
   print(f"Job ID: {job.id}, Status: {job.status}, Log: {job.get_log()}")
 ```
 
-For more details, refer to the [API](/api/#sbatchman.Job) page.
+For more details, refer to the [API](../api.md/#sbatchman.Job) page.
 
 ## 📦 Archiving Jobs
 To archive jobs, you can use the `archive` command. This is useful for keeping your job history organized and manageable. For example, to archive all jobs with the tag `mnist_training`:

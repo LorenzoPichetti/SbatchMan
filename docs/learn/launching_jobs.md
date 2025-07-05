@@ -224,7 +224,7 @@ except Exception as e:
   print(f"An error occurred: {e}")
 ```
 
-For more details, refer to the [API](/api/#sbatchman.launch_job) page.
+For more details, refer to the [API](../api.md/#sbatchman.launch_job) page.
 
 ### Launching Multiple Jobs from a File
 
@@ -247,4 +247,4 @@ except Exception as e:
     print(f"An error occurred: {e}")
 ```
 
-For more details, refer to the [API](/api/#sbatchman.launch_jobs_from_file) page.
+For more details, refer to the [API](../api.md/#sbatchman.launch_jobs_from_file) page.

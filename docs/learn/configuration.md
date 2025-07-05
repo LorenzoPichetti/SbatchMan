@@ -116,7 +116,7 @@ sbm.create_slurm_config(
 )
 ```
 
-For more details, refer to the [API](/api/#sbatchman.create_slurm_config) page.
+For more details, refer to the [API](../api.md/#sbatchman.create_slurm_config) page.
 
 ### PBS Configuration
 
@@ -137,7 +137,7 @@ sbm.create_pbs_config(
 )
 ```
 
-For more details, refer to the [API](/api/#sbatchman.create_pbs_config) page.
+For more details, refer to the [API](../api.md/#sbatchman.create_pbs_config) page.
 
 ### Local Configuration
 
@@ -155,4 +155,4 @@ sbm.create_local_config(
 )
 ```
 
-For more details, refer to the [API](/api/#sbatchman.create_local_config) page.
+For more details, refer to the [API](../api.md/#sbatchman.create_local_config) page.
