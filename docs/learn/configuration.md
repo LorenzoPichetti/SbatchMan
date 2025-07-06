@@ -33,16 +33,16 @@ Here is the general structure:
     <param_1>: <value_1>
     <param_2>: <value_2>
   configs:
-    <config_name_1>:
+    - name: <config_name_1>
       <param_3>: <value_3>
-    <config_name_2>:
+    - name: <config_name_2>
       <param_1>: <overridden_value_1>
       <param_4>: <value_4>
 
 <cluster_name_2>:
   scheduler: <slurm|pbs|local>
   configs:
-    <config_name_3>:
+    - name: <config_name_3>
       ...
 ```
 
@@ -64,12 +64,12 @@ clusterA:
       - "gcc/10.2.0"
       - "python/3.9.6"
   configs:
-    cpu_job:
+    - name: cpu_job
       partition: "cpu_queue"
       cpus_per_task: 4
       mem: "16G"
       time: "01-00:00:00"
-    gpu_job:
+    - name: gpu_job
       partition: "gpu_queue"
       cpus_per_task: 8
       mem: "32G"
@@ -81,11 +81,11 @@ clusterB:
   default_conf:
     queue: "default_queue"
   configs:
-    small_mem_job:
+    - name: small_mem_job
       cpus: 2
       mem: "8gb"
       walltime: "01:00:00"
-    large_mem_job:
+    - name: large_mem_job
       cpus: 4
       mem: "64gb"
       walltime: "12:00:00"
