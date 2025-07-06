@@ -62,6 +62,7 @@ def _create_config_from_params(scheduler: str, params: Dict[str, Any]) -> BaseCo
   """
   Calls the appropriate API function to create a single configuration.
   """
+  params = { k.replace('-', '_'): v for k,v in params.items() }
   if scheduler == "slurm":
     return create_slurm_config(**params)
   elif scheduler == "pbs":

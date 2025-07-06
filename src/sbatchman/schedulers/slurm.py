@@ -67,7 +67,7 @@ class SlurmConfig(BaseConfig):
     if a := self.account: lines.append(f"#SBATCH --account={a}")
     if m := self.mem: lines.append(f"#SBATCH --mem={m}")
     if t := self.time: lines.append(f"#SBATCH --time={t}")
-    if g := self.gpus: lines.append(f"#SBATCH --gres=gpu:{g}")
+    if self.gpus is not None: lines.append(f"#SBATCH --gres=gpu:{self.gpus}")
     if con := self.constraint: lines.append(f"#SBATCH --constraint={con}")
     if nl := self.nodelist: lines.append(f"#SBATCH --nodelist={nl}")
     if q := self.qos: lines.append(f"#SBATCH --qos={q}")

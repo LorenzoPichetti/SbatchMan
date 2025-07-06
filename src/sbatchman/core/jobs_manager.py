@@ -6,7 +6,7 @@ import yaml
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_archive_dir, get_experiments_dir
 from sbatchman.core.job import Job
-from sbatchman.core.status import TERMINAL_STATES
+from sbatchman.core.status import TERMINAL_STATES, Status
 from sbatchman.exceptions import ArchiveExistsError
 import pandas as pd
 
@@ -38,6 +38,7 @@ def jobs_list(
   cluster_name: Optional[str] = None,
   config_name: Optional[str] = None,
   tag: Optional[str] = None,
+  status: Optional[List[Status]] = None,
   archive_name: Optional[str] = None,
   from_active: bool = True,
   from_archived: bool = False,
@@ -49,6 +50,7 @@ def jobs_list(
     cluster_name: Filter by cluster name.
     config_name: Filter by configuration name.
     tag: Filter by tag.
+    status: Filter by a set of Status.
     archive_name: If provided, only include jobs from this archive.
     from_active: If True, include active jobs.
     from_archived: If True, include archived jobs.
@@ -76,6 +78,8 @@ def jobs_list(
         if config_name and not metadata_path.parts[-4] == config_name:
           continue
         if tag and not metadata_path.parts[-3] == tag:
+          continue
+        if status and job_dict.get('status') not in [s.value for s in status]:
           continue
         jobs.append(Job(**job_dict))
 

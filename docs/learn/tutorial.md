@@ -164,22 +164,25 @@ Of course, you won't need to parse them manually. To parse the results, you can 
 For example, you can read the logs and extract metrics like accuracy or loss:
 
 ```python
-from sbatchman import Job, list_jobs
-job = list_jobs(
+from sbatchman import Job, jobs_list
+job = jobs_list(
   cluster_name="my_gpu_cluster",
   config_name="simple_gpu_config",
   tag="mnist_training_20_epochs"
 )[0]
+executable, args_dict = job.parse_command_args()
+print(executable)
+print(args_dict)
 print(job.get_stdout())
 ```
 
 Here you can see the power of tags: you can easily filter jobs by their tags, making it simple to find the results of specific experiments.
 
 ### Advanced querying
-The `list_jobs` function returns a list of `Job` objects, which you can further filter or sort. For example, you can get all jobs with a specific tag:
+The `jobs_list` function returns a list of `Job` objects, which you can further filter or sort. For example, you can get all jobs with a specific tag:
 
 ```python
-jobs = list_jobs() # This will list all jobs across all clusters
+jobs = jobs_list() # This will list all jobs across all clusters
 jobs_with_tag = [job for job in jobs if job.tag == "mnist_training_20_epochs"]
 for job in jobs_with_tag:
   print(f"Job ID: {job.id}, Status: {job.status}, Log: {job.get_log()}")
@@ -197,7 +200,7 @@ sbatchman archive \
   --config-name simple_gpu_config
 ```
 
-Archived jobs will be moved to the `SbatchMan/archive` directory, and will not appear in the job list, unless you specify the `archived` option in the `list_jobs` function.
+Archived jobs will be moved to the `SbatchMan/archive` directory, and will not appear in the job list, unless you specify the `archived` option in the `jobs_list` function.
 
 You can check out all the available options by running:
 

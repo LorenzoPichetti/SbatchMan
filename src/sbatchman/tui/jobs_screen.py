@@ -153,7 +153,7 @@ class JobsScreen(Screen):
       self.apply_filter()
       return
     active_tab_id = self.query_one(TabbedContent).active
-    if not active_tab_id:
+    if not active_tab_id or active_tab_id != 'finished-tab':
       return
     active_table = self.query_one(f"#{active_tab_id.replace('tab', 'table')}", DataTable)
     if active_table.row_count > 0:

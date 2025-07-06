@@ -69,12 +69,16 @@ clusterA:
       cpus_per_task: 4
       mem: "16G"
       time: "01-00:00:00"
+      env:
+        - "OMP_NUM_THREADS=4"
     - name: gpu_job
       partition: "gpu_queue"
       cpus_per_task: 8
       mem: "32G"
       gpus: 1
       time: "02-00:00:00"
+      env:
+        - "OMP_NUM_THREADS=8"
 
 clusterB:
   scheduler: pbs
