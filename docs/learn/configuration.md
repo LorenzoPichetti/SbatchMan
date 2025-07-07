@@ -18,20 +18,37 @@ This command will parse the file and create or replace the specified configurati
 
 ### YAML File Structure
 
-The configuration file is organized by cluster. Each top-level key represents a `cluster_name`.
+The configuration file is organized by cluster. Each top-level key represents a `cluster_name` (excluding `variables`).
 
-#### Cluster Block
+#### Variables and Wildcards
+
+You can declare a `variables` block at the top level, similar to the jobs YAML file.  
+Variables can be:
+
+- A list of values
+- A path to a file (each line is a value)
+- A path to a directory (each file is a value)
+
+You can use `{var}` wildcards in configuration names and parameter values. All combinations (cartesian product) of variable values will be generated.
+
+#### YAML Syntax
 
 Each cluster block must contain a `scheduler` and a `configs` section. You can also specify a `default_conf` section to set default parameters for all configurations within that cluster.
 
 Here is the general structure:
 
 ```yaml
+variables:
+  <var1>: [value1, value2]
+  <var2>: path/to/file_or_dir
+
 <cluster_name_1>:
   scheduler: <slurm|pbs|local>
+
   default_conf:
     <param_1>: <value_1>
     <param_2>: <value_2>
+
   configs:
     - name: <config_name_1>
       <param_3>: <value_3>
@@ -39,61 +56,58 @@ Here is the general structure:
       <param_1>: <overridden_value_1>
       <param_4>: <value_4>
 
+
 <cluster_name_2>:
-  scheduler: <slurm|pbs|local>
-  configs:
-    - name: <config_name_3>
-      ...
+  ...
 ```
 
+-   **`variables`**: (Optional) Top-level block for variable expansion.
 -   **`<cluster_name>`**: The name of the cluster (e.g., `my_gpu_cluster`).
 -   **`scheduler`**: The scheduler used by the cluster (`slurm`, `pbs`, or `local`).
 -   **`default_conf` (Optional)**: A dictionary of default parameters that apply to all configurations under this cluster.
--   **`configs`**: A dictionary where each key is a unique configuration name. The values are the specific parameters for that configuration, which will override any defaults set in `default_conf`.
+-   **`configs`**: A list of configuration templates. Wildcards in `name` or parameter values will be expanded using the variables.
 
-#### Example Configuration File
+#### Example
 
-Here is an example `my_configs.yaml` file defining configurations for two different clusters, `clusterA` (using SLURM) and `clusterB` (using PBS).
+Here is an example `my_configs.yaml` file defining configurations for two different clusters, `clusterA` (using SLURM) and `clusterB` (using PBS), with variables and wildcards:
 
 ```yaml
+variables:
+  partition: [cpu, gpu]
+  ncpus: [4, 8]
+  dataset: datasets/   # directory, each file is a value
+  mem: ["8gb", "16gb"]
+
 clusterA:
   scheduler: slurm
   default_conf:
-    account: "default_account"
+    account: "example_default_account"
     modules:
       - "gcc/10.2.0"
       - "python/3.9.6"
   configs:
-    - name: cpu_job
-      partition: "cpu_queue"
-      cpus_per_task: 4
+    - name: job_{partition}_{ncpus}
+      partition: "{partition}"
+      cpus_per_task: "{ncpus}"
       mem: "16G"
       time: "01-00:00:00"
       env:
-        - "OMP_NUM_THREADS=4"
-    - name: gpu_job
-      partition: "gpu_queue"
-      cpus_per_task: 8
-      mem: "32G"
-      gpus: 1
-      time: "02-00:00:00"
-      env:
-        - "OMP_NUM_THREADS=8"
+        - "DATASET={dataset}"
+        - "OMP_NUM_THREADS={ncpus}"
 
 clusterB:
   scheduler: pbs
-  default_conf:
-    queue: "default_queue"
   configs:
-    - name: small_mem_job
+    - name: "mem_job_{mem}"
       cpus: 2
-      mem: "8gb"
+      mem: "{mem}"
       walltime: "01:00:00"
-    - name: large_mem_job
-      cpus: 4
-      mem: "64gb"
-      walltime: "12:00:00"
 ```
+
+For `clutserA`, this will generate a configuration for every combination of `partition`, `ncpus`, and each file in `datasets/`.  
+For `clusterB`, this will generate a configuration for every value of `mem`.
+
+
 
 ## Configuring with the Python API
 

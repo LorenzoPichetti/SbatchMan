@@ -96,7 +96,7 @@ class BaseConfig(ABC):
       'fi',
       "\n# (Optional) Postprocess command",
       '{POSTPROCESS}',
-      'exit $EXIT_CODE',
+      '\nexit $EXIT_CODE',
     ]
 
     all_lines = header + scheduler_directives + working_dir_setup + env_vars + footer
