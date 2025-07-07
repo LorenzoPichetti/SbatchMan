@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sbatchman"
-version = "0.8.1"
+version = "0.8.2"
 authors = [
   { name="Salvatore Andaloro", email="sbatchman@sasso.dev" },
   { name="Thomas Pasquali", email="thomas.pasquali@unitn.it" },
