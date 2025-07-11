@@ -31,6 +31,7 @@ SLURM_STATUS_MAP = {
 
   # Terminal states (Cancelled/Timeout)
   "CANCELLED": Status.CANCELLED,
+  "CANCELLED+": Status.CANCELLED,
   "DEADLINE": Status.TIMEOUT,
   "TIMEOUT": Status.TIMEOUT,
   "STOPPED": Status.CANCELLED,
