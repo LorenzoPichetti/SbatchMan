@@ -22,3 +22,4 @@ SbatchMan/
 datasets/
 jobs.yaml
 modes.txt
+test/

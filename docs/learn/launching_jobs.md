@@ -21,6 +21,7 @@ The batch submission file is a YAML file that defines global variables and a lis
 
 The file has two main top-level keys:
 
+-   `sequential`: If set to `true`, will ensure that jobs are scheduled sequentially.
 -   `variables`: Defines global variables applicable to all jobs.
 -   `jobs`: A list of job templates.
 
@@ -77,6 +78,16 @@ Variables can be defined in three ways:
     data2.csv
     ```
     Then `dataset_path` will have two possible values: `datasets/data1.csv` and `datasets/data2.csv`.
+
+### The `sequential` Global Flag
+
+When this flag is set (`sequential: true`), SbatchMan will ensure that only one job is running at the time e.g. `job0 ---> job2 --> job3 --> job1 ...`
+
+This may be useful for benchmarking i.e. it ensures that jobs using the network do not create noise influencing each other.  
+Another use-case is building target with different Makefile variables e.g. `MYVAR={var} make mytarget`.
+
+> **IMPORTANT NOTE:** there is no guarantee about the order of the jobs.  
+> For SLURM, this is internally implemented using the `--dependency=afterany:$prev_job_id` option (PBS has a similar option)
 
 ### The `command`, `preprocess`, and `postprocess` Blocks
 

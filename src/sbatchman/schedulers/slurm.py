@@ -1,7 +1,7 @@
 from pathlib import Path
 import re
 import subprocess
-from typing import List, Optional
+from typing import List, Optional, Union
 from dataclasses import dataclass
 
 from sbatchman.core.status import Status
@@ -76,12 +76,13 @@ class SlurmConfig(BaseConfig):
     return lines
   
   @staticmethod
-  def get_job_status(job_id: str) -> Status:
+  def get_job_status(job_id: Union[int, str]) -> Status:
     """
     Returns the status of a SLURM job.
     """
+    # TODO double check if this always works properly
     process = subprocess.run(
-      f"sacct  -j {job_id} -o State -D -n",
+      f"sacct -j {job_id} -o State -D -n -u $(whoami)",
       shell=True,
       capture_output=True,
       text=True
@@ -90,7 +91,8 @@ class SlurmConfig(BaseConfig):
     stdout = process.stdout.strip()
     
     if returncode == 0 and stdout:
-      return SLURM_STATUS_MAP.get(stdout.strip().split('\n')[0], Status.UNKNOWN)
+      return SLURM_STATUS_MAP.get(stdout.split('\n')[0].strip(), Status.UNKNOWN)
+    
     # If the job is not in the queue, it might be completed or failed.
     # The calling function will handle this logic.
     return Status.UNKNOWN
@@ -100,9 +102,13 @@ class SlurmConfig(BaseConfig):
     """Returns the name of the scheduler this parameters class is associated with."""
     return "slurm"
   
-def slurm_submit(script_path: Path, exp_dir: Path) -> str:
+def slurm_submit(script_path: Path, exp_dir: Path, previous_job_id: Optional[int] = None) -> int:
   """Submits the job to SLURM."""
-  command_list = ["sbatch", str(script_path)]
+  if previous_job_id:
+    command_list = ["sbatch", f'--dependency=afterany:{previous_job_id}', str(script_path)]
+  else:
+    command_list = ["sbatch", str(script_path)]
+    
   result = subprocess.run(
     command_list,
     capture_output=True,
@@ -114,5 +120,5 @@ def slurm_submit(script_path: Path, exp_dir: Path) -> str:
   # Parse the job ID from the sbatch output
   match = re.search(r"Submitted batch job (\d+)", result.stdout)
   if match:
-    return match.group(1)
+    return int(match.group(1))
   raise ValueError(f"Could not parse job ID from sbatch output: {result.stdout}")

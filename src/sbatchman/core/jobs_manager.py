@@ -245,14 +245,16 @@ def update_jobs_status() -> int:
 
     try:
       config = job.get_job_config()
-      new_status = str(config.get_job_status(job.job_id))
+      new_status = config.get_job_status(job.job_id).value
+      
+      if new_status == Status.UNKNOWN.value:
+        continue
 
       if new_status != job.status:
         job.status = new_status
         job.write_metadata()
         updated_count += 1
-
-    except Exception:
+    except Exception as e:
       # Ignore errors (e.g., config not found) and continue
       continue
           

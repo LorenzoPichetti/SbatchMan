@@ -48,6 +48,11 @@ class Job:
       raise ConfigurationError(f"Could not find configuration '{self.config_name}' in configurations.yaml file ({configs_file_path})")
     
     config_dict = configs[self.config_name]
+    config_dict['name'] = self.config_name
+    config_dict['cluster_name'] = self.cluster_name
+    if 'scheduler' in config_dict:
+      del config_dict['scheduler']
+
     if scheduler == 'slurm':
       return SlurmConfig(**config_dict)
     elif scheduler == 'pbs':

@@ -59,12 +59,13 @@ class JobsScreen(Screen):
       table.cursor_type = "row"
       table.add_column("Time", key="timestamp")
       table.add_column("Config")
+      table.add_column("Tag")
       table.add_column("Job ID")
       table.add_column("Status")
       table.add_column("Command")
     
     self.load_and_update_jobs()
-    self.timer = self.set_interval(5, self.load_and_update_jobs)
+    self.timer = self.set_interval(30, self.load_and_update_jobs)
 
   def action_remove_filter(self) -> None:
     self.filter = None
@@ -108,6 +109,7 @@ class JobsScreen(Screen):
       row_data = (
         formatted_timestamp,
         getattr(job, 'config_name', 'N/A'),
+        getattr(job, 'tag', 'N/A'),
         getattr(job, 'job_id', 'N/A'),
         getattr(job, 'status', 'UNKNOWN'),
         getattr(job, 'command', '') or '',

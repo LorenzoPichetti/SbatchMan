@@ -157,6 +157,8 @@ sbatchman status
 
 This command will show you all the submitted jobs and their detail through an interactive Terminal UI (TUI).
 
+> To select and copy text hold the SHIFT or OPTION key.
+
 ## 🏆 Collect Results
 
 Once the jobs are completed, you will find all their data into the project sub-directory `SbatchMan/experiments`.  

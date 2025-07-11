@@ -12,4 +12,11 @@ class Status(Enum):
   OTHER = "OTHER"
   UNKNOWN = "UNKNOWN"
 
-TERMINAL_STATES = {Status.COMPLETED, Status.FAILED, Status.CANCELLED, Status.UNKNOWN, Status.TIMEOUT, Status.FAILED_SUBMISSION}
+TERMINAL_STATES = {
+  Status.COMPLETED.value,
+  Status.FAILED.value,
+  Status.CANCELLED.value,
+  Status.TIMEOUT.value,
+  Status.FAILED_SUBMISSION.value
+  # Status.UNKNOWN.value,
+}

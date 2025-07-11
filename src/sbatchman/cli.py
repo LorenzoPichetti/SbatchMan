@@ -11,10 +11,6 @@ import importlib.metadata
 
 from .tui.tui import run_tui
 
-app = typer.Typer(help="A utility to create, launch, and monitor code experiments.")
-configure_app = typer.Typer(help="Create a configuration for a scheduler.")
-app.add_typer(configure_app, name="configure")
-
 console = Console()
 app = typer.Typer(help="A utility to create, launch, and monitor code experiments.")
 configure_app = typer.Typer(help="Create a configuration for a scheduler.")
@@ -287,8 +283,13 @@ def delete_jobs(
   archive_name: Optional[str] = typer.Option(None, "--archive", help="Delete jobs from this archive."),
   archived: bool = typer.Option(False, "--archived", help="Delete only archived jobs."), 
   not_archived: bool = typer.Option(False, "--not-archived", help="Delete only active jobs."),
+  all: bool = typer.Option(False, "--all", help="Delete ALL jobs."),
 ):
   """Deletes jobs matching the specified criteria."""
+
+  if all:
+    archived = True
+    not_archived = True
 
   if not archived and not not_archived:
     console.print("[bold red]You must specify at least one of: --archived or --not-archived[/bold red]")
@@ -303,7 +304,7 @@ def delete_jobs(
       archived=archived,
       not_archived=not_archived,
     )
-    console.print(f"[green]✓[/green] Successfully deleted {deleted_count} jobs.")
+    console.print(f"✅ Successfully deleted {deleted_count} jobs.")
   except ProjectNotInitializedError:
     _handle_not_initialized()
   except SbatchManError as e:
@@ -316,7 +317,7 @@ def update_jobs_status(
   """Updates the status of all jobs in the experiments directory."""
   try:
     updated_count = sbtc.update_jobs_status()
-    console.print(f"[green]✓[/green] Successfully updated status for {updated_count} jobs.")
+    console.print(f"✅ Successfully updated status for {updated_count} jobs.")
   except ProjectNotInitializedError:
     _handle_not_initialized()
   except SbatchManError as e:

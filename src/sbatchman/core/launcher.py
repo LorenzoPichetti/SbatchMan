@@ -20,7 +20,16 @@ from sbatchman.schedulers.slurm import slurm_submit
 
 console = Console()
 
-def launch_job(config_name: str, command: str, cluster_name: Optional[str] = None, tag: str = "default", preprocess: Optional[str] = None, postprocess: Optional[str] = None, force: bool = False) -> Job:
+def launch_job(
+  config_name: str,
+  command: str,
+  cluster_name: Optional[str] = None,
+  tag: str = "default",
+  preprocess: Optional[str] = None,
+  postprocess: Optional[str] = None,
+  force: bool = False,
+  previous_job_id: Optional[int] = None,
+) -> Job:
   """
   Launches an experiment based on a configuration name.
   Args:
@@ -30,6 +39,7 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
     tag: A tag for this experiment run, used in directory structure.
     preprocess: Optional; a command to run before the main command.
     postprocess: Optional; a command to run after the main command.
+    previous_job_id: Optional; if this is set, the job will be only launched after the previous is done.
   Returns:
     A Job object representing the launched job.
   Raises:
@@ -118,9 +128,9 @@ def launch_job(config_name: str, command: str, cluster_name: Optional[str] = Non
   try:
     # 5. Submit the job using the scheduler's own logic
     if scheduler == 'slurm':
-      job.job_id = slurm_submit(run_script_path, exp_dir)
+      job.job_id = slurm_submit(run_script_path, exp_dir, previous_job_id)
     elif scheduler == 'pbs':
-      job.job_id = pbs_submit(run_script_path, exp_dir)
+      job.job_id = pbs_submit(run_script_path, exp_dir, previous_job_id)
     elif scheduler == 'local':
       console.print(f"✅ Submitting job with command '[bold cyan]{job.command}[/bold cyan]'.")
       job.job_id = local_submit(run_script_path, exp_dir)
@@ -204,16 +214,21 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
   with open(jobs_file_path, "r") as f:
     config = yaml.safe_load(f)
 
+  global_is_sequential = bool(config.get("sequential"))
   global_vars = config.get("variables", {})
   global_command = config.get("command", None)
   global_preprocess = config.get("preprocess", None)
   global_postprocess = config.get("postprocess", None)
+
+  if global_is_sequential:
+    console.print('[yellow]Jobs will be scheduled sequentially.[/yellow]')
   
   # Prepare global variable values (expand files if needed)
   expanded_global_vars = {k: _load_variable_values(v) for k, v in global_vars.items()}
   
   launched_jobs = []
   job_definitions = config.get("jobs", [])
+  previous_job_id = None
 
   for job_def in job_definitions:
     job_config_template = job_def.get("config")
@@ -233,7 +248,7 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
     config_jobs = job_def.get("config_jobs", [])
     if not config_jobs:
       # If no config_jobs, run with the job's own context
-      _launch_job_combinations(
+      previous_job_id = _launch_job_combinations(
         job_config_template,
         job_command_template,
         "default",
@@ -242,6 +257,8 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
         merged_job_vars,
         launched_jobs,
         force,
+        global_is_sequential,
+        previous_job_id,
       )
     else:
       for entry in config_jobs:
@@ -258,7 +275,7 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
         # Merge all variables: global -> job -> entry
         final_vars = {**merged_job_vars, **expanded_entry_vars}
 
-        _launch_job_combinations(
+        previous_job_id = _launch_job_combinations(
           job_config_template,
           entry_command_template,
           tag_name,
@@ -267,22 +284,28 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
           final_vars,
           launched_jobs,
           force,
+          global_is_sequential,
+          previous_job_id,
         )
 
   return launched_jobs
 
 def _launch_job_combinations(
-    config_template: str,
-    command_template: str,
-    tag: str,
-    preprocess_template: Optional[str],
-    postprocess_template: Optional[str],
-    variables: Dict[str, Any],
-    launched_jobs: List[Job],
-    force: bool = False,
-):
+  config_template: str,
+  command_template: str,
+  tag: str,
+  preprocess_template: Optional[str],
+  postprocess_template: Optional[str],
+  variables: Dict[str, Any],
+  launched_jobs: List[Job],
+  force: bool = False,
+  sequential: bool = False,
+  previous_job_id: Optional[int] = None,
+) -> Optional[int]:
     """
     Generates and launches jobs for all combinations of variables.
+
+    Returns: the id of the last submitted job
     """
     if not command_template:
       return
@@ -306,13 +329,14 @@ def _launch_job_combinations(
       # print(f'{job_tag=}')
       # print('='*40)
       try:
-        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force)
+        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None))
         launched_jobs.append(job)
+        previous_job_id = job.job_id
       except JobExistsError as e:
         print(f"Skipping job: {e.message}")
       except JobSubmitError as e:
         print(f"Failed to submit job: {e.message}")
-      return
+      return previous_job_id
 
     keys, values = zip(*filtered_vars.items())
     for combination in itertools.product(*values):
@@ -330,9 +354,12 @@ def _launch_job_combinations(
       # print(f'{job_tag=}')
       # print('='*40)
       try:
-        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force)
+        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None))
         launched_jobs.append(job)
+        previous_job_id = job.job_id
       except JobExistsError as e:
         print(f"Skipping job: {e.message}")
       except JobSubmitError as e:
         print(f"Failed to submit job: {e.message}")
+    
+    return previous_job_id

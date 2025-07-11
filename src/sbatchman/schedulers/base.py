@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Union
 from pathlib import Path
 from dataclasses import asdict, dataclass
 
@@ -184,7 +184,7 @@ class BaseConfig(ABC):
   
   @staticmethod
   @abstractmethod
-  def get_job_status(job_id: str) -> Status:
+  def get_job_status(job_id: Union[int, str]) -> Status:
     """
     Returns the status of a job for this scheduler.
     This must be implemented by subclasses.

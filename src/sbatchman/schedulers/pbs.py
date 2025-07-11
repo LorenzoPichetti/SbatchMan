@@ -1,6 +1,6 @@
 from pathlib import Path
 import subprocess
-from typing import List, Optional
+from typing import List, Optional, Union
 from dataclasses import dataclass
 
 from sbatchman.core.status import Status
@@ -51,7 +51,7 @@ class PbsConfig(BaseConfig):
     return lines
   
   @staticmethod
-  def get_job_status(job_id: str) -> Status:
+  def get_job_status(job_id: Union[int, str]) -> Status:
     """
     Returns the status of a PBS job.
     """
@@ -89,9 +89,13 @@ class PbsConfig(BaseConfig):
     """Returns the name of the scheduler this parameters class is associated with."""
     return "pbs"
   
-def pbs_submit(script_path: Path, exp_dir: Path) -> str:
+def pbs_submit(script_path: Path, exp_dir: Path, previous_job_id: Optional[int] = None) -> int:
   """Submits the job to PBS."""
-  command_list = ["qsub", str(script_path)]
+  if previous_job_id:
+    command_list = ["qsub", '-W', f'depend=afterany:{previous_job_id}', str(script_path)]
+  else:
+    command_list = ["qsub", str(script_path)]
+    
   result = subprocess.run(
     command_list,
     capture_output=True,
@@ -101,5 +105,5 @@ def pbs_submit(script_path: Path, exp_dir: Path) -> str:
   )
   job_id = result.stdout.strip().split('.')[0]
   if job_id:
-    return job_id
+    return int(job_id)
   raise ValueError(f"Could not parse job ID from qsub output: {result.stdout}")
