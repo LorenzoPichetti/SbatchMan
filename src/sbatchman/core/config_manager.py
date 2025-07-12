@@ -196,6 +196,7 @@ def create_slurm_config(
   nodelist: Optional[str] = None,
   qos: Optional[str] = None,
   reservation: Optional[str] = None,
+  exclusive: Optional[bool] = False,
   env: Optional[List[str]] = None,
   modules: Optional[List[str]] = None,
   overwrite: bool = False,
@@ -218,6 +219,7 @@ def create_slurm_config(
     nodelist: A specific list of nodes to use.
     qos: The Quality of Service for the job.
     reservation: The reservation to use for the job.
+    exclusive: Enables the --exclusive flag (may not work on some clusters).
     env: A list of environment variables to set.
     modules: A list of environment modules to load.
     overwrite: If True, overwrite an existing configuration with the same name.
@@ -228,7 +230,7 @@ def create_slurm_config(
   config = SlurmConfig(
     name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), 
     partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem, account=account,
-    time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation,
+    time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation, exclusive=exclusive,
     env=env, modules=modules
   )
   config.save_config(overwrite)

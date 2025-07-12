@@ -106,6 +106,7 @@ def configure_slurm(
   constraint: Optional[str] = typer.Option(None, help="SLURM constraint."),
   nodelist: Optional[str] = typer.Option(None, help="SLURM nodelist."),
   qos: Optional[str] = typer.Option(None, help="SLURM quality of service (qos)."),
+  exclusive: Optional[bool] = typer.Option(False, help="SLURM exclusive flag. Requests nodes exclusively (may not work on some clusters)."),
   reservation: Optional[str] = typer.Option(None, help="SLURM reservation."),
   env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times (e.g., --env VAR1=value1 --env VAR2=value2)."),
   module: Optional[List[str]] = typer.Option(None, "--module", help="Module to load. Can be used multiple times (e.g. --module GCC/13.3.0 --module CUDA/12.5.0)."),
@@ -117,7 +118,7 @@ def configure_slurm(
       config = sbtc.create_slurm_config(
         name=name, cluster_name=cluster_name,
         partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem, account=account,
-        time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation,
+        time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation, exclusive=exclusive,
         env=env, modules=module, overwrite=overwrite
       )
       _save_config_print(config)

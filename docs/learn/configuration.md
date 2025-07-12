@@ -107,7 +107,35 @@ clusterB:
 For `clutserA`, this will generate a configuration for every combination of `partition`, `ncpus`, and each file in `datasets/`.  
 For `clusterB`, this will generate a configuration for every value of `mem`.
 
+### Available Configuration Options
 
+#### Common
+
+* `env`
+* `modules`
+
+#### SLURM
+
+* `partition`
+* `nodes`
+* `ntasks`
+* `cpus_per_task`
+* `mem`
+* `account`
+* `time`
+* `gpus`
+* `constraint`
+* `nodelist`
+* `qos`
+* `reservation`
+* `exclusive`
+
+#### PBS
+
+* `queue`
+* `cpus`
+* `mem`
+* `walltime`
 
 ## Configuring with the Python API
 

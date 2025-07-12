@@ -27,7 +27,6 @@ PBS_STATUS_MAP = {
 class PbsConfig(BaseConfig):
   """Config for OpenPBS."""
 
-
   queue: Optional[str] = None
   cpus: Optional[int] = None
   mem: Optional[str] = None

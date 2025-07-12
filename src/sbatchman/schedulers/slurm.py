@@ -54,6 +54,7 @@ class SlurmConfig(BaseConfig):
   nodelist: Optional[str] = None
   qos: Optional[str] = None
   reservation: Optional[str] = None
+  exclusive: Optional[bool] = False
 
   def _generate_scheduler_directives(self) -> List[str]:
     lines = []
@@ -73,6 +74,7 @@ class SlurmConfig(BaseConfig):
     if nl := self.nodelist: lines.append(f"#SBATCH --nodelist={nl}")
     if q := self.qos: lines.append(f"#SBATCH --qos={q}")
     if r := self.reservation: lines.append(f"#SBATCH --reservation={r}")
+    if self.exclusive: lines.append(f"#SBATCH --exclusive")
     
     return lines
   
