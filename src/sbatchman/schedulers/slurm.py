@@ -124,4 +124,4 @@ def slurm_submit(script_path: Path, exp_dir: Path, previous_job_id: Optional[int
   match = re.search(r"Submitted batch job (\d+)", result.stdout)
   if match:
     return int(match.group(1))
-  raise ValueError(f"Could not parse job ID from sbatch output: {result.stdout}")
+  raise ValueError(f"Could not parse job ID from sbatch output:\n{result.stdout}\n\n{result.stderr}")

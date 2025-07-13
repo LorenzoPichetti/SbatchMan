@@ -135,14 +135,21 @@ def launch_job(
       console.print(f"✅ Submitting job with command '[bold cyan]{job.command}[/bold cyan]'.")
       job.job_id = local_submit(run_script_path, exp_dir)
     else:
-      raise ConfigurationError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
+      raise JobSubmitError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
     
     job.write_job_id()
   
-  except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
+  except (ValueError, FileNotFoundError) as e:
     job.status = Status.FAILED_SUBMISSION.value
     job.write_metadata()
-    raise
+    raise JobSubmitError("Failed to submit job. Error: " + str(e)) from e
+  except subprocess.CalledProcessError as e:
+    job.status = Status.FAILED_SUBMISSION.value
+    job.write_metadata()
+    raise JobSubmitError(
+      f"Job submission failed with error code {e.returncode}. "
+      "Output stream:\n" + e.output + "\nError stream:\n" + e.stderr if e.stderr else ""
+    ) from e
   finally:    
     return job
 
