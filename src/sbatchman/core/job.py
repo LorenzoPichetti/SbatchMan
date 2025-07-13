@@ -95,12 +95,18 @@ class Job:
           key = None
     return executable, args_dict
 
+  def get_job_base_path(self) -> Path:
+    if self.archive_name:
+      return get_archive_dir() / self.archive_name / self.exp_dir
+    else:
+      return get_experiments_dir() / self.exp_dir
+
   def get_stdout(self) -> Optional[str]:
     """
     Returns the contents of the stdout log file for this job, or None if not found.
     """
-    exp_dir_path = get_experiments_dir() / self.exp_dir
-    stdout_path = exp_dir_path / "stdout.log"
+    stdout_path = self.get_job_base_path() / "stdout.log"
+    
     if stdout_path.exists():
       with open(stdout_path, "r") as f:
         return f.read()
@@ -110,8 +116,8 @@ class Job:
     """
     Returns the contents of the stderr log file for this job, or None if not found.
     """
-    exp_dir_path = get_experiments_dir() / self.exp_dir
-    stderr_path = exp_dir_path / "stderr.log"
+    stderr_path = self.get_job_base_path() / "stderr.log"
+
     if stderr_path.exists():
       with open(stderr_path, "r") as f:
         return f.read()
@@ -123,12 +129,7 @@ class Job:
     If the job is archived, it will return the path in the archive directory.
     Otherwise, it returns the path in the active experiments directory.
     """
-    if self.archive_name:
-      base_dir = get_archive_dir() / self.archive_name
-    else:
-      base_dir = get_experiments_dir()
-
-    return base_dir / self.exp_dir / "metadata.yaml"
+    return self.get_job_base_path() / "metadata.yaml"
 
   def write_metadata(self):
     """Saves the current job state to its metadata.yaml file."""
