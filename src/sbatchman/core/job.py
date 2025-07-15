@@ -101,23 +101,27 @@ class Job:
     else:
       return get_experiments_dir() / self.exp_dir
 
+  def get_stdout_path(self) -> Path:
+    return self.get_job_base_path() / "stdout.log"
+
   def get_stdout(self) -> Optional[str]:
     """
     Returns the contents of the stdout log file for this job, or None if not found.
     """
-    stdout_path = self.get_job_base_path() / "stdout.log"
-    
+    stdout_path = self.get_stdout_path()
     if stdout_path.exists():
       with open(stdout_path, "r") as f:
         return f.read()
     return None
 
+  def get_stderr_path(self) -> Path:
+    return self.get_job_base_path() / "stderr.log"
+
   def get_stderr(self) -> Optional[str]:
     """
     Returns the contents of the stderr log file for this job, or None if not found.
     """
-    stderr_path = self.get_job_base_path() / "stderr.log"
-
+    stderr_path = self.get_stderr_path()
     if stderr_path.exists():
       with open(stderr_path, "r") as f:
         return f.read()
