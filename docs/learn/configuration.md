@@ -126,6 +126,7 @@ For `clusterB`, this will generate a configuration for every value of `mem`.
 * `gpus`
 * `constraint`
 * `nodelist`
+* `exclude`
 * `qos`
 * `reservation`
 * `exclusive`

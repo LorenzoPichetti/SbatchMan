@@ -51,7 +51,8 @@ class SlurmConfig(BaseConfig):
   time: Optional[str] = None
   gpus: Optional[int] = None
   constraint: Optional[str] = None
-  nodelist: Optional[str] = None
+  nodelist: Optional[List[str]] = None
+  exclude: Optional[List[str]] = None
   qos: Optional[str] = None
   reservation: Optional[str] = None
   exclusive: Optional[bool] = False
@@ -71,7 +72,8 @@ class SlurmConfig(BaseConfig):
     if t := self.time: lines.append(f"#SBATCH --time={t}")
     if self.gpus is not None: lines.append(f"#SBATCH --gres=gpu:{self.gpus}")
     if con := self.constraint: lines.append(f"#SBATCH --constraint={con}")
-    if nl := self.nodelist: lines.append(f"#SBATCH --nodelist={nl}")
+    if nl := self.nodelist: lines.append(f"#SBATCH --nodelist={','.join(nl)}")
+    if ex := self.exclude: lines.append(f"#SBATCH --exclude={','.join(ex)}")
     if q := self.qos: lines.append(f"#SBATCH --qos={q}")
     if r := self.reservation: lines.append(f"#SBATCH --reservation={r}")
     if self.exclusive: lines.append(f"#SBATCH --exclusive")

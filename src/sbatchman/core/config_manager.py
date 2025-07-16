@@ -193,7 +193,8 @@ def create_slurm_config(
   time: Optional[str] = None,
   gpus: Optional[int] = None,
   constraint: Optional[str] = None,
-  nodelist: Optional[str] = None,
+  nodelist: Optional[List[str]] = None,
+  exclude: Optional[List[str]] = None,
   qos: Optional[str] = None,
   reservation: Optional[str] = None,
   exclusive: Optional[bool] = False,
@@ -217,6 +218,7 @@ def create_slurm_config(
     gpus: The number of GPUs to request.
     constraint: Specific features required for the job's nodes.
     nodelist: A specific list of nodes to use.
+    exclude: A specific list of nodes NOT to use.
     qos: The Quality of Service for the job.
     reservation: The reservation to use for the job.
     exclusive: Enables the --exclusive flag (may not work on some clusters).
@@ -230,7 +232,7 @@ def create_slurm_config(
   config = SlurmConfig(
     name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), 
     partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem, account=account,
-    time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation, exclusive=exclusive,
+    time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, exclude=exclude, qos=qos, reservation=reservation, exclusive=exclusive,
     env=env, modules=modules
   )
   config.save_config(overwrite)

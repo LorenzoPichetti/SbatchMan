@@ -104,7 +104,8 @@ def configure_slurm(
   time: Optional[str] = typer.Option(None, help="Walltime (e.g., 01-00:00:00)."),
   gpus: Optional[int] = typer.Option(None, help="Number of GPUs."),
   constraint: Optional[str] = typer.Option(None, help="SLURM constraint."),
-  nodelist: Optional[str] = typer.Option(None, help="SLURM nodelist."),
+  nodelist: Optional[List[str]] = typer.Option(None, help="SLURM nodelist."),
+  exclude: Optional[List[str]] = typer.Option(None, help="SLURM exclude."),
   qos: Optional[str] = typer.Option(None, help="SLURM quality of service (qos)."),
   exclusive: Optional[bool] = typer.Option(False, help="SLURM exclusive flag. Requests nodes exclusively (may not work on some clusters)."),
   reservation: Optional[str] = typer.Option(None, help="SLURM reservation."),
@@ -118,7 +119,7 @@ def configure_slurm(
       config = sbtc.create_slurm_config(
         name=name, cluster_name=cluster_name,
         partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem, account=account,
-        time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, qos=qos, reservation=reservation, exclusive=exclusive,
+        time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, exclude=exclude, qos=qos, reservation=reservation, exclusive=exclusive,
         env=env, modules=module, overwrite=overwrite
       )
       _save_config_print(config)
