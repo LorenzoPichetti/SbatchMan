@@ -1,5 +1,5 @@
 import shutil
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import yaml
 
@@ -38,7 +38,7 @@ def jobs_list(
   cluster_name: Optional[str] = None,
   config_name: Optional[str] = None,
   tag: Optional[str] = None,
-  status: Optional[List[Status]] = None,
+  status: Optional[List[Union[Status,str]]] = None,
   archive_name: Optional[str] = None,
   from_active: bool = True,
   from_archived: bool = False,
@@ -79,7 +79,7 @@ def jobs_list(
           continue
         if tag and not metadata_path.parts[-3] == tag:
           continue
-        if status and job_dict.get('status') not in [s.value for s in status]:
+        if status and job_dict.get('status') not in [s.value if isinstance(s, Status) else s for s in status]:
           continue
         jobs.append(Job(**job_dict))
 
