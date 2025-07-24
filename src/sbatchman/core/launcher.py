@@ -142,14 +142,17 @@ def launch_job(
   except (ValueError, FileNotFoundError) as e:
     job.status = Status.FAILED_SUBMISSION.value
     job.write_metadata()
-    raise JobSubmitError("Failed to submit job. Error: " + str(e)) from e
+    err_str = "Failed to submit job. Error: " + str(e)
+    with open(job.get_stderr_path(), 'w+') as err_file:
+      err_file.write(err_str)
+    raise JobSubmitError(err_str) from e
   except subprocess.CalledProcessError as e:
     job.status = Status.FAILED_SUBMISSION.value
     job.write_metadata()
-    raise JobSubmitError(
-      f"Job submission failed with error code {e.returncode}. "
-      "Output stream:\n" + e.output + "\nError stream:\n" + e.stderr if e.stderr else ""
-    ) from e
+    err_str = f"Job submission failed with error code {e.returncode}.\nOutput stream:\n" + e.output + "\nError stream:\n" + e.stderr if e.stderr else ""
+    with open(job.get_stderr_path(), 'w+') as err_file:
+      err_file.write(err_str)
+    raise JobSubmitError(err_str) from e
   finally:    
     return job
 
@@ -340,9 +343,9 @@ def _launch_job_combinations(
         launched_jobs.append(job)
         previous_job_id = job.job_id
       except JobExistsError as e:
-        print(f"Skipping job: {e.message}")
+        console.print(f"Skipping job: {e.message}")
       except JobSubmitError as e:
-        print(f"Failed to submit job: {e.message}")
+        console.print(f"Failed to submit job: {e.message}")
       return previous_job_id
 
     keys, values = zip(*filtered_vars.items())
@@ -365,8 +368,8 @@ def _launch_job_combinations(
         launched_jobs.append(job)
         previous_job_id = job.job_id
       except JobExistsError as e:
-        print(f"Skipping job: {e.message}")
+        console.print(f"Skipping job: {e.message}")
       except JobSubmitError as e:
-        print(f"Failed to submit job: {e.message}")
+        console.print(f"Failed to submit job: {e.message}")
     
     return previous_job_id

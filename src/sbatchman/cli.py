@@ -1,3 +1,4 @@
+from sbatchman.core.status import Status
 from sbatchman.schedulers.base import BaseConfig
 import typer
 from typing import List, Optional
@@ -86,7 +87,7 @@ def init(
   """Initializes a SbatchMan project and sets up global configuration if needed."""
   try:
     sbtc.init_project(path)
-    console.print(f"[green]✓[/green] SbatchMan project initialized successfully in {path / 'SbatchMan'}")
+    console.print(f"[green]✓[/green] SbatchMan project initialized successfully in {(path / 'SbatchMan').resolve().absolute()}")
   except SbatchManError as e:
     console.print(f"[bold red]Error:[/bold red] {e}")
     raise typer.Exit(code=1)
@@ -179,13 +180,14 @@ def configure(
   file: Optional[Path] = typer.Option(
     None,
     "--file",
+    "-f",
     exists=True,
     file_okay=True,
     dir_okay=False,
     readable=True,
     help="YAML file with multiple configurations.",
   ),
-  overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configurations when using --file."),
+  overwrite: bool = typer.Option(False, "--overwrite", "-ow", help="Overwrite current configurations when using --file."),
 ):
   """
   Create or update job configurations.
@@ -204,7 +206,7 @@ def configure(
 
 @app.command("launch")
 def launch(
-  file: Optional[Path] = typer.Option(None, "--file", help="YAML file that describes a batch of experiments."),
+  file: Optional[Path] = typer.Option(None, "--file", "-f", help="YAML file that describes a batch of experiments."),
   config: Optional[str] = typer.Option(None, "--config", help="Configuration name."),
   tag: str = typer.Option("default", "--tag", help="Tag for this experiment (default: 'default')."),
   command: Optional[str] = typer.Argument(None, help="The executable and its parameters, enclosed in quotes."),
@@ -222,7 +224,11 @@ def launch(
     # Call the API/launcher
     if file:
       jobs = sbtc.launch_jobs_from_file(file, force=force)
-      console.print(f"✅ Submitted successfully {len(jobs)} jobs.")
+      failed_sub_jobs_count = len([1 for j in jobs if j.status != Status.FAILED_SUBMISSION.value])
+      ok_jobs_count = len(jobs) - failed_sub_jobs_count
+      console.print(f"✅ Submitted successfully {ok_jobs_count} jobs.")
+      if failed_sub_jobs_count > 0:
+        console.print(f"❌ Failed to submit {ok_jobs_count} jobs (you can find the errors in the jobs stderr file, from `sbatchman status`).")
     elif config and tag and command:
         job = sbtc.launch_job(
           config_name=config,
@@ -256,7 +262,7 @@ def status(
 @app.command("archive")
 def archive(
     archive_name: str = typer.Argument(..., help="The name of the archive to create."),
-    overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing archive with the same name."),
+    overwrite: bool = typer.Option(False, "--overwrite", "-ow", help="Overwrite existing archive with the same name."),
     cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="Archive jobs from this cluster."),
     config_name: Optional[str] = typer.Option(None, "--config", help="Archive jobs with this configuration name."),
     tag: Optional[str] = typer.Option(None, "--tag", help="Archive jobs with this tag."),
@@ -285,7 +291,7 @@ def delete_jobs(
   archive_name: Optional[str] = typer.Option(None, "--archive", help="Delete jobs from this archive."),
   archived: bool = typer.Option(False, "--archived", help="Delete only archived jobs."), 
   not_archived: bool = typer.Option(False, "--not-archived", help="Delete only active jobs."),
-  all: bool = typer.Option(False, "--all", help="Delete ALL jobs."),
+  all: bool = typer.Option(False, "--all", help="Delete jobs from both active and archive directories."),
 ):
   """Deletes jobs matching the specified criteria."""
 
