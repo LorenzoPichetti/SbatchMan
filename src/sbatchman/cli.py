@@ -224,11 +224,11 @@ def launch(
     # Call the API/launcher
     if file:
       jobs = sbtc.launch_jobs_from_file(file, force=force)
-      failed_sub_jobs_count = len([1 for j in jobs if j.status != Status.FAILED_SUBMISSION.value])
+      failed_sub_jobs_count = len([1 for j in jobs if j.status == Status.FAILED_SUBMISSION.value])
       ok_jobs_count = len(jobs) - failed_sub_jobs_count
       console.print(f"✅ Submitted successfully {ok_jobs_count} jobs.")
       if failed_sub_jobs_count > 0:
-        console.print(f"❌ Failed to submit {ok_jobs_count} jobs (you can find the errors in the jobs stderr file, from `sbatchman status`).")
+        console.print(f"❌ Failed to submit {failed_sub_jobs_count} jobs (you can find the errors in the jobs stderr file, from `sbatchman status`).")
     elif config and tag and command:
         job = sbtc.launch_job(
           config_name=config,
