@@ -24,6 +24,7 @@ class Job:
   scheduler: str
   tag: str
   job_id: int
+  exitcode: Optional[int] = None
   preprocess: Optional[str] = None
   postprocess: Optional[str] = None 
   archive_name: Optional[str] = None

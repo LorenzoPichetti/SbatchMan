@@ -79,6 +79,9 @@ class JobsScreen(Screen):
 
   def load_and_update_jobs(self) -> None:
     self.all_jobs = jobs_list()
+    for j in self.all_jobs:
+      if j.status == Status.FAILED.value and j.exitcode:
+        j.status += f'({j.exitcode})'
     self.update_tables()
 
   def update_tables(self):

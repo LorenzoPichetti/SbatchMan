@@ -93,6 +93,7 @@ class BaseConfig(ABC):
       '  else',
       '    sed -i \'s/status: \\w*/status: FAILED/\' {EXP_DIR}/metadata.yaml',
       '  fi',
+      '  sed -i "s/exitcode: \\w*/exitcode: $EXIT_CODE/" {EXP_DIR}/metadata.yaml',
       'fi',
       "\n# (Optional) Postprocess command",
       '{POSTPROCESS}',
