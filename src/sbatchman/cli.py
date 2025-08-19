@@ -160,12 +160,13 @@ def configure_local(
   name: str = typer.Option(..., "--name", help="A unique name for this configuration."),
   cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="The name of the machine where this configuration will be used."),
   env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times (e.g., --env VAR1=value1 --env VAR2=value2)."),
+  time: Optional[str] = typer.Option(None, help="Walltime (e.g., 01-00:00:00)."),
   overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configuration."),
 ):
   """Creates a configuration for local execution."""
   while True:
     try:
-      config = sbtc.create_local_config(name=name, env=env, cluster_name=cluster_name, overwrite=overwrite)
+      config = sbtc.create_local_config(name=name, env=env, time=time, cluster_name=cluster_name, overwrite=overwrite)
       _save_config_print(config)
       break
     except ProjectNotInitializedError:
@@ -276,7 +277,10 @@ def archive(
       config_name=config_name,
       tag=tag
     )
-    console.print(f"[green]✓[/green] Successfully archived {len(archived_count)} jobs.")
+    if len(archived_count):
+      console.print(f"[green]✓[/green] Successfully archived {len(archived_count)} jobs.")
+    else:
+      console.print(f"[yellow]No jobs to archive[/yellow]")
   except ProjectNotInitializedError:
     _handle_not_initialized()
   except SbatchManError as e:

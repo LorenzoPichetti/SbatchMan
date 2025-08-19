@@ -1,3 +1,5 @@
+import importlib.metadata
+
 from .config.global_config import get_cluster_name
 from .config.project_config import init_project
 from .core.config_manager import create_configs_from_file, create_local_config, create_slurm_config, create_pbs_config
@@ -11,34 +13,40 @@ from .exceptions import SbatchManError, ProjectNotInitializedError, ProjectExist
 from .core.launcher import Job
 from .core.status import Status
 
+__version__ = '0.0.0'
+try:
+  __version__ = importlib.metadata.version("sbatchman")
+except:
+  pass
+
 __all__ = [
-    "SbatchManError",
-    "ProjectNotInitializedError",
-    "ProjectExistsError",
-    
-    "get_cluster_name",
+  "SbatchManError",
+  "ProjectNotInitializedError",
+  "ProjectExistsError",
+  
+  "get_cluster_name",
 
-    "Job",
-    "Status",
+  "Job",
+  "Status",
 
-    "init_project",
+  "init_project",
 
-    "SlurmConfig",
-    "PbsConfig",
-    "LocalConfig",
+  "SlurmConfig",
+  "PbsConfig",
+  "LocalConfig",
 
-    "create_local_config",
-    "create_slurm_config",
-    "create_pbs_config",
-    "create_configs_from_file",
-    "launch_jobs_from_file",
+  "create_local_config",
+  "create_slurm_config",
+  "create_pbs_config",
+  "create_configs_from_file",
+  "launch_jobs_from_file",
 
-    "launch_job",
+  "launch_job",
 
-    "jobs_list",
-    "jobs_df",
+  "jobs_list",
+  "jobs_df",
 
-    "archive_jobs",
-    "delete_jobs",
-    "update_jobs_status",
+  "archive_jobs",
+  "delete_jobs",
+  "update_jobs_status",
 ]

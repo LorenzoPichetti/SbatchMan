@@ -49,7 +49,7 @@ class SlurmConfig(BaseConfig):
   mem: Optional[str] = None
   account: Optional[str] = None
   time: Optional[str] = None
-  gpus: Optional[int] = None
+  gpus: Optional[str] = None
   constraint: Optional[str] = None
   nodelist: Optional[List[str]] = None
   exclude: Optional[List[str]] = None

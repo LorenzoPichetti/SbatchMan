@@ -131,7 +131,7 @@ Suppose you have a script named `train.py` in your project directory. To submit 
 sbatchman launch \
   --config simple_gpu_config \
   --tag mnist_training \
-  --command "python train.py --epochs 10 --batch-size 32"
+  python train.py --epochs 10 --batch-size 32
 ```
 
 > **NOTE:** depending on the cluster where you run this command, the configuration will change accordingly.
@@ -144,7 +144,7 @@ For example, if you change the training dataset or number of epochs, you can rel
 sbatchman launch \
   --config simple_gpu_config \
   --tag mnist_training_20_epochs \
-  --command "python train.py --epochs 20 --batch-size 32"
+  python train.py --epochs 20 --batch-size 32
 ```
 
 ## 🖥️ Monitor Your Jobs

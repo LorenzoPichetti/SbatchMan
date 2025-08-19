@@ -83,7 +83,6 @@ class BaseConfig(ABC):
       "\n# (Optional) Preprocess command",
       '{PREPROCESS}',
       "\n# User command",
-      'echo "Running command: {CMD}"',
       '{CMD}',
       'EXIT_CODE=$?',
       "\n# Update status to COMPLETED or FAILED",

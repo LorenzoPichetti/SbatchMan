@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from rich.console import Console
 
+from sbatchman.core.config_manager import load_local_config
 from sbatchman.core.job import Job, Status
 from sbatchman.core.jobs_manager import job_exists
 from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError
@@ -14,7 +15,6 @@ from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_project_config_dir, get_scheduler_from_cluster_name
 
 from sbatchman.config.project_config import get_experiments_dir
-from sbatchman.schedulers.local import local_submit
 from sbatchman.schedulers.pbs import pbs_submit
 from sbatchman.schedulers.slurm import slurm_submit
 
@@ -133,7 +133,13 @@ def launch_job(
       job.job_id = pbs_submit(run_script_path, exp_dir, previous_job_id)
     elif scheduler == 'local':
       console.print(f"✅ Submitting job with command '[bold cyan]{job.command}[/bold cyan]'.")
-      job.job_id = local_submit(run_script_path, exp_dir)
+      config = load_local_config(config_name)
+      if config is None:
+        raise JobSubmitError(f'Couldn\'t find configuration `{config_name}`')
+      job.job_id, timed_out = config.local_submit(run_script_path, exp_dir)
+      if timed_out:
+        job.status = Status.TIMEOUT.value
+        job.write_job_status()
     else:
       raise JobSubmitError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
     

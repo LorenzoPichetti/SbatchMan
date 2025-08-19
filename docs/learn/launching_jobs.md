@@ -5,6 +5,8 @@
 ## Launching Jobs using a YAML File
 This section explains how to use `SbatchMan` to launch jobs defined in a YAML file. This is particularly useful for managing complex experiments with multiple configurations and parameters.
 
+> **IMPORTANT NOTE:** whatever relative path in the YAML file will be relative to the directory where the `sbatchman launch` command is run. 
+
 ### The `launch` Command
 
 To launch a batch of jobs, use the `launch` command with the `--file` option:

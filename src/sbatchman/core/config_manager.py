@@ -5,6 +5,7 @@ import itertools
 import re
 
 from sbatchman.config.global_config import get_cluster_name
+from sbatchman.config.project_config import get_project_configs_file_path
 from sbatchman.exceptions import ConfigurationError
 from typing import TYPE_CHECKING
 from sbatchman.schedulers.base import BaseConfig
@@ -126,6 +127,7 @@ def create_local_config(
   name: str,
   cluster_name: Optional[str] = None,
   env: Optional[List[str]] = None,
+  time: Optional[str] = None,
   modules: Optional[List[str]] = None,
   overwrite: bool = False,
 ) -> LocalConfig:
@@ -136,6 +138,7 @@ def create_local_config(
     cluster_name: The name of the cluster this configuration belongs to.
       Defaults to the system's hostname.
     env: A list of environment variables to set.
+    time: Walltime (e.g., 01-00:00:00).
     modules: A list of environment modules to load (for compatibility,
       though they may not be used in a standard local shell).
     overwrite: If True, overwrite an existing configuration with the same name.
@@ -143,7 +146,7 @@ def create_local_config(
   Returns:
     The path to the newly created configuration file.
   """
-  config = LocalConfig(name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), env=env, modules=modules)
+  config = LocalConfig(name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), env=env, time=time, modules=modules)
   config.save_config(overwrite)
   return config
 
@@ -237,3 +240,26 @@ def create_slurm_config(
   )
   config.save_config(overwrite)
   return config
+
+def load_local_config(name: str) -> Optional[LocalConfig]:
+  file = get_project_configs_file_path()
+  cluster_name = get_cluster_name()
+  try:
+    with open(file, "r") as f:
+      data = yaml.safe_load(f)
+  except Exception as e:
+    raise ConfigurationError(f"Could not read config file: {e}")
+
+  cluster_data = data.get(cluster_name, {})
+  if not cluster_data or cluster_data.get("scheduler") != "local":
+    return None
+
+  for conf_name, conf in cluster_data.get("configs", []).items():
+    if conf_name == name:
+      conf["name"] = conf_name
+      conf["cluster_name"] = cluster_name
+      allowed_keys = {"name", "cluster_name", "env", "time"}
+      filtered_conf = {k: v for k, v in conf.items() if k in allowed_keys}
+      return LocalConfig(**filtered_conf)
+    
+  return None

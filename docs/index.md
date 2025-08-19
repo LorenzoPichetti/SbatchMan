@@ -5,7 +5,8 @@
 SbatchMan simplifies the process of running and managing code experiments locally and on multiple remote clusters. It streamlines your workflow, allowing you to focus on your research rather than the complexities of job submission and cluster management.
 
 To get started, check out the [installation guide](install/install.md) to set up SbatchMan on your system.  
-Then, follow the [tutorial](learn/tutorial.md) to learn how to use SbatchMan effectively.
+Then, follow the [tutorial](learn/tutorial.md) to learn how to use SbatchMan effectively.  
+If you prefer to learn by doing, check out this hands-on tutorial: [https://github.com/ThomasPasquali/SbatchManTutorial](https://github.com/ThomasPasquali/SbatchManTutorial)
 
 
 ## Features

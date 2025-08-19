@@ -31,6 +31,8 @@ Variables can be:
 
 You can use `{var}` wildcards in configuration names and parameter values. All combinations (cartesian product) of variable values will be generated.
 
+> **IMPORTANT NOTE:** relative paths will be relative to the directory where the `sbatchman configure` command is run. 
+
 #### YAML Syntax
 
 Each cluster block must contain a `scheduler` and a `configs` section. You can also specify a `default_conf` section to set default parameters for all configurations within that cluster.

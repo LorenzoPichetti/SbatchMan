@@ -1,6 +1,6 @@
 import yaml
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from dataclasses import dataclass, asdict
 import shlex
 
@@ -63,20 +63,22 @@ class Job:
     else:
       raise ConfigurationError(f"No class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
 
-  def parse_command_args(self):
+  def parse_command_args(self) -> tuple[None, None, None] | tuple[str, list[Any], dict[Any, Any]]:
     """
     Parses the command string if it is a simple CLI command (no pipes, redirections, or shell operators).
-    Returns (executable, args_dict) where args_dict maps argument names to values.
+    Returns (executable, args_dict, positional_args) where args_dict maps argument names to values,
+    and positional_args is a list of positional arguments (not associated with any flag).
     """
     if any(op in self.command for op in ['|', '>', '<', ';', '&&', '||']):
-      return None, None
+      return None, None, None
 
     tokens = shlex.split(self.command)
     if not tokens:
-      return None, None
+      return None, None, None
 
     executable = tokens[0]
     args_dict = {}
+    positional_args = []
     key = None
     for token in tokens[1:]:
       if token.startswith('--'):
@@ -94,7 +96,9 @@ class Job:
         if key:
           args_dict[key] = token
           key = None
-    return executable, args_dict
+        else:
+          positional_args.append(token)
+    return executable, positional_args, args_dict
 
   def get_job_base_path(self) -> Path:
     if self.archive_name:
@@ -155,7 +159,6 @@ class Job:
     Updates the job_id in the metadata.yaml file.
     This is used to update the job_id after the job has been submitted.
     """
-
     path = self.get_metadata_path()
 
     if path.exists():
@@ -167,3 +170,12 @@ class Job:
       #       f.write(f"job_id: {int(self.job_id)}\n")
       #     else:
       #       f.write(line)
+      
+  def write_job_status(self):
+    """
+    Updates the status in the metadata.yaml file.
+    """
+    path = self.get_metadata_path()
+
+    if path.exists():
+      subprocess.run(["sed", "-i", f"/^status:/c\\status: {str(self.status)}", str(path)], check=True)
