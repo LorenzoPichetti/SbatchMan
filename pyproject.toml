@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sbatchman"
-version = "0.9.5"
+version = "0.9.6"
 authors = [
-  { name="Salvatore Andaloro", email="sbatchman@sasso.dev" },
   { name="Thomas Pasquali", email="thomas.pasquali@unitn.it" },
+  { name="Salvatore Andaloro", email="sbatchman@sasso.dev" },
   { name="Lorenzo Pichetti" },
 ]
 description = "A utility to create, launch and monitor code experiments on SLURM, PBS, or local machines."

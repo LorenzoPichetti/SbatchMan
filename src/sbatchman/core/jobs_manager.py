@@ -127,7 +127,7 @@ def jobs_df(
   jobs_dicts = [job.__dict__ for job in jobs]
   return pd.DataFrame(jobs_dicts)
   
-def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optional[str] = None, config_name: Optional[str] = None, tag: Optional[str] = None) -> List[Job]:
+def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optional[str] = None, config_name: Optional[str] = None, tag: Optional[str] = None, status: Optional[List[Union[Status, str]]] = None) -> List[Job]:
   """
   Archives jobs matching the filter criteria.
   """
@@ -140,7 +140,7 @@ def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optio
         f"Archive '{archive_name}' already exists. Use --overwrite to replace it."
       )
   
-  jobs_to_archive = jobs_list(from_archived=False, cluster_name=cluster_name, config_name=config_name, tag=tag)
+  jobs_to_archive = jobs_list(from_archived=False, cluster_name=cluster_name, config_name=config_name, tag=tag, status=status)
 
   exp_dir_root = get_experiments_dir()
   
@@ -169,6 +169,7 @@ def delete_jobs(
   archive_name: Optional[str] = None,
   archived: bool = False,
   not_archived: bool = False,
+  status: Optional[List[Union[Status, str]]] = None,
 ) -> int:
   """
   Deletes jobs matching the filter criteria.
@@ -180,6 +181,7 @@ def delete_jobs(
     archive_name: If provided, only delete jobs from this archive.
     archived: If True, delete only archived jobs.
     not_archived: If True, delete only active jobs.
+    status: Filter jobs by status.
 
   Returns:
     The number of deleted jobs.
@@ -190,7 +192,8 @@ def delete_jobs(
     tag=tag,
     archive_name=archive_name,
     from_active=not_archived,
-    from_archived=archived
+    from_archived=archived,
+    status=status,
   )
 
   if not jobs_to_delete:

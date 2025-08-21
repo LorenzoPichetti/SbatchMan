@@ -4,6 +4,8 @@ Learn how to use SbatchMan in this **step-by-step Tutorial**!
 
 It covers everything you need to know to get you started with SbatchMan, from setting up your cluster configuration to launching jobs and collecting results.
 
+> **After learning the basic concepts, you can find some more concrete examples here: [https://github.com/ThomasPasquali/SbatchManTutorial](https://github.com/ThomasPasquali/SbatchManTutorial)**
+
 ## 💡 SbatchMan Core Concepts
 
 - **Project**  
@@ -75,6 +77,8 @@ This command will create a `SbatchMan` directory for your project, which will co
 
 > **IMPORTANT NOTE:** whenever you call `sbatchman` command, SbatchMan will look for a project directory (`SbatchMan`) starting from the current working directory (CWD) and exploring parents directories up to the user home (e.g. in linux `$HOME`).  
 
+> **You can skip the following `Configuration` and `Launch` sections. The [Advanced configuration](learn/configuration.md)  [Advanced Job Submission](learn/launching_jobs.md) sections provide a more powerful, reproducible way of doing so.**
+
 ## ⚙️ Create a Configuration
 
 First, set up your cluster configuration(s). This is where you define the parameters for your cluster, such as environment variables, partition, time limit, and number of GPUs.  
@@ -131,7 +135,7 @@ Suppose you have a script named `train.py` in your project directory. To submit 
 sbatchman launch \
   --config simple_gpu_config \
   --tag mnist_training \
-  python train.py --epochs 10 --batch-size 32
+  "python train.py --epochs 10 --batch-size 32"
 ```
 
 > **NOTE:** depending on the cluster where you run this command, the configuration will change accordingly.
@@ -144,7 +148,7 @@ For example, if you change the training dataset or number of epochs, you can rel
 sbatchman launch \
   --config simple_gpu_config \
   --tag mnist_training_20_epochs \
-  python train.py --epochs 20 --batch-size 32
+  "python train.py --epochs 20 --batch-size 32"
 ```
 
 ## 🖥️ Monitor Your Jobs
@@ -166,40 +170,42 @@ Of course, you won't need to parse them manually. To parse the results, you can 
 For example, you can read the logs and extract metrics like accuracy or loss:
 
 ```python
-from sbatchman import Job, jobs_list
-job = jobs_list(
-  cluster_name="my_gpu_cluster",
-  config_name="simple_gpu_config",
-  tag="mnist_training_20_epochs"
-)[0]
-executable, args_dict = job.parse_command_args()
-print(executable)
-print(args_dict)
+from sbatchman import jobs_list
+job = jobs_list()[0]
+command, pos_args, named_args = job.parse_command_args()
+print(command)
+print(pos_args)
+print(named_args)
 print(job.get_stdout())
 ```
 
 Here you can see the power of tags: you can easily filter jobs by their tags, making it simple to find the results of specific experiments.
 
 ### Advanced querying
-The `jobs_list` function returns a list of `Job` objects, which you can further filter or sort. For example, you can get all jobs with a specific tag:
+
+The `jobs_list` function returns a list of `Job` objects, which you can filter. For example:
 
 ```python
-jobs = jobs_list() # This will list all jobs across all clusters
-jobs_with_tag = [job for job in jobs if job.tag == "mnist_training_20_epochs"]
-for job in jobs_with_tag:
-  print(f"Job ID: {job.id}, Status: {job.status}, Log: {job.get_log()}")
+from sbatchman import jobs_list, Status
+# Get only jobs with a specific `config`, `tag` and `status`
+filtered_jobs = jobs_list(
+  config_name="simple_gpu_config",
+  tag="mnist_training_20_epochs",
+  status=[Status.FAILED, Status.CANCELLED, Status.TIMEOUT]
+)
+for job in filtered_jobs:
+  print(f"Job ID: {job.id}, Status: {job.status}, Stderr: {job.get_stderr()}")
 ```
 
-For more details, refer to the [API](../api.md/#sbatchman.Job) page.
+For more details, refer to the `Job` [API](../api.md/#sbatchman.Job) page.
 
 ## 📦 Archiving Jobs
-To archive jobs, you can use the `archive` command. This is useful for keeping your job history organized and manageable. For example, to archive all jobs with the tag `mnist_training`:
+To archive jobs, you can use the `archive` command. This is useful for keeping your job history organized and manageable. For example, to archive all jobs with the tag `mnist_training` that **timed-out**:
 ```bash
 sbatchman archive \
-  --archive-name mnist_training_archive_1 \
   --tag mnist_training \
-  --cluster-name my_gpu_cluster \
-  --config-name simple_gpu_config
+  --status TIMEOUT \
+  mnist_training_archive_1
 ```
 
 Archived jobs will be moved to the `SbatchMan/archive` directory, and will not appear in the job list, unless you specify the `archived` option in the `jobs_list` function.
@@ -210,5 +216,24 @@ You can check out all the available options by running:
 sbatchman archive --help
 ```
 
+## 🗑️ Deleting Jobs
+To delete jobs, you can use the `delete-jobs` command. This is useful for deleting "wrong" jobs that need to be run again. For example, to delete all (not archived) jobs that **timed-out** or have been **cancelled**:
+```bash
+sbatchman delete-jobs \
+  --not-archived \
+  --status TIMEOUT \
+  --status CANCELLED
+```
+
+Be careful, this will **delete jobs permanently**.
+
+You can check out all the available options by running:
+
+```bash
+sbatchman delete-jobs --help
+```
+
 ## 🎉 Conclusion
 This is a basic example of how to use SbatchMan to manage your experiments on multiple remote clusters. You can extend this by adding more configurations, automating job submissions, or using the Python API to integrate SbatchMan into your existing workflows.
+
+To exploit the the tool at its best, please read the [Advanced configuration](learn/configuration.md) and [Advanced Job Submission](learn/launching_jobs.md) sections.

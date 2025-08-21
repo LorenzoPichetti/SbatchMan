@@ -267,15 +267,24 @@ def archive(
     cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="Archive jobs from this cluster."),
     config_name: Optional[str] = typer.Option(None, "--config", help="Archive jobs with this configuration name."),
     tag: Optional[str] = typer.Option(None, "--tag", help="Archive jobs with this tag."),
+    status: Optional[List[str]] = typer.Option(None, "--status", "-s", help="Filter jobs by status. Can be used multiple times (e.g., --status FAILED --status TIMEOUT)."),
 ):
   """Archives jobs, moving them from the active experiments directory to an archive location."""
   try:
+    if status:
+      for s in status:
+        if s not in Status._value2member_map_:
+          possible_values = ", ".join([str(v.value) for v in Status])
+          console.print(f"[bold red]Error:[/bold red] Invalid status '{s}'. Possible values are: {possible_values}")
+          raise typer.Exit(1)
+        
     archived_count = sbtc.archive_jobs(
       archive_name=archive_name,
       overwrite=overwrite,
       cluster_name=cluster_name,
       config_name=config_name,
-      tag=tag
+      tag=tag,
+      status=status,
     )
     if len(archived_count):
       console.print(f"[green]✓[/green] Successfully archived {len(archived_count)} jobs.")
@@ -293,9 +302,10 @@ def delete_jobs(
   config_name: Optional[str] = typer.Option(None, "--config", help="Delete jobs with this configuration name."),
   tag: Optional[str] = typer.Option(None, "--tag", help="Delete jobs with this tag."),
   archive_name: Optional[str] = typer.Option(None, "--archive", help="Delete jobs from this archive."),
-  archived: bool = typer.Option(False, "--archived", help="Delete only archived jobs."), 
-  not_archived: bool = typer.Option(False, "--not-archived", help="Delete only active jobs."),
+  archived: bool = typer.Option(False, "--archived", "-a", help="Delete only archived jobs."), 
+  not_archived: bool = typer.Option(False, "--not-archived", "-na", help="Delete only active jobs."),
   all: bool = typer.Option(False, "--all", help="Delete jobs from both active and archive directories."),
+  status: Optional[List[str]] = typer.Option(None, "--status", "-s", help="Filter jobs by status. Can be used multiple times (e.g., --status FAILED --status TIMEOUT)."),
 ):
   """Deletes jobs matching the specified criteria."""
 
@@ -304,10 +314,17 @@ def delete_jobs(
     not_archived = True
 
   if not archived and not not_archived:
-    console.print("[bold red]You must specify at least one of: --archived or --not-archived[/bold red]")
+    console.print("[bold red]You must specify at least one of: --archived (-a) or --not-archived (-na) [/bold red]")
     raise typer.Exit(1)
   
   try:
+    if status:
+      for s in status:
+        if s not in Status._value2member_map_:
+          possible_values = ", ".join([str(v.value) for v in Status])
+          console.print(f"[bold red]Error:[/bold red] Invalid status '{s}'. Possible values are: {possible_values}")
+          raise typer.Exit(1)
+        
     deleted_count = sbtc.delete_jobs(
       cluster_name=cluster_name,
       config_name=config_name,
@@ -315,8 +332,12 @@ def delete_jobs(
       archive_name=archive_name,
       archived=archived,
       not_archived=not_archived,
+      status=status,
     )
-    console.print(f"✅ Successfully deleted {deleted_count} jobs.")
+    if deleted_count:
+      console.print(f"✅ Successfully deleted {deleted_count} jobs.")
+    else:
+      console.print(f"[yellow]No jobs to delete[/yellow]")
   except ProjectNotInitializedError:
     _handle_not_initialized()
   except SbatchManError as e:

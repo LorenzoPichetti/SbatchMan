@@ -14,6 +14,7 @@ To launch a batch of jobs, use the `launch` command with the `--file` option:
 ```bash
 sbatchman launch --file experiments.yaml
 ```
+> **NOTE:** the `launch` command will NOT run again "identical" jobs unless forced or if previous jobs are archived. 
 
 ### Batch File Structure
 
