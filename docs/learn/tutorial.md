@@ -77,7 +77,7 @@ This command will create a `SbatchMan` directory for your project, which will co
 
 > **IMPORTANT NOTE:** whenever you call `sbatchman` command, SbatchMan will look for a project directory (`SbatchMan`) starting from the current working directory (CWD) and exploring parents directories up to the user home (e.g. in linux `$HOME`).  
 
-> **You can skip the following `Configuration` and `Launch` sections. The [Advanced configuration](learn/configuration.md)  [Advanced Job Submission](learn/launching_jobs.md) sections provide a more powerful, reproducible way of doing so.**
+> **You can skip the following `Configuration` and `Launch` sections. The [Advanced configuration](learn/configuration.md) and  [Advanced Job Submission](learn/launching_jobs.md) sections provide a more "friendly", powerful and reproducible way of creating  configuration and launching jobs, especially if you need a lot of them.**
 
 ## ⚙️ Create a Configuration
 
