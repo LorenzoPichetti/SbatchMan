@@ -45,5 +45,5 @@ Great, you now have `SbatchMan` installed! You can check out the available comma
 sbatchman --help
 ```
 
-> **! IMPORTANT !**  
-> Before using SbatchMan, make sure to complete the initial setup. Please, read the [setup](setup.md) page.
+!!! warning 
+    Before using SbatchMan, make sure to complete the initial setup. Please, read the [Setup](setup.md) page.

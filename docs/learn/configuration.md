@@ -31,7 +31,8 @@ Variables can be:
 
 You can use `{var}` wildcards in configuration names and parameter values. All combinations (cartesian product) of variable values will be generated.
 
-> **IMPORTANT NOTE:** relative paths will be relative to the directory where the `sbatchman configure` command is run. 
+!!! warning "Important Note"
+    Relative paths will be relative to the directory where the `sbatchman configure` command is run. 
 
 #### YAML Syntax
 

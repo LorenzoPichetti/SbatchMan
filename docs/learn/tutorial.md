@@ -4,7 +4,8 @@ Learn how to use SbatchMan in this **step-by-step Tutorial**!
 
 It covers everything you need to know to get you started with SbatchMan, from setting up your cluster configuration to launching jobs and collecting results.
 
-> **After learning the basic concepts, you can find some more concrete examples here: [https://github.com/ThomasPasquali/SbatchManTutorial](https://github.com/ThomasPasquali/SbatchManTutorial)**
+!!! tip
+    **After learning the basic concepts, you can find some more concrete examples here: [https://github.com/ThomasPasquali/SbatchManTutorial](https://github.com/ThomasPasquali/SbatchManTutorial)**
 
 ## 💡 SbatchMan Core Concepts
 
@@ -75,11 +76,11 @@ sbatchman init
 
 This command will create a `SbatchMan` directory for your project, which will contain all the necessary files and configurations for managing your jobs.
 
-::: tip
-Whenever you call `sbatchman` command, SbatchMan will look for a project directory (`SbatchMan`) starting from the current working directory (CWD) and exploring parents directories up to the user home (e.g. in linux `$HOME`).  
-:::
+!!! info
+    Whenever you call `sbatchman` command, SbatchMan will look for a project directory (`SbatchMan`) starting from the current working directory (CWD) and exploring parents directories up to the user home (e.g. in linux `$HOME`).  
 
-> **You can skip the following `Configuration` and `Launch` sections. The [Advanced configuration](learn/configuration.md) and  [Advanced Job Submission](learn/launching_jobs.md) sections provide a more "friendly", powerful and reproducible way of creating  configuration and launching jobs, especially if you need a lot of them.**
+!!! tip
+    **You can skip the following `Configuration` and `Launch` sections. The [Advanced configuration](learn/configuration.md) and  [Advanced Job Submission](learn/launching_jobs.md) sections provide a more "friendly", powerful and reproducible way of creating  configuration and launching jobs, especially if you need a lot of them.**
 
 ## ⚙️ Create a Configuration
 
@@ -127,7 +128,8 @@ sbatchman configure pbs --help
 
 If you need to change the configuration later, run the `configure` command again with the same `--name` option and the `--overwrite` flag. SbatchMan will replace the existing configuration with the new one.
 
-> **IMPORTANT NOTE:** if you do not specify `--cluster-name`, SbatchMan will use the name you set via the `sbatchman set-cluster-name` (see the [Setup Page](../install/setup.md) for more details).
+!!! warning
+    If you do not specify `--cluster-name`, SbatchMan will use the name you set via the `sbatchman set-cluster-name` (see the [Setup Page](../install/setup.md) for more details).
 
 ## 🚀 Launch Your Code
 
@@ -139,8 +141,8 @@ sbatchman launch \
   --tag mnist_training \
   "python train.py --epochs 10 --batch-size 32"
 ```
-
-> **NOTE:** depending on the cluster where you run this command, the configuration will change accordingly.
+!!! note
+    Depending on the cluster where you run this command, the configuration will change accordingly.
 
 The `--tag` option lets you organize your jobs by assigning a label to them. Tags are useful for tracking different experiments or runs of the same job, allowing you to easily filter and manage your jobs later on. A common use case for tags is to differentiate between different configurations of the same experiment, such as changing parameters or datasets.
 
@@ -163,7 +165,8 @@ sbatchman status
 
 This command will show you all the submitted jobs and their detail through an interactive Terminal UI (TUI).
 
-> To select and copy text hold the SHIFT or OPTION key.
+!!! tip
+    To select and copy text hold the SHIFT or OPTION key.
 
 ## 🏆 Collect Results
 

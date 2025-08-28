@@ -12,9 +12,8 @@ This command will save the cluster name in your home configuration files. For ex
 
 SbatchMan will automatically recognize the workload manager, here called *scheduler*, from your cluster configurations.
 
-**NOTE**
-
-The name you assign to your cluster will be used to structure:
-
-* Configurations
-* Job results
+!!! note
+    The name you assign to your cluster will be used to structure:  
+    
+    - Configurations
+    - Job results

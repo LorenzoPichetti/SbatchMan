@@ -5,7 +5,8 @@
 ## Launching Jobs using a YAML File
 This section explains how to use `SbatchMan` to launch jobs defined in a YAML file. This is particularly useful for managing complex experiments with multiple configurations and parameters.
 
-> **IMPORTANT NOTE:** whatever relative path in the YAML file will be relative to the directory where the `sbatchman launch` command is run. 
+!!! warning "Important Note"
+    Whatever relative path in the YAML file will be relative to the directory where the `sbatchman launch` command is run. 
 
 ### The `launch` Command
 
@@ -14,7 +15,8 @@ To launch a batch of jobs, use the `launch` command with the `--file` option:
 ```bash
 sbatchman launch --file experiments.yaml
 ```
-> **NOTE:** the `launch` command will NOT run again "identical" jobs unless forced or if previous jobs are archived. 
+!!! note
+    The `launch` command will NOT run again "identical" jobs unless forced or if previous jobs are archived. 
 
 ### Batch File Structure
 
@@ -41,7 +43,8 @@ This is a list where each item defines a job template. Each template can have th
 
 *`command`, `preprocess` and `postprocess` can be also set at top-level.*
 
-> **IMPORTANT NOTE:** In general, higher-level variables and blocks can be overwritten by redeclaring them for more specific scopes.
+!!! tip
+    In general, higher-level variables and blocks can be overwritten by redeclaring them for more specific scopes.
 
 #### The `config_jobs` Block
 
@@ -89,8 +92,9 @@ When this flag is set (`sequential: true`), SbatchMan will ensure that only one 
 This may be useful for benchmarking i.e. it ensures that jobs using the network do not create noise influencing each other.  
 Another use-case is building target with different Makefile variables e.g. `MYVAR={var} make mytarget`.
 
-> **IMPORTANT NOTE:** there is no guarantee about the order of the jobs.  
-> For SLURM, this is internally implemented using the `--dependency=afterany:$prev_job_id` option (PBS has a similar option)
+!!! warning
+    There is no guarantee about the order of the jobs.   
+    For SLURM, this is internally implemented using the `--dependency=afterany:$prev_job_id` option (PBS has a similar option)
 
 ### The `command`, `preprocess`, and `postprocess` Blocks
 
@@ -116,7 +120,8 @@ You can override `preprocess` and `postprocess` at any level in the hierarchy, j
 - **Dynamic Names**: `conf`, `tag`, `command`, `preprocess`, `postprocess` names/values can use placeholders (e.g., `my_{nGPUs}gpu_config`) to automatically generate a list of distinct values.
 - **Overrides**: Each experiment can have its own `command`, `preprocess`, `postprocess`, or `variables` block, which will override settings from higher levels in the hierarchy.
 
-> **IMPORTANT NOTE:** the number of combinations that dynamic names that will be generated, depend on the variables-dependencies that the names/values have. More about this in the following example.
+!!! tip "Important Note"
+    The number of combinations that dynamic names that will be generated, depend on the variables-dependencies that the names/values have. More about this in the following example.
 
 
 ### Example

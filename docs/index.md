@@ -1,6 +1,6 @@
 # Welcome to SbatchMan!
-<p align="center">
-  <img src="images/sbatchman.png" alt="SbatchMan Logo" width="100"/>
+<p align="center" style="padding: 0; margin: 0;">
+  <img src="images/SbatchManLogo.png" alt="SbatchMan Logo" style="width: 6cm;"/>
 </p>
 SbatchMan simplifies the process of running and managing code experiments locally and on multiple remote clusters. It streamlines your workflow, allowing you to focus on your research rather than the complexities of job submission and cluster management.
 

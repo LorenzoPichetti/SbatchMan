@@ -1,5 +1,5 @@
-<p align="center">
-    <img src="https://github.com/LorenzoPichetti/SbatchMan/blob/main/docs/images/sbatchman.png" alt="SbatchMan" width="124">
+<p align="center" style="padding: 0; margin: 0;">
+    <img src="https://github.com/LorenzoPichetti/SbatchMan/blob/main/docs/images/SbatchManLogo.png" alt="SbatchManLogo" style="width: 6cm;">
 <p>
 
 # SbatchMan
