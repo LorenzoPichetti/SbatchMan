@@ -6,7 +6,7 @@ import re
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_project_configs_file_path
 from sbatchman.exceptions import ConfigurationError
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, List, Optional
 from sbatchman.schedulers.base import BaseConfig
 from sbatchman.schedulers.local import LocalConfig
 from sbatchman.schedulers.pbs import PbsConfig
@@ -38,7 +38,7 @@ def _substitute(template, variables):
     return template
   return template.format(**variables)
 
-def create_configs_from_file(file_path: Path, overwrite: bool = False) -> list[BaseConfig]:
+def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[BaseConfig]:
   """Parses a YAML file to create a list of job configurations.
 
   This function reads a YAML configuration file, processes variables, and
@@ -67,7 +67,7 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> list[B
       Defaults to False.
 
   Returns:
-    list[BaseConfig]: A list of fully resolved configuration objects
+    List[BaseConfig]: A list of fully resolved configuration objects
       (e.g., SlurmConfig) created from the file.
 
   Raises:
@@ -157,9 +157,9 @@ def _create_config_from_params(scheduler: str, params: dict[str, Any]) -> BaseCo
   
 def create_local_config(
   name: str,
-  cluster_name: str | None = None,
-  env: list[str] | None = None,
-  time: str | None = None,
+  cluster_name: Optional[str] = None,
+  env: Optional[List[str]] = None,
+  time: Optional[str] = None,
   overwrite: bool = False,
 ) -> LocalConfig:
   """Creates and saves a configuration file for local execution.
@@ -181,12 +181,12 @@ def create_local_config(
 
 def create_pbs_config(
   name: str,
-  cluster_name: str | None = None,
-  queue: str | None = None,
-  cpus: int | None = None,
-  mem: str | None = None,
-  walltime: str | None = None,
-  env: list[str] | None = None,
+  cluster_name: Optional[str] = None,
+  queue: Optional[str] = None,
+  cpus: Optional[int] = None,
+  mem: Optional[str] = None,
+  walltime: Optional[str] = None,
+  env: Optional[List[str]] = None,
   overwrite: bool = False,
 ) -> PbsConfig:
   """Creates and saves a PBS configuration file.
@@ -213,22 +213,22 @@ def create_pbs_config(
 
 def create_slurm_config(
   name: str,
-  cluster_name: str | None = None,
-  partition: str | None = None,
-  nodes: str | None = None,
-  ntasks: str | None = None,
-  cpus_per_task: int | None = None,
-  mem: str | None = None,
-  account: str | None = None,
-  time: str | None = None,
-  gpus: int | None = None,
-  constraint: str | None = None,
-  nodelist: list[str] | None = None,
-  exclude: list[str] | None = None,
-  qos: str | None = None,
-  reservation: str | None = None,
-  exclusive: bool | None = False,
-  env: list[str] | None = None,
+  cluster_name: Optional[str] = None,
+  partition: Optional[str] = None,
+  nodes: Optional[str] = None,
+  ntasks: Optional[str] = None,
+  cpus_per_task: Optional[int] = None,
+  mem: Optional[str] = None,
+  account: Optional[str] = None,
+  time: Optional[str] = None,
+  gpus: Optional[int] = None,
+  constraint: Optional[str] = None,
+  nodelist: Optional[List[str]] = None,
+  exclude: Optional[List[str]] = None,
+  qos: Optional[str] = None,
+  reservation: Optional[str] = None,
+  exclusive: Optional[bool] = False,
+  env: Optional[List[str]] = None,
   overwrite: bool = False,
 ) -> SlurmConfig:
   """Creates and saves a SLURM configuration file.
@@ -265,7 +265,7 @@ def create_slurm_config(
   config.save_config(overwrite)
   return config
 
-def load_local_config(name: str) -> LocalConfig | None:
+def load_local_config(name: str) -> Optional[LocalConfig]:
   file = get_project_configs_file_path()
   cluster_name = get_cluster_name()
   try:

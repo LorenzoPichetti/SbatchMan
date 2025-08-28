@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 import subprocess
 from dataclasses import dataclass
+from typing import List, Optional, Union
 
 from sbatchman.core.status import Status
 
@@ -41,22 +42,22 @@ SLURM_STATUS_MAP = {
 class SlurmConfig(BaseConfig):
   """Scheduler for SLURM."""
 
-  partition: str | None = None
-  nodes: str | None = None
-  ntasks: str | None = None
-  cpus_per_task: int | None = None
-  mem: str | None = None
-  account: str | None = None
-  time: str | None = None
-  gpus: str | None = None
-  constraint: str | None = None
-  nodelist: list[str] | None = None
-  exclude: list[str] | None = None
-  qos: str | None = None
-  reservation: str | None = None
-  exclusive: bool | None = False
+  partition: Optional[str] = None
+  nodes: Optional[str] = None
+  ntasks: Optional[str] = None
+  cpus_per_task: Optional[int] = None
+  mem: Optional[str] = None
+  account: Optional[str] = None
+  time: Optional[str] = None
+  gpus: Optional[str] = None
+  constraint: Optional[str] = None
+  nodelist: Optional[List[str]] = None
+  exclude: Optional[List[str]] = None
+  qos: Optional[str] = None
+  reservation: Optional[str] = None
+  exclusive: Optional[bool] = False
 
-  def _generate_scheduler_directives(self) -> list[str]:
+  def _generate_scheduler_directives(self) -> List[str]:
     lines = []
     lines.append(f"#SBATCH --job-name={self.name}")
     lines.append(f"#SBATCH --output={{EXP_DIR}}/stdout.log")
@@ -80,7 +81,7 @@ class SlurmConfig(BaseConfig):
     return lines
   
   @staticmethod
-  def get_job_status(job_id: int | str) -> Status:
+  def get_job_status(job_id: Union[str, int]) -> Status:
     """
     Returns the status of a SLURM job.
     """
@@ -106,7 +107,7 @@ class SlurmConfig(BaseConfig):
     """Returns the name of the scheduler this parameters class is associated with."""
     return "slurm"
   
-def slurm_submit(script_path: Path, exp_dir: Path, previous_job_id: int | None = None) -> int:
+def slurm_submit(script_path: Path, exp_dir: Path, previous_job_id: Optional[int] = None) -> int:
   """Submits the job to SLURM."""
   if previous_job_id:
     command_list = ["sbatch", f'--dependency=afterany:{previous_job_id}', str(script_path)]

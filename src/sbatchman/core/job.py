@@ -1,6 +1,6 @@
 import yaml
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional, Union
 from dataclasses import dataclass, asdict
 import shlex
 
@@ -64,7 +64,7 @@ class Job:
     else:
       raise ConfigurationError(f"No class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
 
-  def parse_command_args(self) -> tuple[None, None, None] | tuple[str, list[Any], dict[Any, Any]]:
+  def parse_command_args(self) -> Union[tuple[None, None, None], tuple[str, List[Any], dict[Any, Any]]]:
     """
     Parses the command string if it is a simple CLI command (no pipes, redirections, or shell operators).
     Returns (executable, args_dict, positional_args) where args_dict maps argument names to values,

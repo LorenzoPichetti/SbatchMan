@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 from dataclasses import asdict, dataclass
+from typing import List, Optional, Union
 
 import yaml
 
@@ -14,8 +15,8 @@ class BaseConfig(ABC):
 
   name: str
   cluster_name: str
-  template_path: Path | None = None
-  env: list[str] | None = None
+  template_path: Optional[Path] = None
+  env: Optional[List[str]] = None
 
   _schedulers = {}
 
@@ -96,7 +97,7 @@ class BaseConfig(ABC):
     return "\n".join(all_lines)
 
   @abstractmethod
-  def _generate_scheduler_directives(self) -> list[str]:
+  def _generate_scheduler_directives(self) -> List[str]:
     """
     (Abstract) Generates the list of scheduler-specific directive lines.
     This must be implemented by subclasses.
@@ -177,7 +178,7 @@ class BaseConfig(ABC):
   
   @staticmethod
   @abstractmethod
-  def get_job_status(job_id: str | int) -> Status:
+  def get_job_status(job_id: Union[str, int]) -> Status:
     """
     Returns the status of a job for this scheduler.
     This must be implemented by subclasses.

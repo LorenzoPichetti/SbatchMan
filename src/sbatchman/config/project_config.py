@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 import yaml
 
 from sbatchman.exceptions import ConfigurationError, ProjectExistsError, ProjectNotInitializedError
@@ -6,7 +7,7 @@ from sbatchman.exceptions import ConfigurationError, ProjectExistsError, Project
 # The name of the root directory to search for.
 PROJECT_ROOT_DIR_NAME = "SbatchMan"
 
-_cached_sbatchman_home: Path | None = None
+_cached_sbatchman_home: Optional[Path] = None
 
 def init_project(path: Path):
   """Initializes a new SbatchMan root directory."""

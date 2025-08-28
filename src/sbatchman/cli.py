@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from typing import List, Optional
 from sbatchman.core.status import Status
 from sbatchman.schedulers.base import BaseConfig
 import typer
@@ -38,8 +38,8 @@ def _handle_not_initialized():
 def _save_config_print(config: BaseConfig):
   console.print(f"✅ Configuration '[bold cyan]{config.name}[/bold cyan]' saved to {config.template_path}")
 
-def _cast_status_list(status_list: list[str]) -> list[Status]:
-    casted_status_list: list[Status] = []
+def _cast_status_list(status_list: List[str]) -> List[Status]:
+    casted_status_list: List[Status] = []
     if status_list:
       for s in status_list:
         if s not in Status._value2member_map_:
@@ -64,7 +64,7 @@ def version_callback(value: bool):
 @app.callback()
 def main_callback(
     ctx: typer.Context,
-    version: bool | None = typer.Option(None, "--version", callback=version_callback, is_eager=True, help="Show the version and exit."),
+    version: Optional[bool] = typer.Option(None, "--version", callback=version_callback, is_eager=True, help="Show the version and exit."),
   ):
   """
   SbatchMan CLI main callback.
@@ -107,22 +107,22 @@ def init(
 @configure_app.command("slurm")
 def configure_slurm(
   name: str = typer.Option(..., "--name", help="A unique name for this configuration."),
-  cluster_name: str | None = typer.Option(None, "--cluster-name", help="The name of the machine where this configuration will be used."),
-  partition: str | None = typer.Option(None, help="SLURM partition name."),
-  nodes: str | None = typer.Option(None, help="SLURM number of nodes."),
-  ntasks: str | None = typer.Option(None, help="SLURM number of tasks."),
-  cpus_per_task: int | None = typer.Option(None, help="Number of CPUs per task."),
-  mem: str | None = typer.Option(None, help="Memory requirement (e.g., 16G, 64G)."),
-  account: str | None = typer.Option(None, help="SLURM account"),
-  time: str | None = typer.Option(None, help="Walltime (e.g., 01-00:00:00)."),
-  gpus: int | None = typer.Option(None, help="Number of GPUs."),
-  constraint: str | None = typer.Option(None, help="SLURM constraint."),
-  nodelist: list[str] | None = typer.Option(None, help="SLURM nodelist."),
-  exclude: list[str] | None = typer.Option(None, help="SLURM exclude."),
-  qos: str | None = typer.Option(None, help="SLURM quality of service (qos)."),
-  exclusive: bool | None = typer.Option(False, help="SLURM exclusive flag. Requests nodes exclusively (may not work on some clusters)."),
-  reservation: str | None = typer.Option(None, help="SLURM reservation."),
-  env: list[str] | None = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times (e.g., --env VAR1=value1 --env VAR2=value2)."),
+  cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="The name of the machine where this configuration will be used."),
+  partition: Optional[str] = typer.Option(None, help="SLURM partition name."),
+  nodes: Optional[str] = typer.Option(None, help="SLURM number of nodes."),
+  ntasks: Optional[str] = typer.Option(None, help="SLURM number of tasks."),
+  cpus_per_task: Optional[int] = typer.Option(None, help="Number of CPUs per task."),
+  mem: Optional[str] = typer.Option(None, help="Memory requirement (e.g., 16G, 64G)."),
+  account: Optional[str] = typer.Option(None, help="SLURM account"),
+  time: Optional[str] = typer.Option(None, help="Walltime (e.g., 01-00:00:00)."),
+  gpus: Optional[int] = typer.Option(None, help="Number of GPUs."),
+  constraint: Optional[str] = typer.Option(None, help="SLURM constraint."),
+  nodelist: Optional[List[str]] = typer.Option(None, help="SLURM nodelist."),
+  exclude: Optional[List[str]] = typer.Option(None, help="SLURM exclude."),
+  qos: Optional[str] = typer.Option(None, help="SLURM quality of service (qos)."),
+  exclusive: Optional[bool] = typer.Option(False, help="SLURM exclusive flag. Requests nodes exclusively (may not work on some clusters)."),
+  reservation: Optional[str] = typer.Option(None, help="SLURM reservation."),
+  env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times (e.g., --env VAR1=value1 --env VAR2=value2)."),
   overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configuration."),
 ):
   """Creates a SLURM configuration."""
@@ -145,12 +145,12 @@ def configure_slurm(
 @configure_app.command("pbs")
 def configure_pbs(
   name: str = typer.Option(..., "--name", help="A unique name for this configuration."),
-  cluster_name: str | None = typer.Option(None, "--cluster-name", help="The name of the machine where this configuration will be used."),
-  queue: str | None = typer.Option(None, help="PBS queue name."),
-  cpus: int | None = typer.Option(None, help="Number of CPUs."),
-  mem: str | None = typer.Option(None, help="Memory requirement (e.g., 16gb, 64gb)."),
-  walltime: str | None = typer.Option(None, help="Walltime (e.g., 01:00:00)."),
-  env: list[str] | None = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times (e.g., --env VAR1=value1 --env VAR2=value2)."),
+  cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="The name of the machine where this configuration will be used."),
+  queue: Optional[str] = typer.Option(None, help="PBS queue name."),
+  cpus: Optional[int] = typer.Option(None, help="Number of CPUs."),
+  mem: Optional[str] = typer.Option(None, help="Memory requirement (e.g., 16gb, 64gb)."),
+  walltime: Optional[str] = typer.Option(None, help="Walltime (e.g., 01:00:00)."),
+  env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times (e.g., --env VAR1=value1 --env VAR2=value2)."),
   overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configuration."),
 ):
   """Creates a PBS configuration."""
@@ -168,9 +168,9 @@ def configure_pbs(
 @configure_app.command("local")
 def configure_local(
   name: str = typer.Option(..., "--name", help="A unique name for this configuration."),
-  cluster_name: str | None = typer.Option(None, "--cluster-name", help="The name of the machine where this configuration will be used."),
-  env: list[str] | None = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times (e.g., --env VAR1=value1 --env VAR2=value2)."),
-  time: str | None = typer.Option(None, help="Walltime (e.g., 01-00:00:00)."),
+  cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="The name of the machine where this configuration will be used."),
+  env: Optional[List[str]] = typer.Option(None, "--env", help="Environment variables to set (e.g., VAR=value). Can be used multiple times (e.g., --env VAR1=value1 --env VAR2=value2)."),
+  time: Optional[str] = typer.Option(None, help="Walltime (e.g., 01-00:00:00)."),
   overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite current configuration."),
 ):
   """Creates a configuration for local execution."""
@@ -188,7 +188,7 @@ def configure_local(
 @configure_app.callback(invoke_without_command=True)
 def configure(
   ctx: typer.Context,
-  file: Path | None = typer.Option(
+  file: Optional[Path] = typer.Option(
     None,
     "--file",
     "-f",
@@ -217,12 +217,12 @@ def configure(
 
 @app.command("launch")
 def launch(
-  file: Path | None = typer.Option(None, "--file", "-f", help="YAML file that describes a batch of experiments."),
-  config: str | None = typer.Option(None, "--config", help="Configuration name."),
+  file: Optional[Path] = typer.Option(None, "--file", "-f", help="YAML file that describes a batch of experiments."),
+  config: Optional[str] = typer.Option(None, "--config", help="Configuration name."),
   tag: str = typer.Option("default", "--tag", help="Tag for this experiment (default: 'default')."),
-  command: str | None = typer.Argument(None, help="The executable and its parameters, enclosed in quotes."),
-  preprocess: str | None = typer.Option(None, "--preprocess", help="Command to run before the main job (optional)."),
-  postprocess: str | None = typer.Option(None, "--postprocess", 
+  command: Optional[str] = typer.Argument(None, help="The executable and its parameters, enclosed in quotes."),
+  preprocess: Optional[str] = typer.Option(None, "--preprocess", help="Command to run before the main job (optional)."),
+  postprocess: Optional[str] = typer.Option(None, "--postprocess", 
   help="Command to run after the main job (optional)."),
   force: bool = typer.Option(False, "--force", help="Force submission even if identical jobs already exist.")
 ):
@@ -261,7 +261,7 @@ def launch(
 
 @app.command("status")
 def status(
-  experiments_dir: Path | None = typer.Argument(None, help="Path to the experiments directory to monitor. Defaults to auto-detected SbatchMan/experiments.", exists=True, file_okay=False, dir_okay=True, readable=True)
+  experiments_dir: Optional[Path] = typer.Argument(None, help="Path to the experiments directory to monitor. Defaults to auto-detected SbatchMan/experiments.", exists=True, file_okay=False, dir_okay=True, readable=True)
 ):
   """Shows the status of all experiments in an interactive TUI."""
   try:
@@ -274,14 +274,14 @@ def status(
 def archive(
     archive_name: str = typer.Argument(..., help="The name of the archive to create."),
     overwrite: bool = typer.Option(False, "--overwrite", "-ow", help="Overwrite existing archive with the same name."),
-    cluster_name: str | None = typer.Option(None, "--cluster-name", help="Archive jobs from this cluster."),
-    config_name: str | None = typer.Option(None, "--config", help="Archive jobs with this configuration name."),
-    tag: str | None = typer.Option(None, "--tag", help="Archive jobs with this tag."),
-    status_list: list[str] | None = typer.Option(None, "--status", "-s", help="Filter jobs by status. Can be used multiple times (e.g., --status FAILED --status TIMEOUT)."),
+    cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="Archive jobs from this cluster."),
+    config_name: Optional[str] = typer.Option(None, "--config", help="Archive jobs with this configuration name."),
+    tag: Optional[str] = typer.Option(None, "--tag", help="Archive jobs with this tag."),
+    status_list: Optional[List[str]] = typer.Option(None, "--status", "-s", help="Filter jobs by status. Can be used multiple times (e.g., --status FAILED --status TIMEOUT)."),
 ):
   """Archives jobs, moving them from the active experiments directory to an archive location."""
   try:
-    casted_status_list: list[Status] | None = None
+    casted_status_list: Optional[List[Status]] = None
     if status_list is not None:
       casted_status_list = _cast_status_list(status_list)
         
@@ -305,14 +305,14 @@ def archive(
 
 @app.command("delete-jobs")
 def delete_jobs(
-  cluster_name: str | None = typer.Option(None, "--cluster-name", help="Delete jobs from this cluster."),
-  config_name: str | None = typer.Option(None, "--config", help="Delete jobs with this configuration name."),
-  tag: str | None = typer.Option(None, "--tag", help="Delete jobs with this tag."),
-  archive_name: str | None = typer.Option(None, "--archive", help="Delete jobs from this archive."),
+  cluster_name: Optional[str] = typer.Option(None, "--cluster-name", help="Delete jobs from this cluster."),
+  config_name: Optional[str] = typer.Option(None, "--config", help="Delete jobs with this configuration name."),
+  tag: Optional[str] = typer.Option(None, "--tag", help="Delete jobs with this tag."),
+  archive_name: Optional[str] = typer.Option(None, "--archive", help="Delete jobs from this archive."),
   archived: bool = typer.Option(False, "--archived", "-a", help="Delete only archived jobs."), 
   not_archived: bool = typer.Option(False, "--not-archived", "-na", help="Delete only active jobs."),
   all: bool = typer.Option(False, "--all", help="Delete jobs from both active and archive directories."),
-  status_list: list[str] | None = typer.Option(None, "--status", "-s", help="Filter jobs by status. Can be used multiple times (e.g., --status FAILED --status TIMEOUT)."),
+  status_list: Optional[List[str]] = typer.Option(None, "--status", "-s", help="Filter jobs by status. Can be used multiple times (e.g., --status FAILED --status TIMEOUT)."),
 ):
   """Deletes jobs matching the specified criteria."""
 
@@ -325,7 +325,7 @@ def delete_jobs(
     raise typer.Exit(1)
   
   try:
-    casted_status_list: list[Status] | None = None
+    casted_status_list: Optional[List[Status]] = None
     if status_list is not None:
       casted_status_list = _cast_status_list(status_list)
         

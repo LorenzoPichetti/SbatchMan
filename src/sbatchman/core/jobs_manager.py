@@ -38,7 +38,7 @@ def jobs_list(
   cluster_name: Optional[str] = None,
   config_name: Optional[str] = None,
   tag: Optional[str] = None,
-  status: Optional[list[Status]] = None,
+  status: Optional[List[Status]] = None,
   archive_name: Optional[str] = None,
   from_active: bool = True,
   from_archived: bool = False,
@@ -125,7 +125,7 @@ def jobs_df(
   jobs_dicts = [job.__dict__ for job in jobs]
   return pd.DataFrame(jobs_dicts)
   
-def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optional[str] = None, config_name: Optional[str] = None, tag: Optional[str] = None, status: Optional[list[Status]] = None) -> List[Job]:
+def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optional[str] = None, config_name: Optional[str] = None, tag: Optional[str] = None, status: Optional[List[Status]] = None) -> List[Job]:
   """
   Archives jobs matching the filter criteria.
   """
@@ -167,7 +167,7 @@ def delete_jobs(
   archive_name: Optional[str] = None,
   archived: bool = False,
   not_archived: bool = False,
-  status: Optional[list[Status]] = None,
+  status: Optional[List[Status]] = None,
 ) -> int:
   """
   Deletes jobs matching the filter criteria.

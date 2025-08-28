@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
+from typing import List, Optional, Tuple, Union
 
 from sbatchman.core.status import Status
 
@@ -10,13 +11,13 @@ from .base import BaseConfig
 class LocalConfig(BaseConfig):
   """Scheduler for running on the local machine."""
   
-  time: str | None = None
+  time: Optional[str] = None
 
-  def _generate_scheduler_directives(self) -> list[str]:
+  def _generate_scheduler_directives(self) -> List[str]:
     return ["# Local execution script"]
 
   @staticmethod
-  def get_job_status(job_id: int | str) -> Status:
+  def get_job_status(job_id: Union[str, int]) -> Status:
     """
     For local jobs, status is not tracked post-submission.
     """
@@ -27,7 +28,7 @@ class LocalConfig(BaseConfig):
     """Returns the name of the scheduler this parameters class is associated with."""
     return "local"
   
-  def local_submit(self, script_path: Path, exp_dir: Path) -> tuple[int, bool]:
+  def local_submit(self, script_path: Path, exp_dir: Path) -> Tuple[int, bool]:
     """Runs the job in the background on the local machine, with optional time limit.
     Returns (pid, timed_out: bool).
     """
