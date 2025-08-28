@@ -24,6 +24,31 @@ def init_project(path: Path):
     with open(main_config_path, "w") as f:
       yaml.dump({}, f)
 
+  # Printing Sbatchman logo
+  print("                                                                          %#@@@@@@@@@                         ")
+  print("                                                                         %=**=====%@                          ")
+  print("  %@@@@@@@@@ @@@@@@@@@@  @@@@@@@@@ @@@@@@@@@@  @@@@@@@@@% @@      @@     ***=====%@                           ")
+  print("  @*         @+      +@ @%      =@      %      @          @#      %#    #%*=====%@                            ")
+  print("  @@@@@@@@@# @%@@@@@@%@ %%@@@@@@%@     -@      @          @%@@@@@@%#   #%*=====%@                             ")
+  print("          *@ @+      +@ %%      #@     =@      @          @#      %#  #%*=====%@                              ")
+  print("  @@@@@@@@@@ @@@@@@@@@@ @@      @@     #@      @@@@@@@@@% @@      @@ .%*=====%@                               ")
+  print("                                                                     @#======%                                ")
+  print("                                                                    %%=======%@@@@@                           ")
+  print("                                                                    @+=========+%@                            ")
+  print("                                                                   @*=========%@@                             ")
+  print("                                                                  @@@@@@%*===%@                               ")
+  print("                                                                        :*==%@                                ")
+  print("                                                                       #@**@@                                 ")
+  print("                                                                      # %%@                                   ")
+  print("                                                                      +@@@  @@@@@@@@@@ @@@@@@@@@@ @@@     @@  ")
+  print("                                                                     #%%@   @   @@  @@ @%      %@ @%@@@   @@  ")
+  print("                                                                    #@@@    @   @@  @@ @@@@@@@@@@ @@  @@* @@  ")
+  print("                                                                    @@      @   @@  @@ @@      @@ @@    @@@@  ")
+  print("                                                                   @@       @+  @@  @@ @@      @@ @@      @@  ")
+  print("                                                                  @@                                          ")
+  print("                                                                 +@                                           ")
+                                                                                                              
+
 def get_project_root() -> Path:
   """
   Searches for the project root directory (SbatchMan) upwards from the CWD.
