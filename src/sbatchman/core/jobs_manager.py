@@ -1,5 +1,5 @@
 import shutil
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional
 
 import yaml
 
@@ -38,7 +38,7 @@ def jobs_list(
   cluster_name: Optional[str] = None,
   config_name: Optional[str] = None,
   tag: Optional[str] = None,
-  status: Optional[List[Union[Status,str]]] = None,
+  status: Optional[list[Status]] = None,
   archive_name: Optional[str] = None,
   from_active: bool = True,
   from_archived: bool = False,
@@ -78,8 +78,6 @@ def jobs_list(
         if config_name and not metadata_path.parts[-4] == config_name:
           continue
         if tag and not metadata_path.parts[-3] == tag:
-          continue
-        if status and job_dict.get('status') not in [s.value if isinstance(s, Status) else s for s in status]:
           continue
         jobs.append(Job(**job_dict))
 
@@ -127,7 +125,7 @@ def jobs_df(
   jobs_dicts = [job.__dict__ for job in jobs]
   return pd.DataFrame(jobs_dicts)
   
-def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optional[str] = None, config_name: Optional[str] = None, tag: Optional[str] = None, status: Optional[List[Union[Status, str]]] = None) -> List[Job]:
+def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optional[str] = None, config_name: Optional[str] = None, tag: Optional[str] = None, status: Optional[list[Status]] = None) -> List[Job]:
   """
   Archives jobs matching the filter criteria.
   """
@@ -169,7 +167,7 @@ def delete_jobs(
   archive_name: Optional[str] = None,
   archived: bool = False,
   not_archived: bool = False,
-  status: Optional[List[Union[Status, str]]] = None,
+  status: Optional[list[Status]] = None,
 ) -> int:
   """
   Deletes jobs matching the filter criteria.

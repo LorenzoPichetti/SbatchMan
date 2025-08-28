@@ -93,8 +93,6 @@ sbatchman configure slurm \
   --partition gpu \
   --time 02:00:00 \
   --gpus 1 \
-  --module GCC/13.3.0 \
-  --module CUDA/12.5.0 \
   --cluster-name my_gpu_slurm_cluster
 ```
 
@@ -171,7 +169,7 @@ This command will show you all the submitted jobs and their detail through an in
 ## 🏆 Collect Results
 
 Once the jobs are completed, you will find all their data into the project sub-directory `SbatchMan/experiments`.  
-Of course, you won't need to parse them manually. To parse the results, you can use the Python library offered by SbatchMan.  
+To parse the results from the experiments, SbatchMan provies a convenient Python API.
 For example, you can read the logs and extract metrics like accuracy or loss:
 
 ```python
@@ -181,6 +179,8 @@ command, pos_args, named_args = job.parse_command_args()
 print(command)
 print(pos_args)
 print(named_args)
+print(job.status)
+print(job.variables)
 print(job.get_stdout())
 ```
 
@@ -241,4 +241,4 @@ sbatchman delete-jobs --help
 ## 🎉 Conclusion
 This is a basic example of how to use SbatchMan to manage your experiments on multiple remote clusters. You can extend this by adding more configurations, automating job submissions, or using the Python API to integrate SbatchMan into your existing workflows.
 
-To exploit the the tool at its best, please read the [Advanced configuration](configuration.md) and [Advanced Job Submission](launching_jobs.md) sections.
+To exploit the the tool at its best, please read the [Advanced configuration](advanced_configuration.md) and [Advanced Job Submission](advanced_submission.md) sections.

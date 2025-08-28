@@ -66,8 +66,8 @@ nav:
     - Setup: install/setup.md
   - Learn:
     - Tutorial: learn/tutorial.md
-    - Advanced configuration: learn/configuration.md
-    - Advanced job submission: learn/launching_jobs.md
+    - Advanced configuration: learn/advanced_configuration.md
+    - Advanced job submission: learn/advanced_submission.md
     - Aliases: learn/aliases.md
   - API: api.md
   - Development Guide: development.md

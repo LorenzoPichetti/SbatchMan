@@ -85,9 +85,6 @@ clusterA:
   scheduler: slurm
   default_conf:
     account: "example_default_account"
-    modules:
-      - "gcc/10.2.0"
-      - "python/3.9.6"
   configs:
     - name: job_{partition}_{ncpus}
       partition: "{partition}"
@@ -115,7 +112,6 @@ For `clusterB`, this will generate a configuration for every value of `mem`.
 #### Common
 
 * `env`
-* `modules`
 
 #### SLURM
 
@@ -161,7 +157,6 @@ sbm.create_slurm_config(
   mem="16G",
   gpus=1,
   time="01-00:00:00",
-  modules=["gcc/10.2.0", "cuda/11.4"],
   overwrite=True
 )
 ```

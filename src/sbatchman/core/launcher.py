@@ -29,6 +29,7 @@ def launch_job(
   postprocess: Optional[str] = None,
   force: bool = False,
   previous_job_id: Optional[int] = None,
+  variables: Optional[Dict[str, Any]] = None,
 ) -> Job:
   """
   Launches an experiment based on a configuration name.
@@ -43,21 +44,28 @@ def launch_job(
   Returns:
     A Job object representing the launched job.
   Raises:
-    ConfigurationError: If the configuration is not found or if the cluster name is not set.
+    ConfigurationError: If there is a mismatch in cluster names or if the cluster name is not set.
     ClusterNameNotSetError: If the cluster name is not set globally and not provided.
     ConfigurationNotFoundError: If the configuration file does not exist.
     JobSubmitError: If there is an error during job submission.
   """
 
-  if not cluster_name:
-    try:
-      cluster_name = get_cluster_name()
-    except ClusterNameNotSetError:
+  try:
+    config_cluster_name = get_cluster_name()
+    if cluster_name is None: # Use global cluster name if not provided
+      cluster_name = config_cluster_name
+    elif cluster_name != config_cluster_name: # Mismatch in cluster names
+      raise JobSubmitError(
+        f"Cluster name '{cluster_name}' does not match the globally set cluster name '{config_cluster_name}'. "
+        "You may be running jobs meant for a different cluster. If you want to change this cluster name, use 'sbatchman set-cluster-name <cluster_name>' to set a new global default."
+      )
+  except ClusterNameNotSetError:
+    if not cluster_name:
       raise ConfigurationError(
         "Cluster name not specified and not set globally. "
         "Please provide '--cluster-name' or use 'sbatchman set-cluster-name <cluster_name>' to set a global default."
       )
-
+  
   scheduler = get_scheduler_from_cluster_name(cluster_name)
 
   config_path = get_project_config_dir() / cluster_name / f"{config_name}.sh"
@@ -121,6 +129,7 @@ def launch_job(
     archive_name=None,
     preprocess=preprocess,
     postprocess=postprocess,
+    variables=variables if variables is not None else {},
   )
 
   job.write_metadata()
@@ -135,7 +144,7 @@ def launch_job(
       console.print(f"✅ Submitting job with command '[bold cyan]{job.command}[/bold cyan]'.")
       config = load_local_config(config_name)
       if config is None:
-        raise JobSubmitError(f'Couldn\'t find configuration `{config_name}`')
+        raise ConfigurationError(f'Couldn\'t find configuration `{config_name}`')
       job.job_id, timed_out = config.local_submit(run_script_path, exp_dir)
       if timed_out:
         job.status = Status.TIMEOUT.value
@@ -235,6 +244,13 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
   global_command = config.get("command", None)
   global_preprocess = config.get("preprocess", None)
   global_postprocess = config.get("postprocess", None)
+  global_cluster_name = config.get("cluster_name", None)
+  
+  machine_cluster_name = None
+  try:
+    machine_cluster_name = get_cluster_name()
+  except ClusterNameNotSetError:
+    pass
 
   if global_is_sequential:
     console.print('[yellow]Jobs will be scheduled sequentially.[/yellow]')
@@ -254,6 +270,7 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
     job_command_template = job_def.get("command", global_command)
     job_preprocess_template = job_def.get("preprocess", global_preprocess)
     job_postprocess_template = job_def.get("postprocess", global_postprocess)
+    job_cluster_name = job_def.get("cluster_name", global_cluster_name)
     job_vars = job_def.get("variables", {})
 
     expanded_job_vars = {k: _load_variable_values(v) for k, v in job_vars.items()}
@@ -263,6 +280,9 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
 
     config_jobs = job_def.get("config_jobs", [])
     if not config_jobs:
+      if job_cluster_name is not None and machine_cluster_name is not None and job_cluster_name != machine_cluster_name:
+        continue # Skip job if job's cluster name doesn't match the machine's cluster name
+
       # If no config_jobs, run with the job's own context
       previous_job_id = _launch_job_combinations(
         job_config_template,
@@ -270,6 +290,7 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
         "default",
         job_preprocess_template,
         job_postprocess_template,
+        job_cluster_name,
         merged_job_vars,
         launched_jobs,
         force,
@@ -285,11 +306,15 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
         entry_command_template = entry.get("command", job_command_template)
         entry_preprocess_template = entry.get("preprocess", job_preprocess_template)
         entry_postprocess_template = entry.get("postprocess", job_postprocess_template)
+        entry_cluster_name = entry.get("cluster_name", job_cluster_name)
         entry_vars = entry.get("variables", {})
         expanded_entry_vars = {k: _load_variable_values(v) for k, v in entry_vars.items()}
         
         # Merge all variables: global -> job -> entry
         final_vars = {**merged_job_vars, **expanded_entry_vars}
+
+        if entry_cluster_name is not None and machine_cluster_name is not None and entry_cluster_name != machine_cluster_name:
+          continue # Skip job if entry's cluster name doesn't match the machine's cluster name
 
         previous_job_id = _launch_job_combinations(
           job_config_template,
@@ -297,6 +322,7 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
           tag_name,
           entry_preprocess_template,
           entry_postprocess_template,
+          entry_cluster_name,
           final_vars,
           launched_jobs,
           force,
@@ -312,6 +338,7 @@ def _launch_job_combinations(
   tag: str,
   preprocess_template: Optional[str],
   postprocess_template: Optional[str],
+  cluster_name: Optional[str],
   variables: Dict[str, Any],
   launched_jobs: List[Job],
   force: bool = False,
@@ -345,7 +372,7 @@ def _launch_job_combinations(
       # print(f'{job_tag=}')
       # print('='*40)
       try:
-        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None))
+        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), cluster_name=cluster_name)
         launched_jobs.append(job)
         previous_job_id = job.job_id
       except JobExistsError as e:
@@ -370,7 +397,7 @@ def _launch_job_combinations(
       # print(f'{job_tag=}')
       # print('='*40)
       try:
-        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None))
+        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), variables=var_dict, cluster_name=cluster_name)
         launched_jobs.append(job)
         previous_job_id = job.job_id
       except JobExistsError as e:

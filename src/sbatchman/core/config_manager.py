@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Dict, Any, List, Optional
 import yaml
 import itertools
 import re
@@ -7,7 +6,7 @@ import re
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_project_configs_file_path
 from sbatchman.exceptions import ConfigurationError
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from sbatchman.schedulers.base import BaseConfig
 from sbatchman.schedulers.local import LocalConfig
 from sbatchman.schedulers.pbs import PbsConfig
@@ -39,9 +38,42 @@ def _substitute(template, variables):
     return template
   return template.format(**variables)
 
-def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[BaseConfig]:
-  """
-  Parses a YAML file and creates job configurations, supporting variables and wildcards.
+def create_configs_from_file(file_path: Path, overwrite: bool = False) -> list[BaseConfig]:
+  """Parses a YAML file to create a list of job configurations.
+
+  This function reads a YAML configuration file, processes variables, and
+  generates a list of configuration objects.
+
+  The YAML file structure should be as follows:
+  - An optional `variables` section at the root to define substitution
+    variables. These can be single values, lists, or file paths with
+    wildcards (glob patterns).
+  - Cluster names as top-level keys.
+  - Each cluster must define a `scheduler` (e.g., 'slurm').
+  - Each cluster can have a `default_conf` dictionary to specify common
+    parameters for all jobs on that cluster.
+  - Each cluster must have a `configs` list, where each item is a
+    dictionary representing a job configuration.
+
+  The function expands configurations based on the variables used. If a
+  configuration's name or parameters reference variables that are lists
+  or expand from wildcards, it creates a Cartesian product of all
+  possible variable combinations, generating a distinct configuration for each one.
+
+  Args:
+    file_path (Path): The path to the YAML configuration file.
+    overwrite (bool, optional): If True, indicates that existing
+      configurations with the same name can be overwritten.
+      Defaults to False.
+
+  Returns:
+    list[BaseConfig]: A list of fully resolved configuration objects
+      (e.g., SlurmConfig) created from the file.
+
+  Raises:
+    ConfigurationError: If the file is not found, contains invalid YAML,
+      or does not adhere to the required structure (e.g., missing
+      'scheduler' key, root is not a dictionary).
   """
   created_configs = []
 
@@ -109,7 +141,7 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
 
   return created_configs
 
-def _create_config_from_params(scheduler: str, params: Dict[str, Any]) -> BaseConfig:
+def _create_config_from_params(scheduler: str, params: dict[str, Any]) -> BaseConfig:
   """
   Calls the appropriate API function to create a single configuration.
   """
@@ -125,10 +157,9 @@ def _create_config_from_params(scheduler: str, params: Dict[str, Any]) -> BaseCo
   
 def create_local_config(
   name: str,
-  cluster_name: Optional[str] = None,
-  env: Optional[List[str]] = None,
-  time: Optional[str] = None,
-  modules: Optional[List[str]] = None,
+  cluster_name: str | None = None,
+  env: list[str] | None = None,
+  time: str | None = None,
   overwrite: bool = False,
 ) -> LocalConfig:
   """Creates and saves a configuration file for local execution.
@@ -139,26 +170,23 @@ def create_local_config(
       Defaults to the system's hostname.
     env: A list of environment variables to set.
     time: Walltime (e.g., 01-00:00:00).
-    modules: A list of environment modules to load (for compatibility,
-      though they may not be used in a standard local shell).
     overwrite: If True, overwrite an existing configuration with the same name.
 
   Returns:
     The path to the newly created configuration file.
   """
-  config = LocalConfig(name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), env=env, time=time, modules=modules)
+  config = LocalConfig(name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), env=env, time=time)
   config.save_config(overwrite)
   return config
 
 def create_pbs_config(
   name: str,
-  cluster_name: Optional[str] = None,
-  queue: Optional[str] = None,
-  cpus: Optional[int] = None,
-  mem: Optional[str] = None,
-  walltime: Optional[str] = None,
-  env: Optional[List[str]] = None,
-  modules: Optional[List[str]] = None,
+  cluster_name: str | None = None,
+  queue: str | None = None,
+  cpus: int | None = None,
+  mem: str | None = None,
+  walltime: str | None = None,
+  env: list[str] | None = None,
   overwrite: bool = False,
 ) -> PbsConfig:
   """Creates and saves a PBS configuration file.
@@ -172,37 +200,35 @@ def create_pbs_config(
     mem: The amount of memory to request (e.g., "16gb", "100mb").
     walltime: The maximum wall time for the job (e.g., "24:00:00").
     env: A list of environment variables to set.
-    modules: A list of environment modules to load.
     overwrite: If True, overwrite an existing configuration with the same name.
 
   Returns:
     The path to the newly created configuration file.
   """
   config = PbsConfig(
-    name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, modules=modules
+    name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env
   )
   config.save_config(overwrite)
   return config
 
 def create_slurm_config(
   name: str,
-  cluster_name: Optional[str] = None,
-  partition: Optional[str] = None,
-  nodes: Optional[str] = None,
-  ntasks: Optional[str] = None,
-  cpus_per_task: Optional[int] = None,
-  mem: Optional[str] = None,
-  account: Optional[str] = None,
-  time: Optional[str] = None,
-  gpus: Optional[int] = None,
-  constraint: Optional[str] = None,
-  nodelist: Optional[List[str]] = None,
-  exclude: Optional[List[str]] = None,
-  qos: Optional[str] = None,
-  reservation: Optional[str] = None,
-  exclusive: Optional[bool] = False,
-  env: Optional[List[str]] = None,
-  modules: Optional[List[str]] = None,
+  cluster_name: str | None = None,
+  partition: str | None = None,
+  nodes: str | None = None,
+  ntasks: str | None = None,
+  cpus_per_task: int | None = None,
+  mem: str | None = None,
+  account: str | None = None,
+  time: str | None = None,
+  gpus: int | None = None,
+  constraint: str | None = None,
+  nodelist: list[str] | None = None,
+  exclude: list[str] | None = None,
+  qos: str | None = None,
+  reservation: str | None = None,
+  exclusive: bool | None = False,
+  env: list[str] | None = None,
   overwrite: bool = False,
 ) -> SlurmConfig:
   """Creates and saves a SLURM configuration file.
@@ -226,7 +252,6 @@ def create_slurm_config(
     reservation: The reservation to use for the job.
     exclusive: Enables the --exclusive flag (may not work on some clusters).
     env: A list of environment variables to set.
-    modules: A list of environment modules to load.
     overwrite: If True, overwrite an existing configuration with the same name.
 
   Returns:
@@ -235,13 +260,12 @@ def create_slurm_config(
   config = SlurmConfig(
     name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), 
     partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem, account=account,
-    time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, exclude=exclude, qos=qos, reservation=reservation, exclusive=exclusive,
-    env=env, modules=modules
+    time=time, gpus=str(gpus), constraint=constraint, nodelist=nodelist, exclude=exclude, qos=qos, reservation=reservation, exclusive=exclusive,
   )
   config.save_config(overwrite)
   return config
 
-def load_local_config(name: str) -> Optional[LocalConfig]:
+def load_local_config(name: str) -> LocalConfig | None:
   file = get_project_configs_file_path()
   cluster_name = get_cluster_name()
   try:

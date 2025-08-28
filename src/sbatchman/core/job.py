@@ -28,6 +28,7 @@ class Job:
   preprocess: Optional[str] = None
   postprocess: Optional[str] = None 
   archive_name: Optional[str] = None
+  variables: Optional[dict[str, Any]] = None
 
   def get_job_config(self) -> BaseConfig:
     """
@@ -162,14 +163,7 @@ class Job:
     path = self.get_metadata_path()
 
     if path.exists():
-      subprocess.run(["sed", "-i", f"s/^job_id: [0-9]*/job_id: {int(self.job_id)}/", str(path)], check=True)
-      # with open(path, 'rw') as f:
-      #   lines = f.readlines()
-      #   for line in lines:
-      #     if line.strip().startswith('job_id:'):
-      #       f.write(f"job_id: {int(self.job_id)}\n")
-      #     else:
-      #       f.write(line)
+      subprocess.run(["perl", "-i", "-pe", f"s/^job_id: [0-9]*/job_id: {int(self.job_id)}/", str(path)], check=True)
       
   def write_job_status(self):
     """

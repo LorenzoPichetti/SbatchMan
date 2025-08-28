@@ -11,7 +11,11 @@ def get_global_config_path() -> Path:
   return config_dir / "config.yaml"
 
 def get_cluster_name() -> str:
-  """Reads and returns the cluster name from the global configuration."""
+  """Reads and returns the cluster name from the global configuration.
+  
+  Raises:
+    ClusterNameNotSetError: If the cluster name is not set in the config file.
+  """
   config_path = get_global_config_path()
   if not config_path.exists():
     raise ClusterNameNotSetError

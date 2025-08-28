@@ -2,13 +2,12 @@ import yaml
 from sbatchman import Job, jobs_list
 from textual import on
 from textual.app import ComposeResult
-from textual.widgets import Header, Footer, DataTable, TabbedContent, TabPane, Input, Markdown
+from textual.widgets import Header, Footer, DataTable, TabbedContent, TabPane, Input
 from textual.binding import Binding
 from textual.screen import Screen
 from textual.coordinate import Coordinate
 from textual.widgets.data_table import RowDoesNotExist
 from pathlib import Path
-from typing import List, Optional
 from datetime import datetime
 
 from sbatchman.config.project_config import get_experiments_dir
@@ -16,8 +15,8 @@ from sbatchman.core.launcher import Status
 from sbatchman.tui.log_screen import LogScreen
 
 class JobsScreen(Screen):
-  all_jobs: List[Job]
-  filter: None
+  all_jobs: list[Job]
+  filter: str | None
 
   """The main screen with job tables."""
   BINDINGS = [
@@ -33,12 +32,12 @@ class JobsScreen(Screen):
   }
   """
 
-  def __init__(self, experiments_dir: Optional[Path] = None, **kwargs):
+  def __init__(self, experiments_dir: Path | None = None, **kwargs):
     super().__init__(**kwargs)
     self.experiments_root = experiments_dir or get_experiments_dir()
     self.all_jobs = []
     self.filter = None
-    self.filtered_finished_jobs: Optional[List[Job]] = None
+    self.filtered_finished_jobs: list[Job] | None = None
 
   def compose(self) -> ComposeResult:
     yield Header()
@@ -169,7 +168,7 @@ class JobsScreen(Screen):
       except RowDoesNotExist:
         pass
 
-  def filter_jobs(self, query: str) -> List[Job]:
+  def filter_jobs(self, query: str) -> list[Job]:
     if not query:
       return self.all_jobs
 

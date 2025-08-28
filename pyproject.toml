@@ -12,14 +12,14 @@ authors = [
 ]
 description = "A utility to create, launch and monitor code experiments on SLURM, PBS, or local machines."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "typer[all]",
+    "typer",
     "textual",
     "rich",
     "PyYAML",

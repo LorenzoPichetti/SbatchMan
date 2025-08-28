@@ -24,10 +24,11 @@ The batch submission file is a YAML file that defines global variables and a lis
 
 #### Top-Level Keys
 
-The file has two main top-level keys:
+The file has the following main top-level keys:
 
 -   `sequential`: If set to `true`, will ensure that jobs are scheduled sequentially.
 -   `variables`: Defines global variables applicable to all jobs.
+-   `cluster_name`: Optional parameter that defines the cluster configuration to use.
 -   `jobs`: A list of job templates.
 
 #### The `jobs` Block
@@ -39,6 +40,7 @@ This is a list where each item defines a job template. Each template can have th
 -   `preprocess`: An optional command to run before the main `command`.
 -   `postprocess`: An optional command to run after the main `command`.
 -   `variables`: A dictionary of variables that apply only to this job template.
+-   `cluster_name`: Optional parameter that defines the cluster configuration to use.
 -   `config_jobs`: A list of variations for this job template. Each variation will generate one or more jobs.
 
 *`command`, `preprocess` and `postprocess` can be also set at top-level.*
@@ -55,6 +57,7 @@ Each entry in the `config_jobs` list defines a specific set of runs for a config
 -   `command`: To provide a command that overrides the job template's command.
 -   `preprocess`: To provide a command that sets or overrides the preprocess command.
 -   `postprocess`: To provide a command that sets or overrides the postprocess command.
+-   `cluster_name`: To define or override the cluster configuration for this specific variation.
 
 #### The `variables` Block
 
@@ -91,6 +94,8 @@ When this flag is set (`sequential: true`), SbatchMan will ensure that only one 
 
 This may be useful for benchmarking i.e. it ensures that jobs using the network do not create noise influencing each other.  
 Another use-case is building target with different Makefile variables e.g. `MYVAR={var} make mytarget`.
+
+This is the default behavior when using the `local` scheduler.
 
 !!! warning
     There is no guarantee about the order of the jobs.   

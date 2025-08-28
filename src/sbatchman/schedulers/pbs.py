@@ -1,6 +1,5 @@
 from pathlib import Path
 import subprocess
-from typing import List, Optional, Union
 from dataclasses import dataclass
 
 from sbatchman.core.status import Status
@@ -27,12 +26,12 @@ PBS_STATUS_MAP = {
 class PbsConfig(BaseConfig):
   """Config for OpenPBS."""
 
-  queue: Optional[str] = None
-  cpus: Optional[int] = None
-  mem: Optional[str] = None
-  walltime: Optional[str] = None
+  queue: str | None = None
+  cpus: int | None = None
+  mem: str | None = None
+  walltime: str | None = None
 
-  def _generate_scheduler_directives(self) -> List[str]:
+  def _generate_scheduler_directives(self) -> list[str]:
     lines = []
     lines.append(f"#PBS -N {self.name}")
     lines.append(f"#PBS -o {{EXP_DIR}}/stdout.log")
@@ -50,7 +49,7 @@ class PbsConfig(BaseConfig):
     return lines
   
   @staticmethod
-  def get_job_status(job_id: Union[int, str]) -> Status:
+  def get_job_status(job_id: str | int) -> Status:
     """
     Returns the status of a PBS job.
     """
@@ -88,7 +87,7 @@ class PbsConfig(BaseConfig):
     """Returns the name of the scheduler this parameters class is associated with."""
     return "pbs"
   
-def pbs_submit(script_path: Path, exp_dir: Path, previous_job_id: Optional[int] = None) -> int:
+def pbs_submit(script_path: Path, exp_dir: Path, previous_job_id: int | None = None) -> int:
   """Submits the job to PBS."""
   if previous_job_id:
     command_list = ["qsub", '-W', f'depend=afterany:{previous_job_id}', str(script_path)]
