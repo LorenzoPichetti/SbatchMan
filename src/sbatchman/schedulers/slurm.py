@@ -56,10 +56,11 @@ class SlurmConfig(BaseConfig):
   qos: Optional[str] = None
   reservation: Optional[str] = None
   exclusive: Optional[bool] = False
+  modules: Optional[List[str]] = None
 
   def _generate_scheduler_directives(self) -> List[str]:
     lines = []
-    lines.append(f"#SBATCH --job-name={self.name}")
+    lines.append("#SBATCH --job-name={JOB_NAME}")
     lines.append(f"#SBATCH --output={{EXP_DIR}}/stdout.log")
     lines.append(f"#SBATCH --error={{EXP_DIR}}/stderr.log")
 
@@ -77,6 +78,10 @@ class SlurmConfig(BaseConfig):
     if q := self.qos: lines.append(f"#SBATCH --qos={q}")
     if r := self.reservation: lines.append(f"#SBATCH --reservation={r}")
     if self.exclusive: lines.append(f"#SBATCH --exclusive")
+    
+    if self.modules and len(self.modules) > 0:
+      lines.append('\n# Load System Modules')
+      lines.append(f'module load {" ".join(self.modules)}')
     
     return lines
   

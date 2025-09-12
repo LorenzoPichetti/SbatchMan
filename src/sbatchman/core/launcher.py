@@ -24,7 +24,7 @@ def launch_job(
   config_name: str,
   command: str,
   cluster_name: Optional[str] = None,
-  tag: str = "default",
+  tag: str = "notag",
   preprocess: Optional[str] = None,
   postprocess: Optional[str] = None,
   force: bool = False,
@@ -100,6 +100,8 @@ def launch_job(
   # 3. Prepare the final runnable script
   # Replace placeholders for log and CWD
   final_script_content = template_script.replace(
+    "{JOB_NAME}", f'{tag}-{config_name}'
+  ).replace(
     "{EXP_DIR}", str(exp_dir.resolve())
   ).replace(
     "{CWD}", str(submission_cwd.resolve())

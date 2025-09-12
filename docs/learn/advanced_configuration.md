@@ -129,6 +129,7 @@ For `clusterB`, this will generate a configuration for every value of `mem`.
 * `qos`
 * `reservation`
 * `exclusive`
+* `modules`
 
 #### PBS
 
