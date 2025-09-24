@@ -120,7 +120,7 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
           # Merge default params with specific config params, substituting variables
           final_params = default_conf.copy()
           for k, v in config_params.items():
-            if isinstance(v, str):
+            if isinstance(v, (int, float, str)):
               final_params[k] = _substitute(v, var_dict)
             elif isinstance(v, list) and len(v) > 0:
               final_params[k] = []
