@@ -79,7 +79,8 @@ def jobs_list(
           continue
         if tag and not metadata_path.parts[-3] == tag:
           continue
-        jobs.append(Job(**job_dict))
+        if job_dict:
+          jobs.append(Job(**job_dict))
 
   # Scan archived jobs
   if from_archived:
@@ -96,7 +97,8 @@ def jobs_list(
           continue
         if archive_name and not metadata_path.parts[-6] == archive_name:
           continue
-        jobs.append(Job(**job_dict))
+        if job_dict:
+          jobs.append(Job(**job_dict))
   
   if status:
     status = [s.value if isinstance(s, Status) else str(s) for s in status]
