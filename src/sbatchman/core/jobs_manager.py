@@ -99,7 +99,7 @@ def jobs_list(
         jobs.append(Job(**job_dict))
   
   if status:
-    status = [str(s) for s in status]
+    status = [s.value if isinstance(s, Status) else str(s) for s in status]
     jobs = [j for j in jobs if str(j.status) in status]
     
   return jobs
