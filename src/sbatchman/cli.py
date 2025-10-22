@@ -111,6 +111,7 @@ def configure_slurm(
   partition: Optional[str] = typer.Option(None, help="SLURM partition name."),
   nodes: Optional[str] = typer.Option(None, help="SLURM number of nodes."),
   ntasks: Optional[str] = typer.Option(None, help="SLURM number of tasks."),
+  tasks_per_node: Optional[int] = typer.Option(None, help="Number of tasks per node."),
   cpus_per_task: Optional[int] = typer.Option(None, help="Number of CPUs per task."),
   mem: Optional[str] = typer.Option(None, help="Memory requirement (e.g., 16G, 64G)."),
   account: Optional[str] = typer.Option(None, help="SLURM account"),
@@ -130,7 +131,7 @@ def configure_slurm(
     try:
       config = sbtc.create_slurm_config(
         name=name, cluster_name=cluster_name,
-        partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem, account=account,
+        partition=partition, nodes=nodes, ntasks=ntasks, tasks_per_node=tasks_per_node, cpus_per_task=cpus_per_task, mem=mem, account=account,
         time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, exclude=exclude, qos=qos, reservation=reservation, exclusive=exclusive,
         env=env, overwrite=overwrite
       )

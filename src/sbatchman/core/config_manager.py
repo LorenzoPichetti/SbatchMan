@@ -217,6 +217,7 @@ def create_slurm_config(
   partition: Optional[str] = None,
   nodes: Optional[str] = None,
   ntasks: Optional[str] = None,
+  tasks_per_node: Optional[int] = None,
   cpus_per_task: Optional[int] = None,
   mem: Optional[str] = None,
   account: Optional[str] = None,
@@ -241,6 +242,7 @@ def create_slurm_config(
     partition: The SLURM partition (queue) to submit the job to.
     nodes: The number of nodes to request.
     ntasks: The number of tasks to run.
+    tasks_per_node: The number of tasks per node.
     cpus_per_task: The number of CPUs to request per task.
     mem: The amount of memory to request (e.g., "16G", "100M").
     account: The account to charge for the job.
@@ -261,7 +263,7 @@ def create_slurm_config(
   """
   config = SlurmConfig(
     name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), 
-    partition=partition, nodes=nodes, ntasks=ntasks, cpus_per_task=cpus_per_task, mem=mem, account=account,
+    partition=partition, nodes=nodes, ntasks=ntasks, tasks_per_node=tasks_per_node, cpus_per_task=cpus_per_task, mem=mem, account=account,
     time=time, gpus=str(gpus), constraint=constraint, nodelist=nodelist, exclude=exclude, qos=qos, reservation=reservation, exclusive=exclusive,
     modules=modules, env=env,
   )
