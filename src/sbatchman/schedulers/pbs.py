@@ -31,6 +31,7 @@ class PbsConfig(BaseConfig):
   cpus: Optional[int] = None
   mem: Optional[str] = None
   walltime: Optional[str] = None
+  custom_headers: Optional[List[str]] = None
 
   def _generate_scheduler_directives(self) -> List[str]:
     lines = []
@@ -45,6 +46,10 @@ class PbsConfig(BaseConfig):
 
     if resources:
       lines.append(f"#PBS -l {','.join(resources)}")
+      
+    if self.custom_headers and len(self.custom_headers) > 0:
+      for header in self.custom_headers:
+        lines.append(header)
 
     if q := self.queue: lines.append(f"#PBS -q {q}")
     return lines

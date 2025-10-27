@@ -85,6 +85,8 @@ clusterA:
   scheduler: slurm
   default_conf:
     account: "example_default_account"
+    custom_headers:
+      - "#SBATCH --my_header=my_val"
   configs:
     - name: job_{partition}_{ncpus}
       partition: "{partition}"
@@ -130,6 +132,7 @@ For `clusterB`, this will generate a configuration for every value of `mem`.
 * `reservation`
 * `exclusive`
 * `modules`
+* `custom_headers` (A list of custom headers. You need to explicitly specify "#SBATCH")
 
 #### PBS
 

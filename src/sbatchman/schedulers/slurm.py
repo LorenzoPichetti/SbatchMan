@@ -58,6 +58,7 @@ class SlurmConfig(BaseConfig):
   reservation: Optional[str] = None
   exclusive: Optional[bool] = False
   modules: Optional[List[str]] = None
+  custom_headers: Optional[List[str]] = None
 
   def _generate_scheduler_directives(self) -> List[str]:
     lines = []
@@ -80,6 +81,10 @@ class SlurmConfig(BaseConfig):
     if q := self.qos: lines.append(f"#SBATCH --qos={q}")
     if r := self.reservation: lines.append(f"#SBATCH --reservation={r}")
     if self.exclusive: lines.append(f"#SBATCH --exclusive")
+    
+    if self.custom_headers and len(self.custom_headers) > 0:
+      for header in self.custom_headers:
+        lines.append(header)
     
     if self.modules and len(self.modules) > 0:
       lines.append('\n# Load System Modules')

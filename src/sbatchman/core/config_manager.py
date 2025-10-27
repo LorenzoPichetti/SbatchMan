@@ -187,6 +187,7 @@ def create_pbs_config(
   mem: Optional[str] = None,
   walltime: Optional[str] = None,
   env: Optional[List[str]] = None,
+  custom_headers: Optional[List[str]] = None,
   overwrite: bool = False,
 ) -> PbsConfig:
   """Creates and saves a PBS configuration file.
@@ -201,12 +202,13 @@ def create_pbs_config(
     walltime: The maximum wall time for the job (e.g., "24:00:00").
     env: A list of environment variables to set.
     overwrite: If True, overwrite an existing configuration with the same name.
+    custom_headers: Custom scheduler headers (e.g., ['#SBATCH --my_header=my_value'])
 
   Returns:
     The path to the newly created configuration file.
   """
   config = PbsConfig(
-    name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env
+    name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, custom_headers=custom_headers,
   )
   config.save_config(overwrite)
   return config
@@ -231,6 +233,7 @@ def create_slurm_config(
   exclusive: Optional[bool] = False,
   modules: Optional[List[str]] = None,
   env: Optional[List[str]] = None,
+  custom_headers: Optional[List[str]] = None,
   overwrite: bool = False,
 ) -> SlurmConfig:
   """Creates and saves a SLURM configuration file.
@@ -257,6 +260,7 @@ def create_slurm_config(
     modules: Modules to load with `module load`.
     env: A list of environment variables to set.
     overwrite: If True, overwrite an existing configuration with the same name.
+    custom_headers: Custom scheduler headers (e.g., ['#SBATCH --my_header=my_value'])
 
   Returns:
     The path to the newly created configuration file.
@@ -265,7 +269,7 @@ def create_slurm_config(
     name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), 
     partition=partition, nodes=nodes, ntasks=ntasks, tasks_per_node=tasks_per_node, cpus_per_task=cpus_per_task, mem=mem, account=account,
     time=time, gpus=str(gpus), constraint=constraint, nodelist=nodelist, exclude=exclude, qos=qos, reservation=reservation, exclusive=exclusive,
-    modules=modules, env=env,
+    modules=modules, env=env, custom_headers=custom_headers,
   )
   config.save_config(overwrite)
   return config
