@@ -3,7 +3,7 @@ import importlib.metadata
 from .config.global_config import get_cluster_name
 from .config.project_config import init_project
 from .core.config_manager import create_configs_from_file, create_local_config, create_slurm_config, create_pbs_config
-from .core.launcher import launch_job, launch_jobs_from_file
+from .core.launcher import launch_job, launch_jobs_from_file, job_submit
 from .core.jobs_manager import jobs_list, jobs_df, archive_jobs, delete_jobs, update_jobs_status
 from .schedulers.slurm import SlurmConfig
 from .schedulers.pbs import PbsConfig
@@ -42,6 +42,7 @@ __all__ = [
   "launch_jobs_from_file",
 
   "launch_job",
+  "job_submit",
 
   "jobs_list",
   "jobs_df",

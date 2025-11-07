@@ -20,6 +20,129 @@ from sbatchman.schedulers.slurm import slurm_submit
 
 console = Console()
 
+def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = None):
+  try:
+    config_cluster_name = get_cluster_name()
+    if job.cluster_name is None: # Use global cluster name if not provided
+      job.cluster_name = config_cluster_name
+    elif job.cluster_name != config_cluster_name: # Mismatch in cluster names
+      raise JobSubmitError(
+        f"Cluster name '{job.cluster_name}' does not match the globally set cluster name '{config_cluster_name}'. "
+        "You may be running jobs meant for a different cluster. If you want to change this cluster name, use 'sbatchman set-cluster-name <cluster_name>' to set a new global default."
+      )
+  except ClusterNameNotSetError:
+    if not job.cluster_name:
+      raise ConfigurationError(
+        "Cluster name not specified and not set globally. "
+        "Please provide '--cluster-name' or use 'sbatchman set-cluster-name <cluster_name>' to set a global default."
+      )
+  
+  scheduler = get_scheduler_from_cluster_name(job.cluster_name)
+
+  config_path = get_project_config_dir() / job.cluster_name / f"{job.config_name}.sh"
+  if not config_path.exists():
+    raise ConfigurationNotFoundError(f"Configuration '{job.config_name}' for cluster '{job.cluster_name}' not found at '{config_path}'.")
+  template_script = open(config_path, "r").read()
+
+
+  if job_exists(job.command, job.config_name, job.cluster_name, job.tag, job.preprocess, job.postprocess) and not force:
+    raise JobExistsError(
+      f"An identical job already exists for config '{job.config_name}' with tag '{job.tag}'. "
+      "Use '--force' to submit it anyway"
+    )
+
+  # Capture the Current Working Directory at the time of launch
+  submission_cwd = Path.cwd()
+    
+  # 2. Create a unique, nested directory for this experiment run
+  timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+  # Directory structure: <cluster_name>/<config_name>/<tag>/<timestamp>
+  # Find a directory name that has not been used yet
+  base_exp_dir_local = Path(job.cluster_name) / job.config_name / job.tag / timestamp
+  exp_dir_local = base_exp_dir_local
+  exp_dir = get_experiments_dir() / exp_dir_local
+  counter = 1
+  while exp_dir.exists():
+    exp_dir_local = base_exp_dir_local.with_name(f"{base_exp_dir_local.name}_{counter}")
+    exp_dir = get_experiments_dir() / exp_dir_local
+    counter += 1
+  exp_dir.mkdir(parents=True, exist_ok=False)
+
+  # 3. Prepare the final runnable script
+  # Replace placeholders for log and CWD
+  final_script_content = template_script.replace(
+    "{JOB_NAME}", f'{job.tag}-{job.config_name}'
+  ).replace(
+    "{EXP_DIR}", str(exp_dir.resolve())
+  ).replace(
+    "{CWD}", str(submission_cwd.resolve())
+  ).replace(
+    "{PREPROCESS}", str(job.preprocess) if job.preprocess is not None else ''
+  ).replace(
+    "{CMD}", str(job.command)
+  ).replace(
+    "{POSTPROCESS}", str(job.postprocess) if job.postprocess is not None else ''
+  )
+  
+  run_script_path = exp_dir / "run.sh"
+  with open(run_script_path, "w") as f:
+    f.write(final_script_content)
+  run_script_path.chmod(0o755)
+
+  job = Job(
+    config_name=job.config_name,
+    cluster_name=job.cluster_name,
+    timestamp=timestamp,
+    exp_dir=str(exp_dir_local),
+    command=job.command,
+    status=Status.SUBMITTING.value,
+    scheduler=scheduler,
+    job_id=0,
+    tag=job.tag,
+    archive_name=None,
+    preprocess=job.preprocess,
+    postprocess=job.postprocess,
+    variables=job.variables if job.variables is not None else {},
+  )
+
+  job.write_metadata()
+
+  try:
+    # 5. Submit the job using the scheduler's own logic
+    if scheduler == 'slurm':
+      job.job_id = slurm_submit(run_script_path, exp_dir, previous_job_id)
+    elif scheduler == 'pbs':
+      job.job_id = pbs_submit(run_script_path, exp_dir, previous_job_id)
+    elif scheduler == 'local':
+      console.print(f"✅ Submitting job with command '[bold cyan]{job.command}[/bold cyan]'.")
+      config = load_local_config(job.config_name)
+      if config is None:
+        raise ConfigurationError(f'Couldn\'t find configuration `{job.config_name}`')
+      job.job_id, timed_out = config.local_submit(run_script_path, exp_dir)
+      if timed_out:
+        job.status = Status.TIMEOUT.value
+        job.write_job_status()
+    else:
+      raise JobSubmitError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
+    
+    job.write_job_id()
+  
+  except (ValueError, FileNotFoundError) as e:
+    job.status = Status.FAILED_SUBMISSION.value
+    job.write_metadata()
+    err_str = "Failed to submit job. Error: " + str(e)
+    with open(job.get_stderr_path(), 'w+') as err_file:
+      err_file.write(err_str)
+    raise JobSubmitError(err_str) from e
+  except subprocess.CalledProcessError as e:
+    job.status = Status.FAILED_SUBMISSION.value
+    job.write_metadata()
+    err_str = f"Job submission failed with error code {e.returncode}.\nOutput stream:\n" + e.output + "\nError stream:\n" + e.stderr if e.stderr else ""
+    with open(job.get_stderr_path(), 'w+') as err_file:
+      err_file.write(err_str)
+    raise JobSubmitError(err_str) from e
+
+
 def launch_job(
   config_name: str,
   command: str,
@@ -30,6 +153,7 @@ def launch_job(
   force: bool = False,
   previous_job_id: Optional[int] = None,
   variables: Optional[Dict[str, Any]] = None,
+  dry_run: bool = False,
 ) -> Job:
   """
   Launches an experiment based on a configuration name.
@@ -95,7 +219,8 @@ def launch_job(
     exp_dir_local = base_exp_dir_local.with_name(f"{base_exp_dir_local.name}_{counter}")
     exp_dir = get_experiments_dir() / exp_dir_local
     counter += 1
-  exp_dir.mkdir(parents=True, exist_ok=False)
+  if not dry_run:
+    exp_dir.mkdir(parents=True, exist_ok=False)
 
   # 3. Prepare the final runnable script
   # Replace placeholders for log and CWD
@@ -113,10 +238,11 @@ def launch_job(
     "{POSTPROCESS}", str(postprocess) if postprocess is not None else ''
   )
   
-  run_script_path = exp_dir / "run.sh"
-  with open(run_script_path, "w") as f:
-    f.write(final_script_content)
-  run_script_path.chmod(0o755)
+  if not dry_run:
+    run_script_path = exp_dir / "run.sh"
+    with open(run_script_path, "w") as f:
+      f.write(final_script_content)
+    run_script_path.chmod(0o755)
 
   job = Job(
     config_name=config_name,
@@ -133,6 +259,9 @@ def launch_job(
     postprocess=postprocess,
     variables=variables if variables is not None else {},
   )
+
+  if dry_run:
+    return job
 
   job.write_metadata()
 
@@ -227,11 +356,12 @@ def _extract_used_vars(*templates):
       var_names.update(re.findall(r"{(\w+)}", template))
   return var_names
 
-def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job]:
+def launch_jobs_from_file(jobs_file_path: Path, force: bool = False, dry_run: bool = False) -> List[Job]:
   """  Launches jobs based on a YAML configuration file.
   Args:
     jobs_file_path: Path to the YAML file containing job definitions.
     force: If True, will overwrite existing jobs with the same configuration.
+    dry_run: If True, will return the list of jobs but will not launch thes (warning: won't work for sequential jobs)
   Returns:
     A list of Job objects representing the launched jobs.
   Raises:
@@ -298,6 +428,7 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
         force,
         global_is_sequential,
         previous_job_id,
+        dry_run=dry_run,
       )
     else:
       for entry in config_jobs:
@@ -330,6 +461,7 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False) -> List[Job
           force,
           global_is_sequential,
           previous_job_id,
+          dry_run=dry_run,
         )
 
   return launched_jobs
@@ -346,6 +478,7 @@ def _launch_job_combinations(
   force: bool = False,
   sequential: bool = False,
   previous_job_id: Optional[int] = None,
+  dry_run: bool = False,
 ) -> Optional[int]:
     """
     Generates and launches jobs for all combinations of variables.
@@ -374,7 +507,7 @@ def _launch_job_combinations(
       # print(f'{job_tag=}')
       # print('='*40)
       try:
-        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), cluster_name=cluster_name)
+        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), cluster_name=cluster_name, dry_run=dry_run)
         launched_jobs.append(job)
         previous_job_id = job.job_id
       except JobExistsError as e:
@@ -399,7 +532,7 @@ def _launch_job_combinations(
       # print(f'{job_tag=}')
       # print('='*40)
       try:
-        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), variables=var_dict, cluster_name=cluster_name)
+        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), variables=var_dict, cluster_name=cluster_name, dry_run=dry_run)
         launched_jobs.append(job)
         previous_job_id = job.job_id
       except JobExistsError as e:

@@ -6,7 +6,7 @@ import re
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_project_configs_file_path
 from sbatchman.exceptions import ConfigurationError
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional, Union
 from sbatchman.schedulers.base import BaseConfig
 from sbatchman.schedulers.local import LocalConfig
 from sbatchman.schedulers.pbs import PbsConfig
@@ -226,7 +226,7 @@ def create_slurm_config(
   time: Optional[str] = None,
   gpus: Optional[int] = None,
   constraint: Optional[str] = None,
-  nodelist: Optional[List[str]] = None,
+  nodelist: Optional[Union[str,List[str]]] = None,
   exclude: Optional[List[str]] = None,
   qos: Optional[str] = None,
   reservation: Optional[str] = None,
@@ -252,7 +252,7 @@ def create_slurm_config(
     time: The maximum wall time for the job (e.g., "01-00:00:00").
     gpus: The number of GPUs to request.
     constraint: Specific features required for the job's nodes.
-    nodelist: A specific list of nodes to use.
+    nodelist: A specific list of nodes to use (either a string or a list of strings to concatenate using "," as separator).
     exclude: A specific list of nodes NOT to use.
     qos: The Quality of Service for the job.
     reservation: The reservation to use for the job.
