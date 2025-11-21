@@ -198,7 +198,7 @@ def launch_job(
   template_script = open(config_path, "r").read()
 
 
-  if job_exists(command, config_name, cluster_name, tag, preprocess, postprocess) and not force:
+  if not force and job_exists(command, config_name, cluster_name, tag, preprocess, postprocess):
     raise JobExistsError(
       f"An identical job already exists for config '{config_name}' with tag '{tag}'. "
       "Use '--force' to submit it anyway"
