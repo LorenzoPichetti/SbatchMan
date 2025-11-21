@@ -10,6 +10,8 @@ from sbatchman.core.status import TERMINAL_STATES, Status
 from sbatchman.exceptions import ArchiveExistsError
 import pandas as pd
 
+JOBS_CACHE = None
+
 def job_exists(
   command: str,
   config_name: str,
@@ -21,7 +23,10 @@ def job_exists(
   """
   Checks if an identical active job already exists.
   """
-  active_jobs = jobs_list(from_active=True, from_archived=False, update_jobs=False)
+  global JOBS_CACHE
+  if JOBS_CACHE is None:
+    JOBS_CACHE = jobs_list(from_active=True, from_archived=False, update_jobs=False)
+  active_jobs = JOBS_CACHE
   for job in active_jobs:
     if (
       job.command == command and
