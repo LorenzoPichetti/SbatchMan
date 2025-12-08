@@ -51,6 +51,32 @@ def job_exists(
     except Exception:
       # If a file is corrupted or unreadable, we skip it
       continue
+
+  # Also check archived jobs
+  archive_root = get_archive_dir()
+  # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
+  # We use a wildcard for archive_name
+  archive_glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
+  
+  for metadata_path in archive_root.glob(archive_glob_pattern):
+    try:
+      with open(metadata_path, 'r') as f:
+        job_dict = yaml.safe_load(f)
+      
+      if not job_dict:
+        continue
+
+      if (
+        job_dict.get('command') == command and
+        job_dict.get('config_name') == config_name and
+        job_dict.get('cluster_name') == cluster_name and
+        job_dict.get('tag') == tag and
+        job_dict.get('preprocess') == preprocess and
+        job_dict.get('postprocess') == postprocess
+      ):
+        return True
+    except Exception:
+      continue
       
   return False
 
