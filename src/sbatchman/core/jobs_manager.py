@@ -23,10 +23,16 @@ def job_exists(
   """
   Checks if an identical active job already exists.
   """
-  global JOBS_CACHE
-  if JOBS_CACHE is None:
-    JOBS_CACHE = jobs_list(from_active=True, from_archived=False, update_jobs=False)
-  active_jobs = JOBS_CACHE
+  # Only check jobs that match the location filters, which is much faster than scanning everything
+  active_jobs = jobs_list(
+    cluster_name=cluster_name, 
+    config_name=config_name, 
+    tag=tag, 
+    from_active=True, 
+    from_archived=False, 
+    update_jobs=False
+  )
+  
   for job in active_jobs:
     if (
       job.command == command and
@@ -74,7 +80,17 @@ def jobs_list(
   # Scan active jobs
   if from_active:
     exp_dir = get_experiments_dir()
-    for metadata_path in exp_dir.glob("**/metadata.yaml"):
+    
+    # Construct a more specific glob pattern if filters are available
+    glob_pattern = "**/metadata.yaml"
+    if cluster_name and config_name and tag:
+      glob_pattern = f"{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
+    elif cluster_name and config_name:
+      glob_pattern = f"{cluster_name}/{config_name}/**/metadata.yaml"
+    elif cluster_name:
+      glob_pattern = f"{cluster_name}/**/metadata.yaml"
+
+    for metadata_path in exp_dir.glob(glob_pattern):
       with open(metadata_path, 'r') as f:
         job_dict = yaml.safe_load(f)
         # Apply filters
@@ -90,7 +106,26 @@ def jobs_list(
   # Scan archived jobs
   if from_archived:
     archive_root = get_archive_dir()
-    for metadata_path in archive_root.glob("*/**/metadata.yaml"):
+    
+    # Construct a more specific glob pattern if filters are available
+    # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
+    glob_pattern = "*/**/metadata.yaml"
+    if archive_name and cluster_name and config_name and tag:
+      glob_pattern = f"{archive_name}/{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
+    elif archive_name and cluster_name and config_name:
+      glob_pattern = f"{archive_name}/{cluster_name}/{config_name}/**/metadata.yaml"
+    elif archive_name and cluster_name:
+      glob_pattern = f"{archive_name}/{cluster_name}/**/metadata.yaml"
+    elif archive_name:
+      glob_pattern = f"{archive_name}/**/metadata.yaml"
+    elif cluster_name and config_name and tag:
+      glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
+    elif cluster_name and config_name:
+      glob_pattern = f"*/{cluster_name}/{config_name}/**/metadata.yaml"
+    elif cluster_name:
+      glob_pattern = f"*/{cluster_name}/**/metadata.yaml"
+
+    for metadata_path in archive_root.glob(glob_pattern):
       with open(metadata_path, 'r') as f:
         job_dict = yaml.safe_load(f)
         # Apply filters
