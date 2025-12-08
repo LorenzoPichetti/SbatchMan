@@ -23,26 +23,35 @@ def job_exists(
   """
   Checks if an identical active job already exists.
   """
-  # Only check jobs that match the location filters, which is much faster than scanning everything
-  active_jobs = jobs_list(
-    cluster_name=cluster_name, 
-    config_name=config_name, 
-    tag=tag, 
-    from_active=True, 
-    from_archived=False, 
-    update_jobs=False
-  )
+  exp_dir = get_experiments_dir()
   
-  for job in active_jobs:
-    if (
-      job.command == command and
-      job.config_name == config_name and
-      job.cluster_name == cluster_name and
-      job.tag == tag and
-      job.preprocess == preprocess and
-      job.postprocess == postprocess
-    ):
-      return True
+  # Construct a specific glob pattern to only scan relevant directories.
+  # We use the directory structure to narrow down the search significantly.
+  glob_pattern = f"{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
+
+  # Iterate through files and stop as soon as a match is found (lazy evaluation)
+  for metadata_path in exp_dir.glob(glob_pattern):
+    try:
+      with open(metadata_path, 'r') as f:
+        job_dict = yaml.safe_load(f)
+      
+      if not job_dict:
+        continue
+
+      # Check content match directly on the dictionary to avoid Job object instantiation overhead
+      if (
+        job_dict.get('command') == command and
+        job_dict.get('config_name') == config_name and
+        job_dict.get('cluster_name') == cluster_name and
+        job_dict.get('tag') == tag and
+        job_dict.get('preprocess') == preprocess and
+        job_dict.get('postprocess') == postprocess
+      ):
+        return True
+    except Exception:
+      # If a file is corrupted or unreadable, we skip it
+      continue
+      
   return False
 
 def jobs_list(
