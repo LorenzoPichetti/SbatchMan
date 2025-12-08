@@ -1,6 +1,5 @@
 import shutil
 from typing import List, Optional
-import fnmatch
 
 import yaml
 
@@ -28,7 +27,8 @@ def job_exists(
   
   # Construct a specific glob pattern to only scan relevant directories.
   # We use the directory structure to narrow down the search significantly.
-  glob_pattern = f"{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
+  # Structure: cluster/config/tag/timestamp/metadata.yaml
+  glob_pattern = f"{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
 
   # Iterate through files and stop as soon as a match is found (lazy evaluation)
   for metadata_path in exp_dir.glob(glob_pattern):
@@ -57,7 +57,7 @@ def job_exists(
   archive_root = get_archive_dir()
   # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
   # We use a wildcard for archive_name
-  archive_glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
+  archive_glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
   
   for metadata_path in archive_root.glob(archive_glob_pattern):
     try:
@@ -124,19 +124,16 @@ def jobs_list(
     exp_dir = get_experiments_dir()
     
     # Construct a more specific glob pattern if filters are available
-    glob_pattern = "**/metadata.yaml"
-    if cluster_name and config_name and tag:
-      glob_pattern = f"{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
-    elif cluster_name and config_name:
-      glob_pattern = f"{cluster_name}/{config_name}/**/metadata.yaml"
-    elif cluster_name:
-      glob_pattern = f"{cluster_name}/**/metadata.yaml"
-    elif config_name and tag:
-      glob_pattern = f"*/{config_name}/{tag}/**/metadata.yaml"
-    elif config_name:
-      glob_pattern = f"*/{config_name}/**/metadata.yaml"
-    elif tag:
-      glob_pattern = f"*/*/{tag}/**/metadata.yaml"
+    # Structure: cluster/config/tag/timestamp/metadata.yaml
+    # We use fixed depth to avoid scanning subdirectories (which is very slow)
+    parts = [
+        cluster_name or "*",
+        config_name or "*",
+        tag or "*",
+        "*", # timestamp
+        "metadata.yaml"
+    ]
+    glob_pattern = "/".join(parts)
 
     candidate_paths.extend(exp_dir.glob(glob_pattern))
 
@@ -145,28 +142,16 @@ def jobs_list(
     archive_root = get_archive_dir()
     
     # Construct a more specific glob pattern if filters are available
-    # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
-    glob_pattern = "*/**/metadata.yaml"
-    if archive_name and cluster_name and config_name and tag:
-      glob_pattern = f"{archive_name}/{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
-    elif archive_name and cluster_name and config_name:
-      glob_pattern = f"{archive_name}/{cluster_name}/{config_name}/**/metadata.yaml"
-    elif archive_name and cluster_name:
-      glob_pattern = f"{archive_name}/{cluster_name}/**/metadata.yaml"
-    elif archive_name:
-      glob_pattern = f"{archive_name}/**/metadata.yaml"
-    elif cluster_name and config_name and tag:
-      glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
-    elif cluster_name and config_name:
-      glob_pattern = f"*/{cluster_name}/{config_name}/**/metadata.yaml"
-    elif cluster_name:
-      glob_pattern = f"*/{cluster_name}/**/metadata.yaml"
-    elif config_name and tag:
-      glob_pattern = f"*/*/{config_name}/{tag}/**/metadata.yaml"
-    elif config_name:
-      glob_pattern = f"*/*/{config_name}/**/metadata.yaml"
-    elif tag:
-      glob_pattern = f"*/*/*/{tag}/**/metadata.yaml"
+    # Archive structure: archive_name/cluster_name/config_name/tag/timestamp/metadata.yaml
+    parts = [
+        archive_name or "*",
+        cluster_name or "*",
+        config_name or "*",
+        tag or "*",
+        "*", # timestamp
+        "metadata.yaml"
+    ]
+    glob_pattern = "/".join(parts)
 
     candidate_paths.extend(archive_root.glob(glob_pattern))
 
@@ -181,31 +166,7 @@ def jobs_list(
     candidate_paths = candidate_paths[offset:]
 
   for metadata_path in candidate_paths:
-    # Apply filters based on path structure BEFORE reading file
-    # Active: .../cluster/config/tag/timestamp/metadata.yaml (parts[-5] is cluster)
-    # Archive: .../archive_name/cluster/config/tag/timestamp/metadata.yaml (parts[-6] is archive_name)
-    
-    is_archived = "archive" in metadata_path.parts and metadata_path.parts.index("archive") < len(metadata_path.parts) - 1
-    
-    if is_archived:
-       # Archive path logic
-       if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
-          continue
-       if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
-          continue
-       if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
-          continue
-       if archive_name and not fnmatch.fnmatch(metadata_path.parts[-6], archive_name):
-          continue
-    else:
-       # Active path logic
-       if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
-          continue
-       if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
-          continue
-       if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
-          continue
-
+    # No need for manual filtering as glob handles it (including wildcards)
     try:
       with open(metadata_path, 'r') as f:
         job_dict = yaml.safe_load(f)
