@@ -124,14 +124,14 @@ def jobs_list(
     exp_dir = get_experiments_dir()
     
     # Construct a more specific glob pattern if filters are available
-    # Structure: cluster/config/tag/timestamp/metadata.yaml
+    # Structure: cluster/config/tag/timestamp
     # We use fixed depth to avoid scanning subdirectories (which is very slow)
+    # We glob the directory itself, not the metadata file, to avoid checking file existence for every directory
     parts = [
         cluster_name or "*",
         config_name or "*",
         tag or "*",
         "*", # timestamp
-        "metadata.yaml"
     ]
     glob_pattern = "/".join(parts)
 
@@ -142,14 +142,13 @@ def jobs_list(
     archive_root = get_archive_dir()
     
     # Construct a more specific glob pattern if filters are available
-    # Archive structure: archive_name/cluster_name/config_name/tag/timestamp/metadata.yaml
+    # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
     parts = [
         archive_name or "*",
         cluster_name or "*",
         config_name or "*",
         tag or "*",
         "*", # timestamp
-        "metadata.yaml"
     ]
     glob_pattern = "/".join(parts)
 
@@ -165,8 +164,34 @@ def jobs_list(
   elif offset:
     candidate_paths = candidate_paths[offset:]
 
-  for metadata_path in candidate_paths:
-    # No need for manual filtering as glob handles it (including wildcards)
+  for exp_path in candidate_paths:
+    metadata_path = exp_path / "metadata.yaml"
+    
+    # Apply filters based on path structure BEFORE reading file
+    # Active: .../cluster/config/tag/timestamp (parts[-4] is cluster)
+    # Archive: .../archive_name/cluster/config/tag/timestamp (parts[-5] is archive_name)
+    
+    is_archived = "archive" in exp_path.parts and exp_path.parts.index("archive") < len(exp_path.parts) - 1
+    
+    if is_archived:
+       # Archive path logic
+       if cluster_name and not fnmatch.fnmatch(exp_path.parts[-4], cluster_name):
+          continue
+       if config_name and not fnmatch.fnmatch(exp_path.parts[-3], config_name):
+          continue
+       if tag and not fnmatch.fnmatch(exp_path.parts[-2], tag):
+          continue
+       if archive_name and not fnmatch.fnmatch(exp_path.parts[-5], archive_name):
+          continue
+    else:
+       # Active path logic
+       if cluster_name and not fnmatch.fnmatch(exp_path.parts[-4], cluster_name):
+          continue
+       if config_name and not fnmatch.fnmatch(exp_path.parts[-3], config_name):
+          continue
+       if tag and not fnmatch.fnmatch(exp_path.parts[-2], tag):
+          continue
+
     try:
       with open(metadata_path, 'r') as f:
         job_dict = yaml.safe_load(f)
