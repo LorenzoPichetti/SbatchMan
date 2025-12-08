@@ -1,5 +1,6 @@
 import shutil
 from typing import List, Optional
+import fnmatch
 
 import yaml
 
@@ -88,7 +89,9 @@ def jobs_list(
   archive_name: Optional[str] = None,
   from_active: bool = True,
   from_archived: bool = False,
-  update_jobs: bool = True
+  update_jobs: bool = True,
+  limit: Optional[int] = None,
+  offset: int = 0
 ) -> List[Job]:
   """
   Lists active and/or archived jobs, with optional filtering. Updates the status of active jobs by default.
@@ -101,6 +104,8 @@ def jobs_list(
     from_active: If True, include active jobs.
     from_archived: If True, include archived jobs.
     update_jobs: If True, update the status of active jobs before listing.
+    limit: If provided, limit the number of jobs returned (most recent first).
+    offset: The number of jobs to skip (used for pagination).
   Returns:
     A list of Job objects matching the filter criteria.
   Raises:
@@ -112,6 +117,8 @@ def jobs_list(
   if update_jobs:
     update_jobs_status()
   
+  candidate_paths = []
+
   # Scan active jobs
   if from_active:
     exp_dir = get_experiments_dir()
@@ -124,19 +131,14 @@ def jobs_list(
       glob_pattern = f"{cluster_name}/{config_name}/**/metadata.yaml"
     elif cluster_name:
       glob_pattern = f"{cluster_name}/**/metadata.yaml"
+    elif config_name and tag:
+      glob_pattern = f"*/{config_name}/{tag}/**/metadata.yaml"
+    elif config_name:
+      glob_pattern = f"*/{config_name}/**/metadata.yaml"
+    elif tag:
+      glob_pattern = f"*/*/{tag}/**/metadata.yaml"
 
-    for metadata_path in exp_dir.glob(glob_pattern):
-      with open(metadata_path, 'r') as f:
-        job_dict = yaml.safe_load(f)
-        # Apply filters
-        if cluster_name and not metadata_path.parts[-5] == cluster_name:
-          continue
-        if config_name and not metadata_path.parts[-4] == config_name:
-          continue
-        if tag and not metadata_path.parts[-3] == tag:
-          continue
-        if job_dict:
-          jobs.append(Job(**job_dict))
+    candidate_paths.extend(exp_dir.glob(glob_pattern))
 
   # Scan archived jobs
   if from_archived:
@@ -159,21 +161,58 @@ def jobs_list(
       glob_pattern = f"*/{cluster_name}/{config_name}/**/metadata.yaml"
     elif cluster_name:
       glob_pattern = f"*/{cluster_name}/**/metadata.yaml"
+    elif config_name and tag:
+      glob_pattern = f"*/*/{config_name}/{tag}/**/metadata.yaml"
+    elif config_name:
+      glob_pattern = f"*/*/{config_name}/**/metadata.yaml"
+    elif tag:
+      glob_pattern = f"*/*/*/{tag}/**/metadata.yaml"
 
-    for metadata_path in archive_root.glob(glob_pattern):
+    candidate_paths.extend(archive_root.glob(glob_pattern))
+
+  # Sort paths by name (descending) to get most recent jobs first
+  # This assumes the timestamp in the path sorts correctly as a string (YYYYMMDD_HHMMSS)
+  candidate_paths.sort(key=lambda p: str(p), reverse=True)
+
+  # Apply limit and offset if provided
+  if limit:
+    candidate_paths = candidate_paths[offset:offset+limit]
+  elif offset:
+    candidate_paths = candidate_paths[offset:]
+
+  for metadata_path in candidate_paths:
+    # Apply filters based on path structure BEFORE reading file
+    # Active: .../cluster/config/tag/timestamp/metadata.yaml (parts[-5] is cluster)
+    # Archive: .../archive_name/cluster/config/tag/timestamp/metadata.yaml (parts[-6] is archive_name)
+    
+    is_archived = "archive" in metadata_path.parts and metadata_path.parts.index("archive") < len(metadata_path.parts) - 1
+    
+    if is_archived:
+       # Archive path logic
+       if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
+          continue
+       if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
+          continue
+       if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
+          continue
+       if archive_name and not fnmatch.fnmatch(metadata_path.parts[-6], archive_name):
+          continue
+    else:
+       # Active path logic
+       if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
+          continue
+       if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
+          continue
+       if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
+          continue
+
+    try:
       with open(metadata_path, 'r') as f:
         job_dict = yaml.safe_load(f)
-        # Apply filters
-        if cluster_name and not metadata_path.parts[-5] == cluster_name:
-          continue
-        if config_name and not metadata_path.parts[-4] == config_name:
-          continue
-        if tag and not metadata_path.parts[-3] == tag:
-          continue
-        if archive_name and not metadata_path.parts[-6] == archive_name:
-          continue
         if job_dict:
           jobs.append(Job(**job_dict))
+    except Exception:
+      continue
   
   if status:
     status = [s.value if isinstance(s, Status) else str(s) for s in status]
@@ -321,10 +360,10 @@ def update_jobs_status() -> int:
   
   updated_count = 0
 
-  for job in active_jobs:
-    if job.status in TERMINAL_STATES:
-      continue
+  # Filter for jobs that need updating to avoid unnecessary processing
+  jobs_to_check = [job for job in active_jobs if job.status not in TERMINAL_STATES]
 
+  for job in jobs_to_check:
     try:
       config = job.get_job_config()
       new_status = config.get_job_status(job.job_id).value

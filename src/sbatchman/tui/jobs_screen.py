@@ -23,6 +23,7 @@ class JobsScreen(Screen):
     Binding("q", "app.quit", "Quit"),
     Binding("r", "refresh_jobs", "Refresh"),
     Binding("f", "remove_filter", "Remove filter"),
+    Binding("m", "load_more", "Load More"),
     Binding("enter", "select_cursor", "View Logs", priority=True)
   ]
 
@@ -38,6 +39,8 @@ class JobsScreen(Screen):
     self.all_jobs = []
     self.filter = None
     self.filtered_finished_jobs: Optional[List[Job]] = None
+    self.current_limit = 1000
+    self.page_size = 1000
 
   def compose(self) -> ComposeResult:
     yield Header()
@@ -76,12 +79,21 @@ class JobsScreen(Screen):
     self.filter = query
     self.update_tables()
 
-  def load_and_update_jobs(self) -> None:
-    self.all_jobs = jobs_list()
+  async def load_and_update_jobs(self) -> None:
+    # Run jobs_list in a thread to avoid blocking the UI
+    # We increase the limit to 1000 to show more jobs, as the async loading prevents freezing.
+    self.all_jobs = await self.app.run_in_thread(jobs_list, update_jobs=False, limit=self.current_limit)
+    
     for j in self.all_jobs:
       if j.status == Status.FAILED.value and j.exitcode:
         j.status += f'({j.exitcode})'
     self.update_tables()
+
+  async def action_load_more(self) -> None:
+    """Load the next batch of jobs."""
+    self.current_limit += self.page_size
+    self.notify(f"Loading more jobs... (Limit: {self.current_limit})")
+    await self.load_and_update_jobs()
 
   def update_tables(self):
     tables = {
