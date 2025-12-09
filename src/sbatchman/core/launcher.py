@@ -9,7 +9,7 @@ from rich.console import Console
 
 from sbatchman.core.config_manager import load_local_config
 from sbatchman.core.job import Job, Status
-from sbatchman.core.jobs_manager import job_exists
+from sbatchman.core.jobs_manager import job_exists, register_job
 from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_project_config_dir, get_scheduler_from_cluster_name
@@ -106,6 +106,9 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
   )
 
   job.write_metadata()
+  
+  # Register in cache to speed up subsequent checks in the same process
+  register_job(job)
 
   try:
     # 5. Submit the job using the scheduler's own logic

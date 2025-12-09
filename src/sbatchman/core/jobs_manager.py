@@ -1,4 +1,5 @@
 import shutil
+import fnmatch
 from typing import List, Optional
 
 import yaml
@@ -9,8 +10,9 @@ from sbatchman.core.job import Job
 from sbatchman.core.status import TERMINAL_STATES, Status
 from sbatchman.exceptions import ArchiveExistsError
 import pandas as pd
+from dataclasses import asdict
 
-JOBS_CACHE = None
+JOBS_CACHE = {}
 
 def job_exists(
   command: str,
@@ -23,62 +25,64 @@ def job_exists(
   """
   Checks if an identical active job already exists.
   """
-  exp_dir = get_experiments_dir()
-  
-  # Construct a specific glob pattern to only scan relevant directories.
-  # We use the directory structure to narrow down the search significantly.
-  glob_pattern = f"{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
+  global JOBS_CACHE
+  cache_key = (cluster_name, config_name, tag)
 
-  # Iterate through files and stop as soon as a match is found (lazy evaluation)
-  for metadata_path in exp_dir.glob(glob_pattern):
-    try:
-      with open(metadata_path, 'r') as f:
-        job_dict = yaml.safe_load(f)
-      
-      if not job_dict:
+  if cache_key not in JOBS_CACHE:
+    JOBS_CACHE[cache_key] = []
+    exp_dir = get_experiments_dir()
+    
+    # Construct a specific glob pattern to only scan relevant directories.
+    # We use the directory structure to narrow down the search significantly.
+    # Structure: cluster/config/tag/timestamp/metadata.yaml
+    glob_pattern = f"{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
+
+    # Iterate through files and populate cache
+    for metadata_path in exp_dir.glob(glob_pattern):
+      try:
+        with open(metadata_path, 'r') as f:
+          job_dict = yaml.safe_load(f)
+        
+        if job_dict:
+          JOBS_CACHE[cache_key].append(job_dict)
+      except Exception:
         continue
 
-      # Check content match directly on the dictionary to avoid Job object instantiation overhead
+    # Also check archived jobs
+    archive_root = get_archive_dir()
+    # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
+    # We use a wildcard for archive_name
+    archive_glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
+    
+    for metadata_path in archive_root.glob(archive_glob_pattern):
+      try:
+        with open(metadata_path, 'r') as f:
+          job_dict = yaml.safe_load(f)
+        
+        if job_dict:
+          JOBS_CACHE[cache_key].append(job_dict)
+      except Exception:
+        continue
+
+  # Check against cache
+  for job_dict in JOBS_CACHE[cache_key]:
       if (
         job_dict.get('command') == command and
-        job_dict.get('config_name') == config_name and
-        job_dict.get('cluster_name') == cluster_name and
-        job_dict.get('tag') == tag and
         job_dict.get('preprocess') == preprocess and
         job_dict.get('postprocess') == postprocess
       ):
         return True
-    except Exception:
-      # If a file is corrupted or unreadable, we skip it
-      continue
-
-  # Also check archived jobs
-  archive_root = get_archive_dir()
-  # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
-  # We use a wildcard for archive_name
-  archive_glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
-  
-  for metadata_path in archive_root.glob(archive_glob_pattern):
-    try:
-      with open(metadata_path, 'r') as f:
-        job_dict = yaml.safe_load(f)
-      
-      if not job_dict:
-        continue
-
-      if (
-        job_dict.get('command') == command and
-        job_dict.get('config_name') == config_name and
-        job_dict.get('cluster_name') == cluster_name and
-        job_dict.get('tag') == tag and
-        job_dict.get('preprocess') == preprocess and
-        job_dict.get('postprocess') == postprocess
-      ):
-        return True
-    except Exception:
-      continue
       
   return False
+
+def register_job(job: Job):
+  """
+  Registers a new job in the cache to avoid disk reads on subsequent checks.
+  """
+  global JOBS_CACHE
+  cache_key = (job.cluster_name, job.config_name, job.tag)
+  if cache_key in JOBS_CACHE:
+    JOBS_CACHE[cache_key].append(asdict(job))
 
 def jobs_list(
   cluster_name: Optional[str] = None,
@@ -117,63 +121,70 @@ def jobs_list(
     exp_dir = get_experiments_dir()
     
     # Construct a more specific glob pattern if filters are available
-    glob_pattern = "**/metadata.yaml"
-    if cluster_name and config_name and tag:
-      glob_pattern = f"{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
-    elif cluster_name and config_name:
-      glob_pattern = f"{cluster_name}/{config_name}/**/metadata.yaml"
-    elif cluster_name:
-      glob_pattern = f"{cluster_name}/**/metadata.yaml"
+    # Structure: cluster/config/tag/timestamp/metadata.yaml
+    # We use fixed depth to avoid scanning subdirectories (which is very slow)
+    parts = [
+        cluster_name or "*",
+        config_name or "*",
+        tag or "*",
+        "*", # timestamp
+        "metadata.yaml"
+    ]
+    glob_pattern = "/".join(parts)
 
     for metadata_path in exp_dir.glob(glob_pattern):
-      with open(metadata_path, 'r') as f:
-        job_dict = yaml.safe_load(f)
-        # Apply filters
-        if cluster_name and not metadata_path.parts[-5] == cluster_name:
+      # Apply filters based on path structure BEFORE reading file
+      # Active: .../cluster/config/tag/timestamp/metadata.yaml (parts[-5] is cluster)
+      if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
           continue
-        if config_name and not metadata_path.parts[-4] == config_name:
+      if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
           continue
-        if tag and not metadata_path.parts[-3] == tag:
+      if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
           continue
-        if job_dict:
-          jobs.append(Job(**job_dict))
+
+      try:
+        with open(metadata_path, 'r') as f:
+          job_dict = yaml.safe_load(f)
+          if job_dict:
+            jobs.append(Job(**job_dict))
+      except Exception:
+        continue
 
   # Scan archived jobs
   if from_archived:
     archive_root = get_archive_dir()
     
     # Construct a more specific glob pattern if filters are available
-    # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
-    glob_pattern = "*/**/metadata.yaml"
-    if archive_name and cluster_name and config_name and tag:
-      glob_pattern = f"{archive_name}/{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
-    elif archive_name and cluster_name and config_name:
-      glob_pattern = f"{archive_name}/{cluster_name}/{config_name}/**/metadata.yaml"
-    elif archive_name and cluster_name:
-      glob_pattern = f"{archive_name}/{cluster_name}/**/metadata.yaml"
-    elif archive_name:
-      glob_pattern = f"{archive_name}/**/metadata.yaml"
-    elif cluster_name and config_name and tag:
-      glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/**/metadata.yaml"
-    elif cluster_name and config_name:
-      glob_pattern = f"*/{cluster_name}/{config_name}/**/metadata.yaml"
-    elif cluster_name:
-      glob_pattern = f"*/{cluster_name}/**/metadata.yaml"
+    # Archive structure: archive_name/cluster_name/config_name/tag/timestamp/metadata.yaml
+    parts = [
+        archive_name or "*",
+        cluster_name or "*",
+        config_name or "*",
+        tag or "*",
+        "*", # timestamp
+        "metadata.yaml"
+    ]
+    glob_pattern = "/".join(parts)
 
     for metadata_path in archive_root.glob(glob_pattern):
-      with open(metadata_path, 'r') as f:
-        job_dict = yaml.safe_load(f)
-        # Apply filters
-        if cluster_name and not metadata_path.parts[-5] == cluster_name:
+      # Apply filters based on path structure BEFORE reading file
+      # Archive: .../archive_name/cluster/config/tag/timestamp/metadata.yaml (parts[-6] is archive_name)
+      if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
           continue
-        if config_name and not metadata_path.parts[-4] == config_name:
+      if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
           continue
-        if tag and not metadata_path.parts[-3] == tag:
+      if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
           continue
-        if archive_name and not metadata_path.parts[-6] == archive_name:
+      if archive_name and not fnmatch.fnmatch(metadata_path.parts[-6], archive_name):
           continue
-        if job_dict:
-          jobs.append(Job(**job_dict))
+
+      try:
+        with open(metadata_path, 'r') as f:
+          job_dict = yaml.safe_load(f)
+          if job_dict:
+            jobs.append(Job(**job_dict))
+      except Exception:
+        continue
   
   if status:
     status = [s.value if isinstance(s, Status) else str(s) for s in status]
