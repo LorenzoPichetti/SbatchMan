@@ -314,6 +314,7 @@ def delete_jobs(
   not_archived: bool = typer.Option(False, "--not-archived", "-na", help="Delete only active jobs."),
   all: bool = typer.Option(False, "--all", help="Delete jobs from both active and archive directories."),
   status_list: Optional[List[str]] = typer.Option(None, "--status", "-s", help="Filter jobs by status. Can be used multiple times (e.g., --status FAILED --status TIMEOUT)."),
+  variable_list: Optional[List[str]] = typer.Option(None, "--variable", "-v", help="Filter jobs by variable value (e.g. perm=rabbit)."),
 ):
   """Deletes jobs matching the specified criteria."""
 
@@ -329,6 +330,15 @@ def delete_jobs(
     casted_status_list: Optional[List[Status]] = None
     if status_list is not None:
       casted_status_list = _cast_status_list(status_list)
+    
+    variables_dict = {}
+    if variable_list:
+      for var in variable_list:
+        if "=" not in var:
+             console.print(f"[bold red]Invalid variable format: {var}. Must be key=value[/bold red]")
+             raise typer.Exit(1)
+        key, value = var.split("=", 1)
+        variables_dict[key] = value
         
     deleted_count = sbtc.delete_jobs(
       cluster_name=cluster_name,
@@ -338,6 +348,7 @@ def delete_jobs(
       archived=archived,
       not_archived=not_archived,
       status=casted_status_list,
+      variables=variables_dict if variables_dict else None,
     )
     if deleted_count:
       console.print(f"✅ Successfully deleted {deleted_count} jobs.")

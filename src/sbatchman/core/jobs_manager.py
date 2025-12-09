@@ -1,6 +1,6 @@
 import shutil
 import fnmatch
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import yaml
 
@@ -92,7 +92,8 @@ def jobs_list(
   archive_name: Optional[str] = None,
   from_active: bool = True,
   from_archived: bool = False,
-  update_jobs: bool = True
+  update_jobs: bool = True,
+  variables: Optional[Dict[str, Any]] = None
 ) -> List[Job]:
   """
   Lists active and/or archived jobs, with optional filtering. Updates the status of active jobs by default.
@@ -105,6 +106,7 @@ def jobs_list(
     from_active: If True, include active jobs.
     from_archived: If True, include archived jobs.
     update_jobs: If True, update the status of active jobs before listing.
+    variables: Filter by variable values.
   Returns:
     A list of Job objects matching the filter criteria.
   Raises:
@@ -146,6 +148,15 @@ def jobs_list(
         with open(metadata_path, 'r') as f:
           job_dict = yaml.safe_load(f)
           if job_dict:
+            if variables:
+              job_vars = job_dict.get('variables') or {}
+              match = True
+              for k, v in variables.items():
+                if str(job_vars.get(k)) != str(v):
+                  match = False
+                  break
+              if not match:
+                continue
             jobs.append(Job(**job_dict))
       except Exception:
         continue
@@ -182,6 +193,15 @@ def jobs_list(
         with open(metadata_path, 'r') as f:
           job_dict = yaml.safe_load(f)
           if job_dict:
+            if variables:
+              job_vars = job_dict.get('variables') or {}
+              match = True
+              for k, v in variables.items():
+                if str(job_vars.get(k)) != str(v):
+                  match = False
+                  break
+              if not match:
+                continue
             jobs.append(Job(**job_dict))
       except Exception:
         continue
@@ -260,6 +280,7 @@ def delete_jobs(
   archived: bool = False,
   not_archived: bool = False,
   status: Optional[List[Status]] = None,
+  variables: Optional[Dict[str, Any]] = None
 ) -> int:
   """
   Deletes jobs matching the filter criteria.
@@ -272,6 +293,7 @@ def delete_jobs(
     archived: If True, delete only archived jobs.
     not_archived: If True, delete only active jobs.
     status: Filter jobs by status.
+    variables: Filter jobs by variable values.
 
   Returns:
     The number of deleted jobs.
@@ -284,7 +306,8 @@ def delete_jobs(
     from_active=not_archived,
     from_archived=archived,
     status=status,
-    update_jobs=False
+    update_jobs=False,
+    variables=variables
   )
 
   if not jobs_to_delete:
