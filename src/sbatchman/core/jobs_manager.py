@@ -284,6 +284,7 @@ def delete_jobs(
     from_active=not_archived,
     from_archived=archived,
     status=status,
+    update_jobs=False
   )
 
   if not jobs_to_delete:
