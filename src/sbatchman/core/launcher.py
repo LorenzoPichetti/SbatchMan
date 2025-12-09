@@ -511,6 +511,7 @@ def _launch_job_combinations(
       # print('='*40)
       try:
         job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), cluster_name=cluster_name, dry_run=dry_run)
+        console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
         launched_jobs.append(job)
         previous_job_id = job.job_id
       except JobExistsError as e:
@@ -536,6 +537,7 @@ def _launch_job_combinations(
       # print('='*40)
       try:
         job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), variables=var_dict, cluster_name=cluster_name, dry_run=dry_run)
+        console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
         launched_jobs.append(job)
         previous_job_id = job.job_id
       except JobExistsError as e:
