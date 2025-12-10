@@ -1,10 +1,15 @@
 import shutil
 import fnmatch
+import os
 from typing import List, Optional, Dict, Any
 import concurrent.futures
 from pathlib import Path
 
 import yaml
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader
 
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_archive_dir, get_experiments_dir
@@ -89,7 +94,7 @@ def register_job(job: Job):
 def _load_job_metadata(metadata_path: Path, variables: Optional[Dict[str, Any]] = None) -> Optional[Job]:
   try:
     with open(metadata_path, 'r') as f:
-      job_dict = yaml.safe_load(f)
+      job_dict = yaml.load(f, Loader=SafeLoader)
       if job_dict:
         if variables:
           job_vars = job_dict.get('variables') or {}
@@ -108,27 +113,35 @@ def _load_job_metadata(metadata_path: Path, variables: Optional[Dict[str, Any]] 
 def _get_matching_subdirs(parent: Path, pattern: Optional[str]) -> List[Path]:
     """
     Helper to get subdirectories matching a pattern (exact or wildcard).
+    Uses os.scandir for performance to avoid unnecessary stat calls.
     """
     if not parent.exists():
         return []
     
-    if not pattern:
-        # No pattern means "all directories"
-        try:
-            return [p for p in parent.iterdir() if p.is_dir()]
-        except OSError:
-            return []
-
-    if set('*?[').intersection(pattern):
-        # Pattern contains wildcards, scan and match
-        try:
-            return [p for p in parent.iterdir() if p.is_dir() and fnmatch.fnmatch(p.name, pattern)]
-        except OSError:
-            return []
-    else:
-        # Exact match optimization
-        target = parent / pattern
-        return [target] if target.exists() and target.is_dir() else []
+    results = []
+    try:
+        if not pattern:
+            # No pattern means "all directories"
+            with os.scandir(parent) as it:
+                for entry in it:
+                    if entry.is_dir():
+                        results.append(Path(entry.path))
+        
+        elif set('*?[').intersection(pattern):
+            # Pattern contains wildcards
+            with os.scandir(parent) as it:
+                for entry in it:
+                    if entry.is_dir() and fnmatch.fnmatch(entry.name, pattern):
+                        results.append(Path(entry.path))
+        else:
+            # Exact match optimization
+            target = parent / pattern
+            if target.exists() and target.is_dir():
+                results.append(target)
+    except OSError:
+        pass
+        
+    return results
 
 def jobs_list(
   cluster_name: Optional[str] = None,
@@ -271,7 +284,9 @@ def jobs_list(
                     except OSError:
                         continue
 
-  with concurrent.futures.ThreadPoolExecutor() as executor:
+  # Use a higher number of workers for I/O bound tasks
+  max_workers = min(100, len(paths_to_process) + 1)
+  with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
       future_to_path = {executor.submit(_load_job_metadata, p, variables): p for p in paths_to_process}
       for future in concurrent.futures.as_completed(future_to_path):
           job = future.result()
