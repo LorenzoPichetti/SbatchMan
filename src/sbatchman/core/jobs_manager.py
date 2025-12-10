@@ -1,6 +1,8 @@
 import shutil
 import fnmatch
 from typing import List, Optional, Dict, Any
+import concurrent.futures
+from pathlib import Path
 
 import yaml
 
@@ -84,6 +86,25 @@ def register_job(job: Job):
   if cache_key in JOBS_CACHE:
     JOBS_CACHE[cache_key].append(asdict(job))
 
+def _load_job_metadata(metadata_path: Path, variables: Optional[Dict[str, Any]] = None) -> Optional[Job]:
+  try:
+    with open(metadata_path, 'r') as f:
+      job_dict = yaml.safe_load(f)
+      if job_dict:
+        if variables:
+          job_vars = job_dict.get('variables') or {}
+          match = True
+          for k, v in variables.items():
+            if str(job_vars.get(k)) != str(v):
+              match = False
+              break
+          if not match:
+            return None
+        return Job(**job_dict)
+  except Exception:
+    return None
+  return None
+
 def jobs_list(
   cluster_name: Optional[str] = None,
   config_name: Optional[str] = None,
@@ -118,6 +139,8 @@ def jobs_list(
   if update_jobs:
     update_jobs_status()
   
+  paths_to_process = []
+
   # Scan active jobs
   if from_active:
     exp_dir = get_experiments_dir()
@@ -143,23 +166,7 @@ def jobs_list(
           continue
       if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
           continue
-
-      try:
-        with open(metadata_path, 'r') as f:
-          job_dict = yaml.safe_load(f)
-          if job_dict:
-            if variables:
-              job_vars = job_dict.get('variables') or {}
-              match = True
-              for k, v in variables.items():
-                if str(job_vars.get(k)) != str(v):
-                  match = False
-                  break
-              if not match:
-                continue
-            jobs.append(Job(**job_dict))
-      except Exception:
-        continue
+      paths_to_process.append(metadata_path)
 
   # Scan archived jobs
   if from_archived:
@@ -188,23 +195,14 @@ def jobs_list(
           continue
       if archive_name and not fnmatch.fnmatch(metadata_path.parts[-6], archive_name):
           continue
+      paths_to_process.append(metadata_path)
 
-      try:
-        with open(metadata_path, 'r') as f:
-          job_dict = yaml.safe_load(f)
-          if job_dict:
-            if variables:
-              job_vars = job_dict.get('variables') or {}
-              match = True
-              for k, v in variables.items():
-                if str(job_vars.get(k)) != str(v):
-                  match = False
-                  break
-              if not match:
-                continue
-            jobs.append(Job(**job_dict))
-      except Exception:
-        continue
+  with concurrent.futures.ThreadPoolExecutor() as executor:
+      future_to_path = {executor.submit(_load_job_metadata, p, variables): p for p in paths_to_process}
+      for future in concurrent.futures.as_completed(future_to_path):
+          job = future.result()
+          if job:
+              jobs.append(job)
   
   if status:
     status = [s.value if isinstance(s, Status) else str(s) for s in status]
