@@ -342,6 +342,30 @@ def delete_jobs(
 
   return len(jobs_to_delete)
 
+def _update_single_job_status(job: Job) -> bool:
+    """
+    Helper function to update a single job's status.
+    Returns True if the status was updated, False otherwise.
+    """
+    if job.status in TERMINAL_STATES:
+      return False
+
+    try:
+      config = job.get_job_config()
+      new_status = config.get_job_status(job.job_id).value
+      
+      if new_status == Status.UNKNOWN.value:
+        return False
+
+      if new_status != job.status:
+        job.status = new_status
+        job.write_metadata()
+        return True
+    except Exception:
+      # Ignore errors (e.g., config not found) and continue
+      return False
+    return False
+
 def update_jobs_status() -> int:
   """
   Updates the status of active jobs on the current cluster by querying the scheduler.
@@ -354,23 +378,10 @@ def update_jobs_status() -> int:
   
   updated_count = 0
 
-  for job in active_jobs:
-    if job.status in TERMINAL_STATES:
-      continue
-
-    try:
-      config = job.get_job_config()
-      new_status = config.get_job_status(job.job_id).value
-      
-      if new_status == Status.UNKNOWN.value:
-        continue
-
-      if new_status != job.status:
-        job.status = new_status
-        job.write_metadata()
-        updated_count += 1
-    except Exception as e:
-      # Ignore errors (e.g., config not found) and continue
-      continue
+  with concurrent.futures.ThreadPoolExecutor() as executor:
+      futures = [executor.submit(_update_single_job_status, job) for job in active_jobs]
+      for future in concurrent.futures.as_completed(futures):
+          if future.result():
+              updated_count += 1
           
   return updated_count
