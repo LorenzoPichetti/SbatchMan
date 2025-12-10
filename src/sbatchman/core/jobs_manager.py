@@ -221,11 +221,11 @@ def jobs_list(
 
                 # Level 4: Timestamp (always scan all timestamps)
                 try:
-                    for timestamp_dir in tag_dir.iterdir():
-                        if timestamp_dir.is_dir():
-                            metadata_path = timestamp_dir / "metadata.yaml"
-                            if metadata_path.exists():
-                                paths_to_process.append(metadata_path)
+                    with os.scandir(tag_dir) as it:
+                        for entry in it:
+                            if entry.is_dir():
+                                # Optimistically assume metadata.yaml exists to avoid stat() call
+                                paths_to_process.append(Path(entry.path) / "metadata.yaml")
                 except OSError:
                     continue
 
@@ -276,11 +276,11 @@ def jobs_list(
 
                     # Level 4: Timestamp
                     try:
-                        for timestamp_dir in tag_dir.iterdir():
-                            if timestamp_dir.is_dir():
-                                metadata_path = timestamp_dir / "metadata.yaml"
-                                if metadata_path.exists():
-                                    paths_to_process.append(metadata_path)
+                        with os.scandir(tag_dir) as it:
+                            for entry in it:
+                                if entry.is_dir():
+                                    # Optimistically assume metadata.yaml exists to avoid stat() call
+                                    paths_to_process.append(Path(entry.path) / "metadata.yaml")
                     except OSError:
                         continue
 
