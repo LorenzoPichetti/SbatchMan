@@ -105,6 +105,31 @@ def _load_job_metadata(metadata_path: Path, variables: Optional[Dict[str, Any]] 
     return None
   return None
 
+def _get_matching_subdirs(parent: Path, pattern: Optional[str]) -> List[Path]:
+    """
+    Helper to get subdirectories matching a pattern (exact or wildcard).
+    """
+    if not parent.exists():
+        return []
+    
+    if not pattern:
+        # No pattern means "all directories"
+        try:
+            return [p for p in parent.iterdir() if p.is_dir()]
+        except OSError:
+            return []
+
+    if set('*?[').intersection(pattern):
+        # Pattern contains wildcards, scan and match
+        try:
+            return [p for p in parent.iterdir() if p.is_dir() and fnmatch.fnmatch(p.name, pattern)]
+        except OSError:
+            return []
+    else:
+        # Exact match optimization
+        target = parent / pattern
+        return [target] if target.exists() and target.is_dir() else []
+
 def jobs_list(
   cluster_name: Optional[str] = None,
   config_name: Optional[str] = None,
@@ -148,25 +173,48 @@ def jobs_list(
     # Construct a more specific glob pattern if filters are available
     # Structure: cluster/config/tag/timestamp/metadata.yaml
     # We use fixed depth to avoid scanning subdirectories (which is very slow)
-    parts = [
-        cluster_name or "*",
-        config_name or "*",
-        tag or "*",
-        "*", # timestamp
-        "metadata.yaml"
-    ]
-    glob_pattern = "/".join(parts)
+    # parts = [
+    #     cluster_name or "*",
+    #     config_name or "*",
+    #     tag or "*",
+    #     "*", # timestamp
+    #     "metadata.yaml"
+    # ]
+    # glob_pattern = "/".join(parts)
 
-    for metadata_path in exp_dir.glob(glob_pattern):
-      # Apply filters based on path structure BEFORE reading file
-      # Active: .../cluster/config/tag/timestamp/metadata.yaml (parts[-5] is cluster)
-      if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
-          continue
-      if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
-          continue
-      if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
-          continue
-      paths_to_process.append(metadata_path)
+    # for metadata_path in exp_dir.glob(glob_pattern):
+    #   # Apply filters based on path structure BEFORE reading file
+    #   # Active: .../cluster/config/tag/timestamp/metadata.yaml (parts[-5] is cluster)
+    #   if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
+    #       continue
+    #   if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
+    #       continue
+    #   if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
+    #       continue
+    #   paths_to_process.append(metadata_path)
+    
+    # Optimized scanning: iterate directory levels manually to avoid full glob scan
+    # Level 1: Cluster
+    clusters = _get_matching_subdirs(exp_dir, cluster_name)
+    for cluster_dir in clusters:
+        
+        # Level 2: Config
+        configs = _get_matching_subdirs(cluster_dir, config_name)
+        for config_dir in configs:
+
+            # Level 3: Tag
+            tags = _get_matching_subdirs(config_dir, tag)
+            for tag_dir in tags:
+
+                # Level 4: Timestamp (always scan all timestamps)
+                try:
+                    for timestamp_dir in tag_dir.iterdir():
+                        if timestamp_dir.is_dir():
+                            metadata_path = timestamp_dir / "metadata.yaml"
+                            if metadata_path.exists():
+                                paths_to_process.append(metadata_path)
+                except OSError:
+                    continue
 
   # Scan archived jobs
   if from_archived:
@@ -174,28 +222,54 @@ def jobs_list(
     
     # Construct a more specific glob pattern if filters are available
     # Archive structure: archive_name/cluster_name/config_name/tag/timestamp/metadata.yaml
-    parts = [
-        archive_name or "*",
-        cluster_name or "*",
-        config_name or "*",
-        tag or "*",
-        "*", # timestamp
-        "metadata.yaml"
-    ]
-    glob_pattern = "/".join(parts)
+    # parts = [
+    #     archive_name or "*",
+    #     cluster_name or "*",
+    #     config_name or "*",
+    #     tag or "*",
+    #     "*", # timestamp
+    #     "metadata.yaml"
+    # ]
+    # glob_pattern = "/".join(parts)
 
-    for metadata_path in archive_root.glob(glob_pattern):
-      # Apply filters based on path structure BEFORE reading file
-      # Archive: .../archive_name/cluster/config/tag/timestamp/metadata.yaml (parts[-6] is archive_name)
-      if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
-          continue
-      if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
-          continue
-      if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
-          continue
-      if archive_name and not fnmatch.fnmatch(metadata_path.parts[-6], archive_name):
-          continue
-      paths_to_process.append(metadata_path)
+    # for metadata_path in archive_root.glob(glob_pattern):
+    #   # Apply filters based on path structure BEFORE reading file
+    #   # Archive: .../archive_name/cluster/config/tag/timestamp/metadata.yaml (parts[-6] is archive_name)
+    #   if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
+    #       continue
+    #   if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
+    #       continue
+    #   if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
+    #       continue
+    #   if archive_name and not fnmatch.fnmatch(metadata_path.parts[-6], archive_name):
+    #       continue
+    #   paths_to_process.append(metadata_path)
+
+    # Optimized scanning for archives
+    archives = _get_matching_subdirs(archive_root, archive_name)
+    for archive_dir in archives:
+
+        # Level 1: Cluster
+        clusters = _get_matching_subdirs(archive_dir, cluster_name)
+        for cluster_dir in clusters:
+            
+            # Level 2: Config
+            configs = _get_matching_subdirs(cluster_dir, config_name)
+            for config_dir in configs:
+
+                # Level 3: Tag
+                tags = _get_matching_subdirs(config_dir, tag)
+                for tag_dir in tags:
+
+                    # Level 4: Timestamp
+                    try:
+                        for timestamp_dir in tag_dir.iterdir():
+                            if timestamp_dir.is_dir():
+                                metadata_path = timestamp_dir / "metadata.yaml"
+                                if metadata_path.exists():
+                                    paths_to_process.append(metadata_path)
+                    except OSError:
+                        continue
 
   with concurrent.futures.ThreadPoolExecutor() as executor:
       future_to_path = {executor.submit(_load_job_metadata, p, variables): p for p in paths_to_process}
