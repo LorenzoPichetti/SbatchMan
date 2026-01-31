@@ -3,6 +3,7 @@ import datetime
 import itertools
 import re
 import yaml
+import fnmatch
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from rich.console import Console
@@ -372,12 +373,18 @@ def _should_skip_job(
   Args:
     job_tag: The substituted tag for the job.
     var_dict: The variable dictionary for this job combination.
-    filter_tags: If provided, only allow jobs whose tag matches one of these.
+    filter_tags: If provided, only allow jobs whose tag matches one of these (supports wildcards).
     filter_variables: If provided, only allow jobs where variables match all key=value pairs.
   """
-  # Check tag filter
-  if filter_tags is not None and job_tag not in filter_tags:
-    return True
+  # Check tag filter (supports wildcards)
+  if filter_tags is not None:
+    matched = False
+    for pattern in filter_tags:
+      if fnmatch.fnmatch(job_tag, pattern):
+        matched = True
+        break
+    if not matched:
+      return True
   
   # Check variable filter
   if filter_variables is not None:
@@ -455,6 +462,14 @@ def launch_jobs_from_file(
 
     config_jobs = job_def.get("config_jobs", [])
     if not config_jobs:
+      job_tag = job_def.get("tag", "default")
+      
+      # Early tag filter: skip if tag doesn't match any filter pattern
+      if filter_tags is not None:
+        matched = any(fnmatch.fnmatch(job_tag, pattern) for pattern in filter_tags)
+        if not matched:
+          continue
+      
       if job_cluster_name is not None and machine_cluster_name is not None and job_cluster_name != machine_cluster_name:
         continue # Skip job if job's cluster name doesn't match the machine's cluster name
 
@@ -462,7 +477,7 @@ def launch_jobs_from_file(
       previous_job_id = _launch_job_combinations(
         job_config_template,
         job_command_template,
-        "default",
+        job_tag,
         job_preprocess_template,
         job_postprocess_template,
         job_cluster_name,
@@ -480,6 +495,13 @@ def launch_jobs_from_file(
         tag_name = entry.get("tag")
         if not tag_name:
           continue # Skip matrix entry if it has no tag
+
+        # Early tag filter: skip if static tag doesn't match any filter pattern
+        # (dynamic tags with variables like {model} are checked later after substitution)
+        if filter_tags is not None and not _extract_used_vars(tag_name):
+          matched = any(fnmatch.fnmatch(tag_name, pattern) for pattern in filter_tags)
+          if not matched:
+            continue
 
         entry_command_template = entry.get("command", job_command_template)
         entry_preprocess_template = entry.get("preprocess", job_preprocess_template)
