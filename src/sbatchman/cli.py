@@ -220,12 +220,13 @@ def configure(
 def launch(
   file: Optional[Path] = typer.Option(None, "--file", "-f", help="YAML file that describes a batch of experiments."),
   config: Optional[str] = typer.Option(None, "--config", help="Configuration name."),
-  tag: str = typer.Option("default", "--tag", help="Tag for this experiment (default: 'default')."),
+  tag: Optional[List[str]] = typer.Option(None, "--tag", "-t", help="Tag for the experiment. If --file is used, it filters jobs by tag (can be used multiple times)."),
   command: Optional[str] = typer.Argument(None, help="The executable and its parameters, enclosed in quotes."),
   preprocess: Optional[str] = typer.Option(None, "--preprocess", help="Command to run before the main job (optional)."),
   postprocess: Optional[str] = typer.Option(None, "--postprocess", 
   help="Command to run after the main job (optional)."),
-  force: bool = typer.Option(False, "--force", help="Force submission even if identical jobs already exist.")
+  force: bool = typer.Option(False, "--force", help="Force submission even if identical jobs already exist."),
+  variable: Optional[List[str]] = typer.Option(None, "--variable", "-v", help="Only launch jobs where variable matches value (e.g. model=gpt4). Can be used multiple times. Only applicable with --file."),
 ):
   """Launches an experiment (or a batch of experiments) using a predefined configuration.
 
@@ -233,19 +234,35 @@ def launch(
   """
 
   try:
+    # Parse variable into a dict
+    filter_variables_dict = {}
+    if variable:
+      for var in variable:
+        if "=" not in var:
+          console.print(f"[bold red]Invalid variable format: {var}. Must be key=value[/bold red]")
+          raise typer.Exit(1)
+        key, value = var.split("=", 1)
+        filter_variables_dict[key] = value
+
     # Call the API/launcher
     if file:
-      jobs = sbtc.launch_jobs_from_file(file, force=force)
+      jobs = sbtc.launch_jobs_from_file(
+        file,
+        force=force,
+        filter_tags=tag,
+        filter_variables=filter_variables_dict if filter_variables_dict else None,
+      )
       failed_sub_jobs_count = len([1 for j in jobs if j.status == Status.FAILED_SUBMISSION.value])
       ok_jobs_count = len(jobs) - failed_sub_jobs_count
       console.print(f"✅ Submitted successfully {ok_jobs_count} jobs.")
       if failed_sub_jobs_count > 0:
         console.print(f"❌ Failed to submit {failed_sub_jobs_count} jobs (you can find the errors in the jobs stderr file, from `sbatchman status`).")
-    elif config and tag and command:
+    elif config and command:
+        actual_tag = tag[0] if tag else "default"
         job = sbtc.launch_job(
           config_name=config,
           command=command,
-          tag=tag,
+          tag=actual_tag,
           preprocess=preprocess,
           postprocess=postprocess,
           force=force
