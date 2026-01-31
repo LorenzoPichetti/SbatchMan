@@ -359,12 +359,52 @@ def _extract_used_vars(*templates):
       var_names.update(re.findall(r"{(\w+)}", template))
   return var_names
 
-def launch_jobs_from_file(jobs_file_path: Path, force: bool = False, dry_run: bool = False) -> List[Job]:
+
+def _should_skip_job(
+  job_tag: str,
+  var_dict: Dict[str, Any],
+  filter_tags: Optional[List[str]],
+  filter_variables: Optional[Dict[str, Any]],
+) -> bool:
+  """
+  Returns True if the job should be skipped based on the filter criteria.
+  
+  Args:
+    job_tag: The substituted tag for the job.
+    var_dict: The variable dictionary for this job combination.
+    filter_tags: If provided, only allow jobs whose tag matches one of these.
+    filter_variables: If provided, only allow jobs where variables match all key=value pairs.
+  """
+  # Check tag filter
+  if filter_tags is not None and job_tag not in filter_tags:
+    return True
+  
+  # Check variable filter
+  if filter_variables is not None:
+    for key, value in filter_variables.items():
+      if key not in var_dict:
+        return True
+      # Convert both to string for comparison (variables from CLI are strings)
+      if str(var_dict[key]) != str(value):
+        return True
+  
+  return False
+
+
+def launch_jobs_from_file(
+  jobs_file_path: Path,
+  force: bool = False,
+  dry_run: bool = False,
+  filter_tags: Optional[List[str]] = None,
+  filter_variables: Optional[Dict[str, Any]] = None,
+) -> List[Job]:
   """  Launches jobs based on a YAML configuration file.
   Args:
     jobs_file_path: Path to the YAML file containing job definitions.
     force: If True, will overwrite existing jobs with the same configuration.
-    dry_run: If True, will return the list of jobs but will not launch thes (warning: won't work for sequential jobs)
+    dry_run: If True, will return the list of jobs but will not launch them (warning: won't work for sequential jobs)
+    filter_tags: If provided, only launch jobs whose tag matches one of these values.
+    filter_variables: If provided, only launch jobs where variables match all key=value pairs.
   Returns:
     A list of Job objects representing the launched jobs.
   Raises:
@@ -432,6 +472,8 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False, dry_run: bo
         global_is_sequential,
         previous_job_id,
         dry_run=dry_run,
+        filter_tags=filter_tags,
+        filter_variables=filter_variables,
       )
     else:
       for entry in config_jobs:
@@ -465,6 +507,8 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False, dry_run: bo
           global_is_sequential,
           previous_job_id,
           dry_run=dry_run,
+          filter_tags=filter_tags,
+          filter_variables=filter_variables,
         )
 
   return launched_jobs
@@ -482,9 +526,15 @@ def _launch_job_combinations(
   sequential: bool = False,
   previous_job_id: Optional[int] = None,
   dry_run: bool = False,
+  filter_tags: Optional[List[str]] = None,
+  filter_variables: Optional[Dict[str, Any]] = None,
 ) -> Optional[int]:
     """
     Generates and launches jobs for all combinations of variables.
+
+    Args:
+      filter_tags: If provided, only launch jobs whose substituted tag matches one of these values.
+      filter_variables: If provided, only launch jobs where variables match all key=value pairs.
 
     Returns: the id of the last submitted job
     """
@@ -502,6 +552,11 @@ def _launch_job_combinations(
       job_tag = _substitute(tag, {})
       preprocess = _substitute(preprocess_template, {})
       postprocess = _substitute(postprocess_template, {})
+      
+      # Check if this job should be skipped based on filters
+      if _should_skip_job(job_tag, {}, filter_tags, filter_variables):
+        return previous_job_id
+      
       # print('='*40)
       # print(f'{config_name=}')
       # print(f'{preprocess=}')
@@ -528,6 +583,11 @@ def _launch_job_combinations(
       job_tag = _substitute(tag, var_dict)
       preprocess = _substitute(preprocess_template, var_dict)
       postprocess = _substitute(postprocess_template, var_dict)
+      
+      # Check if this job should be skipped based on filters
+      if _should_skip_job(job_tag, var_dict, filter_tags, filter_variables):
+        continue
+      
       # print('='*40)
       # print(f'{config_name=}')
       # print(f'{preprocess=}')
