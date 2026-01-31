@@ -92,6 +92,43 @@ def set_cluster_name(
     console.print(f"[bold red]Error:[/bold red] {e}")
     raise typer.Exit(code=1)
 
+@app.command("set-max-jobs")
+def set_max_jobs(
+  max_jobs: Optional[int] = typer.Argument(None, help="Maximum number of queued/running jobs. Omit to disable the limit.")
+):
+  """
+  Sets the maximum number of jobs that can be queued/running at once.
+  
+  When launching jobs, sbatchman will wait if this limit is reached.
+  Omit the argument to disable the limit (allow unlimited jobs).
+  """
+  try:
+    global_config.set_max_queued_jobs(max_jobs)
+    if max_jobs is None:
+      console.print("[green]✓[/green] Max queued jobs limit [bold]disabled[/bold] (unlimited).")
+    else:
+      console.print(f"[green]✓[/green] Max queued jobs set to [bold]{max_jobs}[/bold].")
+  except SbatchManError as e:
+    console.print(f"[bold red]Error:[/bold red] {e}")
+    raise typer.Exit(code=1)
+
+@app.command("show-settings")
+def show_settings():
+  """
+  Shows the current global settings.
+  """
+  try:
+    cluster_name = global_config.get_cluster_name()
+  except:
+    cluster_name = "[dim]not set[/dim]"
+  
+  max_jobs = global_config.get_max_queued_jobs()
+  max_jobs_str = str(max_jobs) if max_jobs is not None else "[dim]unlimited[/dim]"
+  
+  console.print("[bold]Global Settings:[/bold]")
+  console.print(f"  Cluster name: {cluster_name}")
+  console.print(f"  Max queued jobs: {max_jobs_str}")
+
 @app.command()
 def init(
   path: Path = typer.Argument(Path("."), help="The directory where the SbatchMan project folder should be created."),
