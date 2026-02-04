@@ -271,3 +271,28 @@ def update_jobs_status() -> int:
       continue
           
   return updated_count
+
+
+def count_active_jobs() -> int:
+  """
+  Counts the number of jobs that are currently queued or running by querying squeue.
+  
+  Returns:
+    The number of jobs with QUEUED or RUNNING status.
+  """
+  import subprocess
+  
+  try:
+    result = subprocess.run(
+      ["squeue", "--me", "-h", "-t", "PENDING,RUNNING"],
+      capture_output=True,
+      text=True,
+      timeout=30
+    )
+    if result.returncode == 0:
+      lines = [line for line in result.stdout.strip().split('\n') if line.strip()]
+      return len(lines)
+  except Exception:
+    pass
+  
+  return 0
