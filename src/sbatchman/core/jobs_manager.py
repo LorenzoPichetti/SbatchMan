@@ -487,7 +487,7 @@ def count_active_jobs() -> int:
   
   try:
     result = subprocess.run(
-      ["squeue", "-u", os.environ.get("USER", os.getlogin()), "-h", "-t", "PENDING,RUNNING"],
+      ["squeue", "--me", "-h", "-t", "PENDING,RUNNING"],
       capture_output=True,
       text=True,
       timeout=30
