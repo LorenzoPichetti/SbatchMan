@@ -83,12 +83,12 @@ This command will create a `SbatchMan` directory for your project, which will co
     Whenever you call `sbatchman` command, SbatchMan will look for a project directory (`SbatchMan`) starting from the current working directory (CWD) and exploring parents directories up to the user home (e.g. in linux `$HOME`).  
 
 !!! tip
-    **You can skip the following `Configuration` and `Launch` sections. The [Configuration](configurations.md) and  [Job Submission](job_submission.md) sections provide a more "friendly", powerful and reproducible way of creating  configuration and launching jobs, especially if you need a lot of them.**
+    **You can skip the following `Configuration` and `Launch` sections. The [Configurations](configurations.md) and  [Job Submission](job_submission.md) sections provide a more "friendly", powerful and reproducible way of creating  configuration and launching jobs, especially if you need a lot of them.**
 
 ## ⚙️ Create a Configuration
 
 !!! tip
-    **The tool is not intended to be used with the commands you are about to see. They are useful to learn and play around. Even for simple use cases, create you configurations as explained in [Configuration](configurations.md).**
+    **The tool is not intended to be used with the commands you are about to see. They are useful to learn and play around. Even for simple use cases, create you configurations as explained in [Configurations](configurations.md).**
 
 First, set up your cluster configuration(s). This is where you define the parameters for your cluster, such as environment variables, partition, time limit, and number of GPUs.  
 For example, to create a configuration for a cluster named `my_gpu_cluster`:
