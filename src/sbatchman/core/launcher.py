@@ -2,16 +2,18 @@ import subprocess
 import datetime
 import itertools
 import re
+import time
 import yaml
+import fnmatch
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from rich.console import Console
 
 from sbatchman.core.config_manager import load_local_config
 from sbatchman.core.job import Job, Status
-from sbatchman.core.jobs_manager import job_exists
+from sbatchman.core.jobs_manager import job_exists, register_job, count_active_jobs
 from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError
-from sbatchman.config.global_config import get_cluster_name
+from sbatchman.config.global_config import get_cluster_name, get_max_queued_jobs
 from sbatchman.config.project_config import get_project_config_dir, get_scheduler_from_cluster_name
 
 from sbatchman.config.project_config import get_experiments_dir
@@ -19,6 +21,38 @@ from sbatchman.schedulers.pbs import pbs_submit
 from sbatchman.schedulers.slurm import slurm_submit
 
 console = Console()
+
+DEFAULT_QUEUE_WAIT_INTERVAL = 30  # seconds to wait between queue checks
+
+
+def wait_for_queue_slot(
+  max_jobs: Optional[int] = None,
+  wait_interval: int = DEFAULT_QUEUE_WAIT_INTERVAL
+) -> None:
+  """
+  Waits until there is a slot available in the job queue.
+  
+  Args:
+    max_jobs: Maximum number of allowed queued/running jobs. If None, uses the global setting.
+    wait_interval: Seconds to wait between checks.
+  """
+  if max_jobs is None:
+    max_jobs = get_max_queued_jobs()
+  
+  if max_jobs is None:
+    return  # No limit configured
+  
+  while True:
+    current_count = count_active_jobs()
+    if current_count < max_jobs:
+      return
+    
+    console.print(
+      f"[yellow]Queue limit reached ({current_count}/{max_jobs} jobs). "
+      f"Waiting {wait_interval}s for a slot...[/yellow]"
+    )
+    time.sleep(wait_interval)
+
 
 def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = None):
   try:
@@ -106,6 +140,9 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
   )
 
   job.write_metadata()
+  
+  # Register in cache to speed up subsequent checks in the same process
+  register_job(job)
 
   try:
     # 5. Submit the job using the scheduler's own logic
@@ -154,6 +191,7 @@ def launch_job(
   previous_job_id: Optional[int] = None,
   variables: Optional[Dict[str, Any]] = None,
   dry_run: bool = False,
+  max_queued_jobs: Optional[int] = None,
 ) -> Job:
   """
   Launches an experiment based on a configuration name.
@@ -165,6 +203,7 @@ def launch_job(
     preprocess: Optional; a command to run before the main command.
     postprocess: Optional; a command to run after the main command.
     previous_job_id: Optional; if this is set, the job will be only launched after the previous is done.
+    max_queued_jobs: Optional; if set, will wait before submitting if the queue has this many jobs.
   Returns:
     A Job object representing the launched job.
   Raises:
@@ -197,6 +236,9 @@ def launch_job(
     raise ConfigurationNotFoundError(f"Configuration '{config_name}' for cluster '{cluster_name}' not found at '{config_path}'.")
   template_script = open(config_path, "r").read()
 
+  # Wait for queue slot if limit is configured (skip for dry runs)
+  if not dry_run:
+    wait_for_queue_slot(max_queued_jobs)
 
   if not force and job_exists(command, config_name, cluster_name, tag, preprocess, postprocess):
     raise JobExistsError(
@@ -356,12 +398,58 @@ def _extract_used_vars(*templates):
       var_names.update(re.findall(r"{(\w+)}", template))
   return var_names
 
-def launch_jobs_from_file(jobs_file_path: Path, force: bool = False, dry_run: bool = False) -> List[Job]:
+
+def _should_skip_job(
+  job_tag: str,
+  var_dict: Dict[str, Any],
+  filter_tags: Optional[List[str]],
+  filter_variables: Optional[Dict[str, Any]],
+) -> bool:
+  """
+  Returns True if the job should be skipped based on the filter criteria.
+  
+  Args:
+    job_tag: The substituted tag for the job.
+    var_dict: The variable dictionary for this job combination.
+    filter_tags: If provided, only allow jobs whose tag matches one of these (supports wildcards).
+    filter_variables: If provided, only allow jobs where variables match all key=value pairs.
+  """
+  # Check tag filter (supports wildcards)
+  if filter_tags is not None:
+    matched = False
+    for pattern in filter_tags:
+      if fnmatch.fnmatch(job_tag, pattern):
+        matched = True
+        break
+    if not matched:
+      return True
+  
+  # Check variable filter
+  if filter_variables is not None:
+    for key, value in filter_variables.items():
+      if key not in var_dict:
+        return True
+      # Convert both to string for comparison (variables from CLI are strings)
+      if str(var_dict[key]) != str(value):
+        return True
+  
+  return False
+
+
+def launch_jobs_from_file(
+  jobs_file_path: Path,
+  force: bool = False,
+  dry_run: bool = False,
+  filter_tags: Optional[List[str]] = None,
+  filter_variables: Optional[Dict[str, Any]] = None,
+) -> List[Job]:
   """  Launches jobs based on a YAML configuration file.
   Args:
     jobs_file_path: Path to the YAML file containing job definitions.
     force: If True, will overwrite existing jobs with the same configuration.
-    dry_run: If True, will return the list of jobs but will not launch thes (warning: won't work for sequential jobs)
+    dry_run: If True, will return the list of jobs but will not launch them (warning: won't work for sequential jobs)
+    filter_tags: If provided, only launch jobs whose tag matches one of these values.
+    filter_variables: If provided, only launch jobs where variables match all key=value pairs.
   Returns:
     A list of Job objects representing the launched jobs.
   Raises:
@@ -412,6 +500,14 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False, dry_run: bo
 
     config_jobs = job_def.get("config_jobs", [])
     if not config_jobs:
+      job_tag = job_def.get("tag", "default")
+      
+      # Early tag filter: skip if tag doesn't match any filter pattern
+      if filter_tags is not None:
+        matched = any(fnmatch.fnmatch(job_tag, pattern) for pattern in filter_tags)
+        if not matched:
+          continue
+      
       if job_cluster_name is not None and machine_cluster_name is not None and job_cluster_name != machine_cluster_name:
         continue # Skip job if job's cluster name doesn't match the machine's cluster name
 
@@ -419,7 +515,7 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False, dry_run: bo
       previous_job_id = _launch_job_combinations(
         job_config_template,
         job_command_template,
-        "default",
+        job_tag,
         job_preprocess_template,
         job_postprocess_template,
         job_cluster_name,
@@ -429,12 +525,21 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False, dry_run: bo
         global_is_sequential,
         previous_job_id,
         dry_run=dry_run,
+        filter_tags=filter_tags,
+        filter_variables=filter_variables,
       )
     else:
       for entry in config_jobs:
         tag_name = entry.get("tag")
         if not tag_name:
           continue # Skip matrix entry if it has no tag
+
+        # Early tag filter: skip if static tag doesn't match any filter pattern
+        # (dynamic tags with variables like {model} are checked later after substitution)
+        if filter_tags is not None and not _extract_used_vars(tag_name):
+          matched = any(fnmatch.fnmatch(tag_name, pattern) for pattern in filter_tags)
+          if not matched:
+            continue
 
         entry_command_template = entry.get("command", job_command_template)
         entry_preprocess_template = entry.get("preprocess", job_preprocess_template)
@@ -462,6 +567,8 @@ def launch_jobs_from_file(jobs_file_path: Path, force: bool = False, dry_run: bo
           global_is_sequential,
           previous_job_id,
           dry_run=dry_run,
+          filter_tags=filter_tags,
+          filter_variables=filter_variables,
         )
 
   return launched_jobs
@@ -479,9 +586,15 @@ def _launch_job_combinations(
   sequential: bool = False,
   previous_job_id: Optional[int] = None,
   dry_run: bool = False,
+  filter_tags: Optional[List[str]] = None,
+  filter_variables: Optional[Dict[str, Any]] = None,
 ) -> Optional[int]:
     """
     Generates and launches jobs for all combinations of variables.
+
+    Args:
+      filter_tags: If provided, only launch jobs whose substituted tag matches one of these values.
+      filter_variables: If provided, only launch jobs where variables match all key=value pairs.
 
     Returns: the id of the last submitted job
     """
@@ -499,6 +612,11 @@ def _launch_job_combinations(
       job_tag = _substitute(tag, {})
       preprocess = _substitute(preprocess_template, {})
       postprocess = _substitute(postprocess_template, {})
+      
+      # Check if this job should be skipped based on filters
+      if _should_skip_job(job_tag, {}, filter_tags, filter_variables):
+        return previous_job_id
+      
       # print('='*40)
       # print(f'{config_name=}')
       # print(f'{preprocess=}')
@@ -508,6 +626,7 @@ def _launch_job_combinations(
       # print('='*40)
       try:
         job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), cluster_name=cluster_name, dry_run=dry_run)
+        console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
         launched_jobs.append(job)
         previous_job_id = job.job_id
       except JobExistsError as e:
@@ -524,6 +643,11 @@ def _launch_job_combinations(
       job_tag = _substitute(tag, var_dict)
       preprocess = _substitute(preprocess_template, var_dict)
       postprocess = _substitute(postprocess_template, var_dict)
+      
+      # Check if this job should be skipped based on filters
+      if _should_skip_job(job_tag, var_dict, filter_tags, filter_variables):
+        continue
+      
       # print('='*40)
       # print(f'{config_name=}')
       # print(f'{preprocess=}')
@@ -533,6 +657,7 @@ def _launch_job_combinations(
       # print('='*40)
       try:
         job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), variables=var_dict, cluster_name=cluster_name, dry_run=dry_run)
+        console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
         launched_jobs.append(job)
         previous_job_id = job.job_id
       except JobExistsError as e:

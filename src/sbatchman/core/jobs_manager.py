@@ -1,7 +1,15 @@
 import shutil
-from typing import List, Optional
+import fnmatch
+import os
+from typing import List, Optional, Dict, Any
+import concurrent.futures
+from pathlib import Path
 
 import yaml
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader
 
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_archive_dir, get_experiments_dir
@@ -9,8 +17,9 @@ from sbatchman.core.job import Job
 from sbatchman.core.status import TERMINAL_STATES, Status
 from sbatchman.exceptions import ArchiveExistsError
 import pandas as pd
+from dataclasses import asdict
 
-JOBS_CACHE = None
+JOBS_CACHE = {}
 
 def job_exists(
   command: str,
@@ -24,20 +33,115 @@ def job_exists(
   Checks if an identical active job already exists.
   """
   global JOBS_CACHE
-  if JOBS_CACHE is None:
-    JOBS_CACHE = jobs_list(from_active=True, from_archived=False, update_jobs=False)
-  active_jobs = JOBS_CACHE
-  for job in active_jobs:
-    if (
-      job.command == command and
-      job.config_name == config_name and
-      job.cluster_name == cluster_name and
-      job.tag == tag and
-      job.preprocess == preprocess and
-      job.postprocess == postprocess
-    ):
-      return True
+  cache_key = (cluster_name, config_name, tag)
+
+  if cache_key not in JOBS_CACHE:
+    JOBS_CACHE[cache_key] = []
+    exp_dir = get_experiments_dir()
+    
+    # Construct a specific glob pattern to only scan relevant directories.
+    # We use the directory structure to narrow down the search significantly.
+    # Structure: cluster/config/tag/timestamp/metadata.yaml
+    glob_pattern = f"{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
+
+    # Iterate through files and populate cache
+    for metadata_path in exp_dir.glob(glob_pattern):
+      try:
+        with open(metadata_path, 'r') as f:
+          job_dict = yaml.safe_load(f)
+        
+        if job_dict:
+          JOBS_CACHE[cache_key].append(job_dict)
+      except Exception:
+        continue
+
+    # Also check archived jobs
+    archive_root = get_archive_dir()
+    # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
+    # We use a wildcard for archive_name
+    archive_glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
+    
+    for metadata_path in archive_root.glob(archive_glob_pattern):
+      try:
+        with open(metadata_path, 'r') as f:
+          job_dict = yaml.safe_load(f)
+        
+        if job_dict:
+          JOBS_CACHE[cache_key].append(job_dict)
+      except Exception:
+        continue
+
+  # Check against cache
+  for job_dict in JOBS_CACHE[cache_key]:
+      if (
+        job_dict.get('command') == command and
+        job_dict.get('preprocess') == preprocess and
+        job_dict.get('postprocess') == postprocess
+      ):
+        return True
+      
   return False
+
+def register_job(job: Job):
+  """
+  Registers a new job in the cache to avoid disk reads on subsequent checks.
+  """
+  global JOBS_CACHE
+  cache_key = (job.cluster_name, job.config_name, job.tag)
+  if cache_key in JOBS_CACHE:
+    JOBS_CACHE[cache_key].append(asdict(job))
+
+def _load_job_metadata(metadata_path: Path, variables: Optional[Dict[str, Any]] = None) -> Optional[Job]:
+  try:
+    with open(metadata_path, 'r') as f:
+      job_dict = yaml.load(f, Loader=SafeLoader)
+      if job_dict:
+        if variables:
+          job_vars = job_dict.get('variables') or {}
+          match = True
+          for k, v in variables.items():
+            if str(job_vars.get(k)) != str(v):
+              match = False
+              break
+          if not match:
+            return None
+        return Job(**job_dict)
+  except Exception:
+    return None
+  return None
+
+def _get_matching_subdirs(parent: Path, pattern: Optional[str]) -> List[Path]:
+    """
+    Helper to get subdirectories matching a pattern (exact or wildcard).
+    Uses os.scandir for performance to avoid unnecessary stat calls.
+    """
+    if not parent.exists():
+        return []
+    
+    results = []
+    try:
+        if not pattern:
+            # No pattern means "all directories"
+            with os.scandir(parent) as it:
+                for entry in it:
+                    if entry.is_dir():
+                        results.append(Path(entry.path))
+        
+        elif set('*?[').intersection(pattern):
+            # Pattern contains wildcards
+            with os.scandir(parent) as it:
+                for entry in it:
+                    if entry.is_dir() and fnmatch.fnmatch(entry.name, pattern):
+                        results.append(Path(entry.path))
+        else:
+            # Exact match optimization
+            target = parent / pattern
+            if target.exists() and target.is_dir():
+                results.append(target)
+    except OSError:
+        pass
+        
+    return results
 
 def jobs_list(
   cluster_name: Optional[str] = None,
@@ -47,7 +151,8 @@ def jobs_list(
   archive_name: Optional[str] = None,
   from_active: bool = True,
   from_archived: bool = False,
-  update_jobs: bool = True
+  update_jobs: bool = True,
+  variables: Optional[Dict[str, Any]] = None
 ) -> List[Job]:
   """
   Lists active and/or archived jobs, with optional filtering. Updates the status of active jobs by default.
@@ -60,6 +165,7 @@ def jobs_list(
     from_active: If True, include active jobs.
     from_archived: If True, include archived jobs.
     update_jobs: If True, update the status of active jobs before listing.
+    variables: Filter by variable values.
   Returns:
     A list of Job objects matching the filter criteria.
   Raises:
@@ -71,39 +177,121 @@ def jobs_list(
   if update_jobs:
     update_jobs_status()
   
+  paths_to_process = []
+
   # Scan active jobs
   if from_active:
     exp_dir = get_experiments_dir()
-    for metadata_path in exp_dir.glob("**/metadata.yaml"):
-      with open(metadata_path, 'r') as f:
-        job_dict = yaml.safe_load(f)
-        # Apply filters
-        if cluster_name and not metadata_path.parts[-5] == cluster_name:
-          continue
-        if config_name and not metadata_path.parts[-4] == config_name:
-          continue
-        if tag and not metadata_path.parts[-3] == tag:
-          continue
-        if job_dict:
-          jobs.append(Job(**job_dict))
+    
+    # Construct a more specific glob pattern if filters are available
+    # Structure: cluster/config/tag/timestamp/metadata.yaml
+    # We use fixed depth to avoid scanning subdirectories (which is very slow)
+    # parts = [
+    #     cluster_name or "*",
+    #     config_name or "*",
+    #     tag or "*",
+    #     "*", # timestamp
+    #     "metadata.yaml"
+    # ]
+    # glob_pattern = "/".join(parts)
+
+    # for metadata_path in exp_dir.glob(glob_pattern):
+    #   # Apply filters based on path structure BEFORE reading file
+    #   # Active: .../cluster/config/tag/timestamp/metadata.yaml (parts[-5] is cluster)
+    #   if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
+    #       continue
+    #   if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
+    #       continue
+    #   if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
+    #       continue
+    #   paths_to_process.append(metadata_path)
+    
+    # Optimized scanning: iterate directory levels manually to avoid full glob scan
+    # Level 1: Cluster
+    clusters = _get_matching_subdirs(exp_dir, cluster_name)
+    for cluster_dir in clusters:
+        
+        # Level 2: Config
+        configs = _get_matching_subdirs(cluster_dir, config_name)
+        for config_dir in configs:
+
+            # Level 3: Tag
+            tags = _get_matching_subdirs(config_dir, tag)
+            for tag_dir in tags:
+
+                # Level 4: Timestamp (always scan all timestamps)
+                try:
+                    with os.scandir(tag_dir) as it:
+                        for entry in it:
+                            if entry.is_dir():
+                                # Optimistically assume metadata.yaml exists to avoid stat() call
+                                paths_to_process.append(Path(entry.path) / "metadata.yaml")
+                except OSError:
+                    continue
 
   # Scan archived jobs
   if from_archived:
     archive_root = get_archive_dir()
-    for metadata_path in archive_root.glob("*/**/metadata.yaml"):
-      with open(metadata_path, 'r') as f:
-        job_dict = yaml.safe_load(f)
-        # Apply filters
-        if cluster_name and not metadata_path.parts[-5] == cluster_name:
-          continue
-        if config_name and not metadata_path.parts[-4] == config_name:
-          continue
-        if tag and not metadata_path.parts[-3] == tag:
-          continue
-        if archive_name and not metadata_path.parts[-6] == archive_name:
-          continue
-        if job_dict:
-          jobs.append(Job(**job_dict))
+    
+    # Construct a more specific glob pattern if filters are available
+    # Archive structure: archive_name/cluster_name/config_name/tag/timestamp/metadata.yaml
+    # parts = [
+    #     archive_name or "*",
+    #     cluster_name or "*",
+    #     config_name or "*",
+    #     tag or "*",
+    #     "*", # timestamp
+    #     "metadata.yaml"
+    # ]
+    # glob_pattern = "/".join(parts)
+
+    # for metadata_path in archive_root.glob(glob_pattern):
+    #   # Apply filters based on path structure BEFORE reading file
+    #   # Archive: .../archive_name/cluster/config/tag/timestamp/metadata.yaml (parts[-6] is archive_name)
+    #   if cluster_name and not fnmatch.fnmatch(metadata_path.parts[-5], cluster_name):
+    #       continue
+    #   if config_name and not fnmatch.fnmatch(metadata_path.parts[-4], config_name):
+    #       continue
+    #   if tag and not fnmatch.fnmatch(metadata_path.parts[-3], tag):
+    #       continue
+    #   if archive_name and not fnmatch.fnmatch(metadata_path.parts[-6], archive_name):
+    #       continue
+    #   paths_to_process.append(metadata_path)
+
+    # Optimized scanning for archives
+    archives = _get_matching_subdirs(archive_root, archive_name)
+    for archive_dir in archives:
+
+        # Level 1: Cluster
+        clusters = _get_matching_subdirs(archive_dir, cluster_name)
+        for cluster_dir in clusters:
+            
+            # Level 2: Config
+            configs = _get_matching_subdirs(cluster_dir, config_name)
+            for config_dir in configs:
+
+                # Level 3: Tag
+                tags = _get_matching_subdirs(config_dir, tag)
+                for tag_dir in tags:
+
+                    # Level 4: Timestamp
+                    try:
+                        with os.scandir(tag_dir) as it:
+                            for entry in it:
+                                if entry.is_dir():
+                                    # Optimistically assume metadata.yaml exists to avoid stat() call
+                                    paths_to_process.append(Path(entry.path) / "metadata.yaml")
+                    except OSError:
+                        continue
+
+  # Use a higher number of workers for I/O bound tasks
+  max_workers = min(100, len(paths_to_process) + 1)
+  with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+      future_to_path = {executor.submit(_load_job_metadata, p, variables): p for p in paths_to_process}
+      for future in concurrent.futures.as_completed(future_to_path):
+          job = future.result()
+          if job:
+              jobs.append(job)
   
   if status:
     status = [s.value if isinstance(s, Status) else str(s) for s in status]
@@ -179,6 +367,7 @@ def delete_jobs(
   archived: bool = False,
   not_archived: bool = False,
   status: Optional[List[Status]] = None,
+  variables: Optional[Dict[str, Any]] = None
 ) -> int:
   """
   Deletes jobs matching the filter criteria.
@@ -191,6 +380,7 @@ def delete_jobs(
     archived: If True, delete only archived jobs.
     not_archived: If True, delete only active jobs.
     status: Filter jobs by status.
+    variables: Filter jobs by variable values.
 
   Returns:
     The number of deleted jobs.
@@ -203,6 +393,8 @@ def delete_jobs(
     from_active=not_archived,
     from_archived=archived,
     status=status,
+    update_jobs=False,
+    variables=variables
   )
 
   if not jobs_to_delete:
@@ -239,6 +431,30 @@ def delete_jobs(
 
   return len(jobs_to_delete)
 
+def _update_single_job_status(job: Job) -> bool:
+    """
+    Helper function to update a single job's status.
+    Returns True if the status was updated, False otherwise.
+    """
+    if job.status in TERMINAL_STATES:
+      return False
+
+    try:
+      config = job.get_job_config()
+      new_status = config.get_job_status(job.job_id).value
+      
+      if new_status == Status.UNKNOWN.value:
+        return False
+
+      if new_status != job.status:
+        job.status = new_status
+        job.write_metadata()
+        return True
+    except Exception:
+      # Ignore errors (e.g., config not found) and continue
+      return False
+    return False
+
 def update_jobs_status() -> int:
   """
   Updates the status of active jobs on the current cluster by querying the scheduler.
@@ -251,24 +467,11 @@ def update_jobs_status() -> int:
   
   updated_count = 0
 
-  for job in active_jobs:
-    if job.status in TERMINAL_STATES:
-      continue
-
-    try:
-      config = job.get_job_config()
-      new_status = config.get_job_status(job.job_id).value
-      
-      if new_status == Status.UNKNOWN.value:
-        continue
-
-      if new_status != job.status:
-        job.status = new_status
-        job.write_metadata()
-        updated_count += 1
-    except Exception as e:
-      # Ignore errors (e.g., config not found) and continue
-      continue
+  with concurrent.futures.ThreadPoolExecutor() as executor:
+      futures = [executor.submit(_update_single_job_status, job) for job in active_jobs]
+      for future in concurrent.futures.as_completed(futures):
+          if future.result():
+              updated_count += 1
           
   return updated_count
 
