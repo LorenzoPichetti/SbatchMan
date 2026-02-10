@@ -29,6 +29,9 @@ class Job:
   postprocess: Optional[str] = None 
   archive_name: Optional[str] = None
   variables: Optional[dict[str, Any]] = None
+  queued_timestamp: Optional[str] = None
+  start_timestamp: Optional[str] = None
+  stop_timestamp: Optional[str] = None
 
   def get_job_config(self) -> BaseConfig:
     """
@@ -173,3 +176,4 @@ class Job:
 
     if path.exists():
       subprocess.run(["sed", "-i", f"/^status:/c\\status: {str(self.status)}", str(path)], check=True)
+

@@ -123,6 +123,7 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
     f.write(final_script_content)
   run_script_path.chmod(0o755)
 
+  queued_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
   job = Job(
     config_name=job.config_name,
     cluster_name=job.cluster_name,
@@ -137,6 +138,7 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
     preprocess=job.preprocess,
     postprocess=job.postprocess,
     variables=job.variables if job.variables is not None else {},
+    queued_timestamp=queued_ts,
   )
 
   job.write_metadata()
@@ -155,17 +157,20 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
       config = load_local_config(job.config_name)
       if config is None:
         raise ConfigurationError(f'Couldn\'t find configuration `{job.config_name}`')
+      job.start_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
       job.job_id, timed_out = config.local_submit(run_script_path, exp_dir)
+      job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
       if timed_out:
         job.status = Status.TIMEOUT.value
         job.write_job_status()
     else:
       raise JobSubmitError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
     
-    job.write_job_id()
+    job.write_metadata()
   
   except (ValueError, FileNotFoundError) as e:
     job.status = Status.FAILED_SUBMISSION.value
+    job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     job.write_metadata()
     err_str = "Failed to submit job. Error: " + str(e)
     with open(job.get_stderr_path(), 'w+') as err_file:
@@ -173,6 +178,7 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
     raise JobSubmitError(err_str) from e
   except subprocess.CalledProcessError as e:
     job.status = Status.FAILED_SUBMISSION.value
+    job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     job.write_metadata()
     err_str = f"Job submission failed with error code {e.returncode}.\nOutput stream:\n" + e.output + "\nError stream:\n" + e.stderr if e.stderr else ""
     with open(job.get_stderr_path(), 'w+') as err_file:
@@ -286,6 +292,7 @@ def launch_job(
       f.write(final_script_content)
     run_script_path.chmod(0o755)
 
+  queued_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
   job = Job(
     config_name=config_name,
     cluster_name=cluster_name,
@@ -300,6 +307,7 @@ def launch_job(
     preprocess=preprocess,
     postprocess=postprocess,
     variables=variables if variables is not None else {},
+    queued_timestamp=queued_ts,
   )
 
   if dry_run:
@@ -318,17 +326,20 @@ def launch_job(
       config = load_local_config(config_name)
       if config is None:
         raise ConfigurationError(f'Couldn\'t find configuration `{config_name}`')
+      job.start_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
       job.job_id, timed_out = config.local_submit(run_script_path, exp_dir)
+      job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
       if timed_out:
         job.status = Status.TIMEOUT.value
         job.write_job_status()
     else:
       raise JobSubmitError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
     
-    job.write_job_id()
+    job.write_metadata()
   
   except (ValueError, FileNotFoundError) as e:
     job.status = Status.FAILED_SUBMISSION.value
+    job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     job.write_metadata()
     err_str = "Failed to submit job. Error: " + str(e)
     with open(job.get_stderr_path(), 'w+') as err_file:
@@ -336,6 +347,7 @@ def launch_job(
     raise JobSubmitError(err_str) from e
   except subprocess.CalledProcessError as e:
     job.status = Status.FAILED_SUBMISSION.value
+    job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     job.write_metadata()
     err_str = f"Job submission failed with error code {e.returncode}.\nOutput stream:\n" + e.output + "\nError stream:\n" + e.stderr if e.stderr else ""
     with open(job.get_stderr_path(), 'w+') as err_file:

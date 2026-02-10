@@ -1,6 +1,7 @@
 import shutil
 import fnmatch
 import os
+import datetime
 from typing import List, Optional, Dict, Any
 import concurrent.futures
 from pathlib import Path
@@ -447,7 +448,20 @@ def _update_single_job_status(job: Job) -> bool:
         return False
 
       if new_status != job.status:
+        old_status = job.status
         job.status = new_status
+        now_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Set start_timestamp when transitioning to RUNNING
+        if new_status == Status.RUNNING.value and old_status != Status.RUNNING.value:
+          if not job.start_timestamp:
+            job.start_timestamp = now_ts
+
+        # Set stop_timestamp when transitioning to a terminal state
+        if new_status in TERMINAL_STATES:
+          if not job.stop_timestamp:
+            job.stop_timestamp = now_ts
+
         job.write_metadata()
         return True
     except Exception:
