@@ -8,9 +8,14 @@ To get started, check out the [installation guide](install/install.md) to set up
 Then, follow the [tutorial](learn/tutorial.md) to learn how to use SbatchMan effectively.  
 If you prefer to learn by doing, check out this hands-on tutorial: [https://github.com/ThomasPasquali/SbatchManTutorial](https://github.com/ThomasPasquali/SbatchManTutorial)
 
+!!! tip "The question is..."
+    Have you ever found yourself developing programs, algorithms, benchmarks that need to be run with multiple combinations of resources, parameters, environments (potentially) on different systems or supercomputers?  
+    Have you ever struggled managing hundreds of output files?  
+    Are you tired to write programs that ensure that all results are nicely written to CSV files or structured folders?  
+    If so, **you are in the right place**.
 
 ## Features
-- **Flexible configurations**: Use YAML files to define multiple configurations for different clusters.
+- **Flexible configurations**: Use YAML files to define multiple configurations (resources allocation, environment variables, modules etc.) for different clusters.
 - **Job management**: Launch, monitor, and archive jobs with simple commands.
 - **Powerful job launching**: Launch jobs with custom commands and configurations defined in a YAML file, automatically generating all combinations of variables.
 - **Command-line interface**: Interact with SbatchMan through a user-friendly CLI.
@@ -23,6 +28,10 @@ If you prefer to learn by doing, check out this hands-on tutorial: [https://gith
 - **SLURM**
 - **PBS**
 - SbatchMan also allows to create configurations and run jobs on your local machine.
+
+!!! tip
+    Curios about use cases and SbatchMan capabilities?  
+    Check out this benchmarks collection based on SbatchMan: [https://github.com/HicrestLaboratory/HICREST-Benchmark-Collection](https://github.com/HicrestLaboratory/HICREST-Benchmark-Collection)
 
 ### User Interface
 

@@ -1,6 +1,9 @@
-# Advanced Job Submission
+# Job Submission
 
 `SbatchMan` supports launching jobs using a YAML file or through the Python API. This guide will walk you through both methods, allowing you to manage complex job configurations and launch them efficiently.
+
+!!! tip "The first rule is..."
+    Let SbatchMan do the hard work. In your program, you can print all your results directly to the standard output. You can later fetch and parse them easily using SbatchMan Python API.
 
 ## Launching Jobs using a YAML File
 This section explains how to use `SbatchMan` to launch jobs defined in a YAML file. This is particularly useful for managing complex experiments with multiple configurations and parameters.

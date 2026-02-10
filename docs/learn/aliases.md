@@ -1,5 +1,7 @@
 # SbatchMan Command Aliases
 
+**BE LAZY!**
+
 The `sbatchman` CLI provides powerful functionality, but the commands can be lengthy to type repeatedly. To improve your workflow, you can add convenient aliases to your shell configuration (e.g., `.bashrc` or `.bash_profile` or `.zshrc`). This page provides a ready-to-use Bash script for setting up useful aliases for common `sbatchman` commands.
 
 ## Recommended Aliases

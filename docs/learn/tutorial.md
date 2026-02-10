@@ -33,6 +33,9 @@ It covers everything you need to know to get you started with SbatchMan, from se
 
 ## 📂 Internal File & Folder Structure
 
+You do not need to know this, yet, a quick peak 
+behind the scenes.
+
 ```
 # this is your project folder
 SbatchMan/
@@ -80,9 +83,12 @@ This command will create a `SbatchMan` directory for your project, which will co
     Whenever you call `sbatchman` command, SbatchMan will look for a project directory (`SbatchMan`) starting from the current working directory (CWD) and exploring parents directories up to the user home (e.g. in linux `$HOME`).  
 
 !!! tip
-    **You can skip the following `Configuration` and `Launch` sections. The [Advanced configuration](learn/configuration.md) and  [Advanced Job Submission](learn/launching_jobs.md) sections provide a more "friendly", powerful and reproducible way of creating  configuration and launching jobs, especially if you need a lot of them.**
+    **You can skip the following `Configuration` and `Launch` sections. The [Configuration](configurations.md) and  [Job Submission](job_submission.md) sections provide a more "friendly", powerful and reproducible way of creating  configuration and launching jobs, especially if you need a lot of them.**
 
 ## ⚙️ Create a Configuration
+
+!!! tip
+    **The tool is not intended to be used with the commands you are about to see. They are useful to learn and play around. Even for simple use cases, create you configurations as explained in [Configuration](configurations.md).**
 
 First, set up your cluster configuration(s). This is where you define the parameters for your cluster, such as environment variables, partition, time limit, and number of GPUs.  
 For example, to create a configuration for a cluster named `my_gpu_cluster`:
@@ -130,6 +136,9 @@ If you need to change the configuration later, run the `configure` command again
     If you do not specify `--cluster-name`, SbatchMan will use the name you set via the `sbatchman set-cluster-name` (see the [Setup Page](../install/setup.md) for more details).
 
 ## 🚀 Launch Your Code
+
+!!! tip
+    **The tool is not intended to be used with the commands you are about to see. They are useful to learn and play around. Even for simple use cases, launch your jobs as explained in [Job Submission](job_submission.md).**
 
 Suppose you have a script named `train.py` in your project directory. To submit this script as a job, use the `launch` command. For example: 
 
@@ -238,7 +247,10 @@ You can check out all the available options by running:
 sbatchman delete-jobs --help
 ```
 
+!!! tip
+    This command is really handy to re-run failed or timedout jobs: delete them and run the `sbatchman launch` command again. The `launch` command will not run duplicates. 
+
 ## 🎉 Conclusion
 This is a basic example of how to use SbatchMan to manage your experiments on multiple remote clusters. You can extend this by adding more configurations, automating job submissions, or using the Python API to integrate SbatchMan into your existing workflows.
 
-To exploit the the tool at its best, please read the [Advanced configuration](advanced_configuration.md) and [Advanced Job Submission](advanced_submission.md) sections.
+To exploit the the tool at its best, please read the [Configurations](configurations.md) and [Job Submission](job_submission.md) sections.
