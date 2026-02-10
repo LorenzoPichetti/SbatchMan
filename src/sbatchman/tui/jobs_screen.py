@@ -99,11 +99,11 @@ class JobsScreen(Screen):
       
       current_keys.add(key)
       
-      timestamp_str = job.timestamp
+      timestamp_str = job.queued_timestamp
       formatted_timestamp = timestamp_str
       if timestamp_str:
         try:
-          dt_object = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
+          dt_object = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S.%f")
           formatted_timestamp = dt_object.strftime('%Y-%m-%d %H:%M:%S')
         except (ValueError, TypeError):
           formatted_timestamp = timestamp_str
@@ -191,7 +191,7 @@ class JobsScreen(Screen):
           continue
         if "time" in key:
             try:
-              job_time = datetime.strptime(job.timestamp, "%Y%m%d_%H%M%S")
+              job_time = datetime.strptime(job.queued_timestamp, "%Y%m%d_%H%M%S.%f")
               val_time = datetime.fromisoformat(val)
               if "__gt" in key and not (job_time > val_time): return False
               if "__lt" in key and not (job_time < val_time): return False

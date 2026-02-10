@@ -12,26 +12,26 @@ from sbatchman.schedulers.slurm import SlurmConfig
 from sbatchman.schedulers.local import LocalConfig
 from sbatchman.schedulers.base import BaseConfig
 import subprocess
+from datetime import datetime
 
 @dataclass
 class Job:
   config_name: str
   cluster_name: str
-  timestamp: str
   exp_dir: str
   command: str
   status: str
   scheduler: str
   tag: str
   job_id: int
+  queued_timestamp: str
   exitcode: Optional[int] = None
   preprocess: Optional[str] = None
   postprocess: Optional[str] = None 
   archive_name: Optional[str] = None
   variables: Optional[dict[str, Any]] = None
-  queued_timestamp: Optional[str] = None
   start_timestamp: Optional[str] = None
-  stop_timestamp: Optional[str] = None
+  end_timestamp: Optional[str] = None
 
   def get_job_config(self) -> BaseConfig:
     """
@@ -150,12 +150,23 @@ class Job:
     
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    job_dict = asdict(self)
+    
+    # If metadata file exists, preserve start_timestamp and end_timestamp
+    VARS_TO_KEEP = ["start_timestamp", "end_timestamp"]
+    if path.exists():
+      with open(path, "r") as f:
+        existing_data = yaml.safe_load(f) or {}
+      for var in VARS_TO_KEEP:
+        if var in existing_data and existing_data[var] is not None:
+          job_dict[var] = existing_data[var]
+    
+    # Convert Path objects to strings for clean YAML representation
+    for key, value in job_dict.items():
+      if isinstance(value, Path) or isinstance(value, Status):
+        job_dict[key] = str(value)
+    
     with open(path, "w") as f:
-      job_dict = asdict(self)
-      # Convert Path objects to strings for clean YAML representation
-      for key, value in job_dict.items():
-        if isinstance(value, Path) or isinstance(value, Status):
-          job_dict[key] = str(value)
       yaml.dump(job_dict, f, default_flow_style=False)
 
   def write_job_id(self):
@@ -176,4 +187,31 @@ class Job:
 
     if path.exists():
       subprocess.run(["sed", "-i", f"/^status:/c\\status: {str(self.status)}", str(path)], check=True)
+
+  def get_time_in_queue(self) -> Optional[float]:
+    """
+    Returns the time spent in queue in seconds, or None if not queued or start time not available.
+    """
+    print(self)
+    if not self.queued_timestamp or not self.start_timestamp:
+      return None
+    try:
+      queued = datetime.strptime(self.queued_timestamp[:22], "%Y%m%d_%H%M%S.%f")
+      started = datetime.strptime(self.start_timestamp[:22], "%Y%m%d_%H%M%S.%f")
+      return (started - queued).total_seconds()
+    except ValueError:
+      return None
+
+  def get_run_time(self) -> Optional[float]:
+    """
+    Returns the job runtime in seconds, or None if start or end time not available.
+    """
+    if not self.start_timestamp or not self.end_timestamp:
+      return None
+    try:
+      started = datetime.strptime(self.start_timestamp[:22], "%Y%m%d_%H%M%S.%f")
+      ended = datetime.strptime(self.end_timestamp[:22], "%Y%m%d_%H%M%S.%f")
+      return (ended - started).total_seconds()
+    except ValueError:
+      return None
 

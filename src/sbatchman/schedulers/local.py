@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
+import datetime
 from typing import List, Optional, Tuple, Union
 
 from sbatchman.core.status import Status

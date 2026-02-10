@@ -123,11 +123,10 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
     f.write(final_script_content)
   run_script_path.chmod(0o755)
 
-  queued_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+  queued_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
   job = Job(
     config_name=job.config_name,
     cluster_name=job.cluster_name,
-    timestamp=timestamp,
     exp_dir=str(exp_dir_local),
     command=job.command,
     status=Status.SUBMITTING.value,
@@ -157,11 +156,10 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
       config = load_local_config(job.config_name)
       if config is None:
         raise ConfigurationError(f'Couldn\'t find configuration `{job.config_name}`')
-      job.start_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
       job.job_id, timed_out = config.local_submit(run_script_path, exp_dir)
-      job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
       if timed_out:
         job.status = Status.TIMEOUT.value
+        job.end_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
         job.write_job_status()
     else:
       raise JobSubmitError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
@@ -170,7 +168,7 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
   
   except (ValueError, FileNotFoundError) as e:
     job.status = Status.FAILED_SUBMISSION.value
-    job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    job.end_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
     job.write_metadata()
     err_str = "Failed to submit job. Error: " + str(e)
     with open(job.get_stderr_path(), 'w+') as err_file:
@@ -178,7 +176,7 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
     raise JobSubmitError(err_str) from e
   except subprocess.CalledProcessError as e:
     job.status = Status.FAILED_SUBMISSION.value
-    job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    job.end_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
     job.write_metadata()
     err_str = f"Job submission failed with error code {e.returncode}.\nOutput stream:\n" + e.output + "\nError stream:\n" + e.stderr if e.stderr else ""
     with open(job.get_stderr_path(), 'w+') as err_file:
@@ -292,11 +290,10 @@ def launch_job(
       f.write(final_script_content)
     run_script_path.chmod(0o755)
 
-  queued_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+  queued_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
   job = Job(
     config_name=config_name,
     cluster_name=cluster_name,
-    timestamp=timestamp,
     exp_dir=str(exp_dir_local),
     command=command,
     status=Status.SUBMITTING.value,
@@ -326,11 +323,10 @@ def launch_job(
       config = load_local_config(config_name)
       if config is None:
         raise ConfigurationError(f'Couldn\'t find configuration `{config_name}`')
-      job.start_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
       job.job_id, timed_out = config.local_submit(run_script_path, exp_dir)
-      job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
       if timed_out:
         job.status = Status.TIMEOUT.value
+        job.end_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
         job.write_job_status()
     else:
       raise JobSubmitError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
@@ -339,7 +335,7 @@ def launch_job(
   
   except (ValueError, FileNotFoundError) as e:
     job.status = Status.FAILED_SUBMISSION.value
-    job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    job.end_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
     job.write_metadata()
     err_str = "Failed to submit job. Error: " + str(e)
     with open(job.get_stderr_path(), 'w+') as err_file:
@@ -347,7 +343,7 @@ def launch_job(
     raise JobSubmitError(err_str) from e
   except subprocess.CalledProcessError as e:
     job.status = Status.FAILED_SUBMISSION.value
-    job.stop_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    job.end_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
     job.write_metadata()
     err_str = f"Job submission failed with error code {e.returncode}.\nOutput stream:\n" + e.output + "\nError stream:\n" + e.stderr if e.stderr else ""
     with open(job.get_stderr_path(), 'w+') as err_file:
