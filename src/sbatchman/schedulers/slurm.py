@@ -69,7 +69,7 @@ class SlurmConfig(BaseConfig):
     if p := self.partition: lines.append(f"#SBATCH --partition={p}")
     if n := self.nodes: lines.append(f"#SBATCH --nodes={n}")
     if t := self.ntasks: lines.append(f"#SBATCH --ntasks={t}")
-    if tn := self.tasks_per_node: lines.append(f"#SBATCH --tasks-per-node={tn}")
+    if tn := self.tasks_per_node: lines.append(f"#SBATCH --ntasks-per-node={tn}")
     if c := self.cpus_per_task: lines.append(f"#SBATCH --cpus-per-task={c}")
     if a := self.account: lines.append(f"#SBATCH --account={a}")
     if m := self.mem: lines.append(f"#SBATCH --mem={m}")
