@@ -24,7 +24,6 @@ console = Console()
 
 DEFAULT_QUEUE_WAIT_INTERVAL = 30  # seconds to wait between queue checks
 
-
 def wait_for_queue_slot(
   max_jobs: Optional[int] = None,
   wait_interval: int = DEFAULT_QUEUE_WAIT_INTERVAL
@@ -164,7 +163,7 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
     else:
       raise JobSubmitError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
     
-    job.write_metadata()
+    job.write_metadata(override_status=False)
   
   except (ValueError, FileNotFoundError) as e:
     job.status = Status.FAILED_SUBMISSION.value
@@ -331,7 +330,7 @@ def launch_job(
     else:
       raise JobSubmitError(f"No submission class found for scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
     
-    job.write_metadata()
+    job.write_metadata(override_status=False)
   
   except (ValueError, FileNotFoundError) as e:
     job.status = Status.FAILED_SUBMISSION.value

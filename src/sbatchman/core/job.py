@@ -144,16 +144,17 @@ class Job:
     """
     return self.get_job_base_path() / "metadata.yaml"
 
-  def write_metadata(self):
+  def write_metadata(self, override_status=True):
     """Saves the current job state to its metadata.yaml file."""
     path = self.get_metadata_path()
     
     path.parent.mkdir(parents=True, exist_ok=True)
-
     job_dict = asdict(self)
     
     # If metadata file exists, preserve start_timestamp and end_timestamp
     VARS_TO_KEEP = ["start_timestamp", "end_timestamp"]
+    if not override_status:
+      VARS_TO_KEEP += ['status']
     if path.exists():
       with open(path, "r") as f:
         existing_data = yaml.safe_load(f) or {}

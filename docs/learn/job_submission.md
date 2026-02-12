@@ -21,6 +21,9 @@ sbatchman launch --file experiments.yaml
 !!! note
     The `launch` command will NOT run again "identical" jobs unless forced or if previous jobs are archived. 
 
+!!! tip
+    Your `experiments.yaml` may generate thousands of jobs. To avoid issued with SLURM submission limits or avoid flooding the queue, you can set a limit that tells SbatchMan not to queue more than that amount of jobs at any time. You can set the limit with the `sbatchman set-max-jobs` CLI command.
+
 ### Batch File Structure
 
 The batch submission file is a YAML file that defines global variables and a list of job templates. `SbatchMan` will generate a job for each unique combination of parameters.
@@ -273,5 +276,8 @@ try:
 except Exception as e:
     print(f"An error occurred: {e}")
 ```
+
+The `dry_run` parameter allows to get the list of jobs **without submitting** them.  
+This way you can programmatically modify the jobs and later submit them using `job_submit(Job)`.
 
 For more details, refer to the [API](../api.md/#sbatchman.launch_jobs_from_file) page.
