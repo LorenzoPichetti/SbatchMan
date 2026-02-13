@@ -94,6 +94,12 @@ def get_experiments_dir() -> Path:
   path.mkdir(parents=True, exist_ok=True)
   return path
 
+def get_archive_dir() -> Path:
+  """Returns the path to the archive directory."""
+  archive_dir = get_project_root() / "archive"
+  archive_dir.mkdir(exist_ok=True)
+  return archive_dir
+
 def get_scheduler_from_cluster_name(cluster_name: str) -> str:
   """
   Detects the scheduler type based on the cluster name, as stored in the project configuration.
@@ -111,9 +117,3 @@ def get_scheduler_from_cluster_name(cluster_name: str) -> str:
     raise ConfigurationError(f"No configurations found for cluster '{cluster_name}'.")
   
   return all_configs[cluster_name].get('scheduler', '')
-
-def get_archive_dir() -> Path:
-  """Returns the path to the archive directory."""
-  archive_dir = get_project_root() / "archive"
-  archive_dir.mkdir(exist_ok=True)
-  return archive_dir

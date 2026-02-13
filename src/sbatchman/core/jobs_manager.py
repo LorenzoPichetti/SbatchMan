@@ -1,8 +1,8 @@
+from ast import Tuple
 import shutil
 import fnmatch
 import os
-import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import concurrent.futures
 from pathlib import Path
 
@@ -22,19 +22,25 @@ from dataclasses import asdict
 
 JOBS_CACHE = {}
 
+def clean_jobs_cache():
+  global JOBS_CACHE
+  JOBS_CACHE = {}
+
 def job_exists(
   command: str,
   config_name: str,
   cluster_name: str,
   tag: str,
   preprocess: Optional[str],
-  postprocess: Optional[str]
-) -> bool:
+  postprocess: Optional[str],
+  ignore_archived: bool = False,
+) -> Tuple[bool, str]:
   """
   Checks if an identical active job already exists.
   """
   global JOBS_CACHE
   cache_key = (cluster_name, config_name, tag)
+  from_archive = False
 
   if cache_key not in JOBS_CACHE:
     JOBS_CACHE[cache_key] = []
@@ -56,21 +62,23 @@ def job_exists(
       except Exception:
         continue
 
-    # Also check archived jobs
-    archive_root = get_archive_dir()
-    # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
-    # We use a wildcard for archive_name
-    archive_glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
-    
-    for metadata_path in archive_root.glob(archive_glob_pattern):
-      try:
-        with open(metadata_path, 'r') as f:
-          job_dict = yaml.safe_load(f)
-        
-        if job_dict:
-          JOBS_CACHE[cache_key].append(job_dict)
-      except Exception:
-        continue
+    if not ignore_archived:
+      # Also check archived jobs
+      archive_root = get_archive_dir()
+      # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
+      # We use a wildcard for archive_name
+      archive_glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
+      
+      for metadata_path in archive_root.glob(archive_glob_pattern):
+        try:
+          with open(metadata_path, 'r') as f:
+            job_dict = yaml.safe_load(f)
+          
+          if job_dict:
+            from_archive = True
+            JOBS_CACHE[cache_key].append(job_dict)
+        except Exception:
+          continue
 
   # Check against cache
   for job_dict in JOBS_CACHE[cache_key]:
@@ -79,9 +87,9 @@ def job_exists(
         job_dict.get('preprocess') == preprocess and
         job_dict.get('postprocess') == postprocess
       ):
-        return True
+        return True, 'archive' if from_archive else 'active'
       
-  return False
+  return False, ''
 
 def register_job(job: Job):
   """

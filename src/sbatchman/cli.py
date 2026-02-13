@@ -1,4 +1,5 @@
 from typing import List, Optional
+from sbatchman.core.jobs_manager import clean_jobs_cache
 from sbatchman.core.status import Status
 from sbatchman.schedulers.base import BaseConfig
 import typer
@@ -264,6 +265,7 @@ def launch(
   help="Command to run after the main job (optional)."),
   force: bool = typer.Option(False, "--force", help="Force submission even if identical jobs already exist."),
   variable: Optional[List[str]] = typer.Option(None, "--variable", "-v", help="Only launch jobs where variable matches value (e.g. model=gpt4). Can be used multiple times. Only applicable with --file."),
+  ignore_archived: bool = typer.Option(False, "--ignore-archived", "-ia", help="If True, do not check for duplicates in jobs archives."),
 ):
   """Launches an experiment (or a batch of experiments) using a predefined configuration.
 
@@ -288,6 +290,7 @@ def launch(
         force=force,
         filter_tags=tag,
         filter_variables=filter_variables_dict if filter_variables_dict else None,
+        ignore_archived=ignore_archived,
       )
       failed_sub_jobs_count = len([1 for j in jobs if j.status == Status.FAILED_SUBMISSION.value])
       ok_jobs_count = len(jobs) - failed_sub_jobs_count
@@ -302,7 +305,8 @@ def launch(
           tag=actual_tag,
           preprocess=preprocess,
           postprocess=postprocess,
-          force=force
+          force=force,
+          ignore_archived=ignore_archived,
         )
         console.print(f"✅ Experiment for config '[bold cyan]{config}[/bold cyan]' submitted successfully.")
         console.print(f"   ┣━ Job ID: {job.job_id}")

@@ -53,7 +53,7 @@ def wait_for_queue_slot(
     time.sleep(wait_interval)
 
 
-def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = None):
+def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = None, ignore_archived: bool = False):
   try:
     config_cluster_name = get_cluster_name()
     if job.cluster_name is None: # Use global cluster name if not provided
@@ -77,11 +77,11 @@ def job_submit(job: Job, force: bool = False, previous_job_id: Optional[int] = N
     raise ConfigurationNotFoundError(f"Configuration '{job.config_name}' for cluster '{job.cluster_name}' not found at '{config_path}'.")
   template_script = open(config_path, "r").read()
 
-
-  if job_exists(job.command, job.config_name, job.cluster_name, job.tag, job.preprocess, job.postprocess) and not force:
+  j_exists, where = job_exists(job.command, job.config_name, job.cluster_name, job.tag, job.preprocess, job.postprocess, ignore_archived=ignore_archived)
+  if j_exists and not force:
     raise JobExistsError(
-      f"An identical job already exists for config '{job.config_name}' with tag '{job.tag}'. "
-      "Use '--force' to submit it anyway"
+      f"An identical job already exists {'' if where == 'active' else '(in some archive)'} for config '{job.config_name}' with tag '{job.tag}'. " +
+      ("Use '--force' to submit it anyway." if where == 'active' else "Use '--ignore-archived or -ia' to ignore archived jobs.")
     )
 
   # Capture the Current Working Directory at the time of launch
@@ -195,6 +195,7 @@ def launch_job(
   variables: Optional[Dict[str, Any]] = None,
   dry_run: bool = False,
   max_queued_jobs: Optional[int] = None,
+  ignore_archived: bool = False,
 ) -> Job:
   """
   Launches an experiment based on a configuration name.
@@ -242,12 +243,14 @@ def launch_job(
   # Wait for queue slot if limit is configured (skip for dry runs)
   if not dry_run:
     wait_for_queue_slot(max_queued_jobs)
-
-  if not force and job_exists(command, config_name, cluster_name, tag, preprocess, postprocess):
-    raise JobExistsError(
-      f"An identical job already exists for config '{config_name}' with tag '{tag}'. "
-      "Use '--force' to submit it anyway"
-    )
+    
+  if not force:
+    j_exists, where = job_exists(command, config_name, cluster_name, tag, preprocess, postprocess, ignore_archived=ignore_archived)
+    if j_exists:
+      raise JobExistsError(
+        f"An identical job already exists {'' if where == 'active' else '(in some archive)'} for config '{config_name}' with tag '{tag}'. " +
+        ("Use '--force' to submit it anyway." if where == 'active' else "Use '--ignore-archived or -ia' to ignore archived jobs.")
+      )
 
   # Capture the Current Working Directory at the time of launch
   submission_cwd = Path.cwd()
@@ -449,6 +452,7 @@ def launch_jobs_from_file(
   dry_run: bool = False,
   filter_tags: Optional[List[str]] = None,
   filter_variables: Optional[Dict[str, Any]] = None,
+  ignore_archived: bool = False
 ) -> List[Job]:
   """  Launches jobs based on a YAML configuration file.
   Args:
@@ -534,6 +538,7 @@ def launch_jobs_from_file(
         dry_run=dry_run,
         filter_tags=filter_tags,
         filter_variables=filter_variables,
+        ignore_archived=ignore_archived,
       )
     else:
       for entry in config_jobs:
@@ -576,6 +581,7 @@ def launch_jobs_from_file(
           dry_run=dry_run,
           filter_tags=filter_tags,
           filter_variables=filter_variables,
+          ignore_archived=ignore_archived
         )
 
   return launched_jobs
@@ -595,6 +601,7 @@ def _launch_job_combinations(
   dry_run: bool = False,
   filter_tags: Optional[List[str]] = None,
   filter_variables: Optional[Dict[str, Any]] = None,
+  ignore_archived: bool = False
 ) -> Optional[int]:
     """
     Generates and launches jobs for all combinations of variables.
@@ -632,7 +639,7 @@ def _launch_job_combinations(
       # print(f'{job_tag=}')
       # print('='*40)
       try:
-        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), cluster_name=cluster_name, dry_run=dry_run)
+        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), cluster_name=cluster_name, dry_run=dry_run, ignore_archived=ignore_archived)
         console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
         launched_jobs.append(job)
         previous_job_id = job.job_id
@@ -663,7 +670,7 @@ def _launch_job_combinations(
       # print(f'{job_tag=}')
       # print('='*40)
       try:
-        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), variables=var_dict, cluster_name=cluster_name, dry_run=dry_run)
+        job = launch_job(config_name, command, tag=job_tag, preprocess=preprocess, postprocess=postprocess, force=force, previous_job_id=(previous_job_id if sequential else None), variables=var_dict, cluster_name=cluster_name, dry_run=dry_run, ignore_archived=ignore_archived)
         console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
         launched_jobs.append(job)
         previous_job_id = job.job_id

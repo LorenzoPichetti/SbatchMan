@@ -109,6 +109,9 @@ class Job:
       return get_archive_dir() / self.archive_name / self.exp_dir
     else:
       return get_experiments_dir() / self.exp_dir
+    
+  def get_job_script_path(self) -> Path:
+      return self.get_job_base_path() / "run.sh"
 
   def get_stdout_path(self) -> Path:
     return self.get_job_base_path() / "stdout.log"
