@@ -159,6 +159,7 @@ def create_local_config(
   name: str,
   cluster_name: Optional[str] = None,
   env: Optional[List[str]] = None,
+  modules: Optional[List[str]] = None,
   time: Optional[str] = None,
   overwrite: bool = False,
 ) -> LocalConfig:
@@ -169,13 +170,14 @@ def create_local_config(
     cluster_name: The name of the cluster this configuration belongs to.
       Defaults to the system's hostname.
     env: A list of environment variables to set.
+    modules: A list of modules to load in sbatch scripts before running commands.
     time: Walltime (e.g., 01-00:00:00).
     overwrite: If True, overwrite an existing configuration with the same name.
 
   Returns:
     The path to the newly created configuration file.
   """
-  config = LocalConfig(name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), env=env, time=time)
+  config = LocalConfig(name=name, cluster_name=cluster_name if cluster_name else get_cluster_name(), env=env, time=time, modules=modules)
   config.save_config(overwrite)
   return config
 

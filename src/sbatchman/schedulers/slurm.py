@@ -57,7 +57,6 @@ class SlurmConfig(BaseConfig):
   qos: Optional[str] = None
   reservation: Optional[str] = None
   exclusive: Optional[bool] = False
-  modules: Optional[List[str]] = None
   custom_headers: Optional[List[str]] = None
 
   def _generate_scheduler_directives(self) -> List[str]:
@@ -89,10 +88,6 @@ class SlurmConfig(BaseConfig):
     if self.custom_headers and len(self.custom_headers) > 0:
       for header in self.custom_headers:
         lines.append(header)
-    
-    if self.modules and len(self.modules) > 0:
-      lines.append('\n# Load System Modules')
-      lines.append(f'module load {" ".join(self.modules)}')
     
     return lines
   

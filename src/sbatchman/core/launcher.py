@@ -393,11 +393,27 @@ def _merge_dicts(base, override):
   return result
 
 
+_VAR_SUBSTITUTION_PATTERN = re.compile(r'(?<!\$)\{([^\s{}]+)\}')
+
 def _substitute(template, variables):
-  # Replace {var} in template with values from variables
+  """
+  Replace occurrences of {var_name} in template with values from variables,
+  where:
+    - var_name contains no spaces or newlines
+    - pattern is not preceded by $
+  """
   if not isinstance(template, str):
     return template
-  return template.format(**variables)
+
+  def replacer(match):
+    var_name = match.group(1)
+    if var_name in variables:
+        return str(variables[var_name])
+    # If variable not found, leave unchanged
+    return match.group(0)
+
+  return _VAR_SUBSTITUTION_PATTERN.sub(replacer, template)
+
 
 
 def _extract_used_vars(*templates):
