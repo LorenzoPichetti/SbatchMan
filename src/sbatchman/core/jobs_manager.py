@@ -34,62 +34,83 @@ def job_exists(
   preprocess: Optional[str],
   postprocess: Optional[str],
   ignore_archived: bool = False,
+  ignore_conf_in_dup_check: bool = False,
+  ignore_commands_in_dup_check: bool = False,
 ) -> Tuple[bool, str]:
   """
-  Checks if an identical active job already exists.
+  Checks if an identical job already exists (active or archived).
+
+  Duplicate logic can be customized via:
+    - ignore_archived
+    - ignore_conf_in_dup_check
+    - ignore_commands_in_dup_check
   """
   global JOBS_CACHE
-  cache_key = (cluster_name, config_name, tag)
   from_archive = False
+
+  # Cache key depends on whether config is part of the duplicate logic
+  if ignore_conf_in_dup_check:
+    cache_key = (cluster_name, tag)
+  else:
+    cache_key = (cluster_name, config_name, tag)
 
   if cache_key not in JOBS_CACHE:
     JOBS_CACHE[cache_key] = []
     exp_dir = get_experiments_dir()
-    
-    # Construct a specific glob pattern to only scan relevant directories.
-    # We use the directory structure to narrow down the search significantly.
-    # Structure: cluster/config/tag/timestamp/metadata.yaml
-    glob_pattern = f"{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
 
-    # Iterate through files and populate cache
+    if ignore_conf_in_dup_check:
+      # Ignore config level: cluster/*/tag/*/metadata.yaml
+      glob_pattern = f"{cluster_name}/*/{tag}/*/metadata.yaml"
+    else:
+      glob_pattern = f"{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
+
+    # Scan active experiments
     for metadata_path in exp_dir.glob(glob_pattern):
       try:
         with open(metadata_path, 'r') as f:
           job_dict = yaml.safe_load(f)
-        
         if job_dict:
           JOBS_CACHE[cache_key].append(job_dict)
       except Exception:
         continue
 
     if not ignore_archived:
-      # Also check archived jobs
       archive_root = get_archive_dir()
-      # Archive structure: archive_name/cluster_name/config_name/tag/timestamp
-      # We use a wildcard for archive_name
-      archive_glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
-      
+
+      if ignore_conf_in_dup_check:
+        archive_glob_pattern = f"*/{cluster_name}/*/{tag}/*/metadata.yaml"
+      else:
+        archive_glob_pattern = (
+          f"*/{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
+        )
+
       for metadata_path in archive_root.glob(archive_glob_pattern):
         try:
           with open(metadata_path, 'r') as f:
             job_dict = yaml.safe_load(f)
-          
           if job_dict:
             from_archive = True
             JOBS_CACHE[cache_key].append(job_dict)
         except Exception:
           continue
 
-  # Check against cache
+  # Duplicate check
   for job_dict in JOBS_CACHE[cache_key]:
-      if (
-        job_dict.get('command') == command and
-        job_dict.get('preprocess') == preprocess and
-        job_dict.get('postprocess') == postprocess
-      ):
-        return True, 'archive' if from_archive else 'active'
-      
+
+    # If we ignore command-level comparison, tag (+ optional config rule) is enough
+    if ignore_commands_in_dup_check:
+      return True, 'archive' if from_archive else 'active'
+
+    # Otherwise perform full comparison
+    if (
+      job_dict.get('command') == command and
+      job_dict.get('preprocess') == preprocess and
+      job_dict.get('postprocess') == postprocess
+    ):
+      return True, 'archive' if from_archive else 'active'
+
   return False, ''
+
 
 def register_job(job: Job):
   """
