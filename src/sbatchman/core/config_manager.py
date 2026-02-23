@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 import yaml
 import itertools
@@ -118,17 +119,20 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
           var_dict = dict(zip(keys, combination))
           config_name = _substitute(config_name_template, var_dict)
           # Merge default params with specific config params, substituting variables
-          final_params = default_conf.copy()
+          final_params = deepcopy(default_conf)
           for k, v in config_params.items():
             if isinstance(v, (int, float, str)):
               final_params[k] = _substitute(v, var_dict)
             elif isinstance(v, list) and len(v) > 0:
-              if isinstance(final_params[k], list):
+              if final_params.get(k) and isinstance(final_params[k], list):
                 for i in range(len(final_params[k])):
                   if isinstance(final_params[k][i], str):
                     final_params[k][i] = _substitute(final_params[k][i], var_dict)
+              else:
+                final_params[k] = []
               for lv in v:
                 final_params[k].append(_substitute(lv, var_dict) if isinstance(lv, str) else lv)
+              
           final_params["name"] = config_name
           final_params["cluster_name"] = cluster_name
           final_params["overwrite"] = overwrite
