@@ -123,7 +123,10 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
             if isinstance(v, (int, float, str)):
               final_params[k] = _substitute(v, var_dict)
             elif isinstance(v, list) and len(v) > 0:
-              final_params[k] = []
+              if isinstance(final_params[k], list):
+                for i in range(len(final_params[k])):
+                  if isinstance(final_params[k][i], str):
+                    final_params[k][i] = _substitute(final_params[k][i], var_dict)
               for lv in v:
                 final_params[k].append(_substitute(lv, var_dict) if isinstance(lv, str) else lv)
           final_params["name"] = config_name
