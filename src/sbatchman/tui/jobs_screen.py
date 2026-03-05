@@ -693,7 +693,7 @@ class JobsScreen(Screen):
             table.add_column("Command")
 
         self.load_and_update_jobs()
-        self.timer = self.set_interval(30, self.load_and_update_jobs, pause=False)
+        self.timer = self.set_interval(90, self.load_and_update_jobs, pause=False)
 
     def on_screen_resume(self) -> None:
         """Resume timer when screen becomes active."""
@@ -863,7 +863,7 @@ class JobsScreen(Screen):
     def _update_table_with_jobs(self, table: DataTable, jobs: List[Job]) -> None:
         """Efficiently update table with jobs using incremental updates instead of clear+rebuild."""
         # Build a map of current jobs by exp_dir
-        job_map = {job.exp_dir: job for job in jobs if job.exp_dir}
+        job_map = {job.get_stdout_path().parent: job for job in jobs if job.exp_dir}
         current_keys = set(job_map.keys())
 
         # Get existing row keys
@@ -938,6 +938,7 @@ class JobsScreen(Screen):
                     active_table.coordinate_to_cell_key(coord).row_key.value or ""
                 )
                 job = self._get_job_by_exp_dir(exp_dir_str)
+                    
                 if job:
                     self.app.push_screen(LogScreen(job=job))
             except (RowDoesNotExist, Exception):
