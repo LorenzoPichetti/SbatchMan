@@ -322,6 +322,14 @@ def launch_job(
     run_script_path.chmod(0o755)
 
   queued_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
+  job_vars = {}
+  if variables is not None:
+    for k, v in variables.items():
+      if isinstance(v, tuple):
+        job_vars[k] = v[0]
+        job_vars[f'{k}_filename'] = v[1]
+      else:
+        job_vars[k] = v
   job = Job(
     config_name=config_name,
     cluster_name=cluster_name,
@@ -334,7 +342,7 @@ def launch_job(
     archive_name=None,
     preprocess=preprocess,
     postprocess=postprocess,
-    variables=variables if variables is not None else {},
+    variables=job_vars,
     queued_timestamp=queued_ts,
   )
 
@@ -396,7 +404,7 @@ def _load_variable_values(var_value):
         return [line.strip().replace('\n', '') for line in f if line.strip()]
     elif path.is_dir():
       # Return sorted list of file names in the directory
-      return sorted([str(p.absolute()) for p in path.iterdir() if p.is_file()])
+      return sorted([(str(p.absolute()), p.stem) for p in path.iterdir() if p.is_file()])
     else:
       raise JobSubmitError(
         f"Variable value '{var_value}' is not a list, file, or directory.\n"
@@ -430,14 +438,24 @@ def _substitute(template, variables):
   where:
     - var_name contains no spaces or newlines
     - pattern is not preceded by $
+    - if variable value is a tuple, {var_name} gets the first element, {var_name_filename} gets the second
   """
   if not isinstance(template, str):
     return template
 
   def replacer(match):
     var_name = match.group(1)
-    if var_name in variables:
-        return str(variables[var_name])
+    if var_name.endswith("_filename"):
+      base_name = var_name[:-len("_filename")]
+      value = variables.get(base_name)
+      if isinstance(value, tuple) and len(value) > 1:
+        return str(value[1])
+    else:
+      value = variables.get(var_name)
+      if isinstance(value, tuple):
+        return str(value[0])
+      elif value is not None:
+        return str(value)
     # If variable not found, leave unchanged
     return match.group(0)
 
@@ -670,8 +688,16 @@ def _launch_job_combinations(
 
     # Determine which variables are actually used in the templates
     used_vars = _extract_used_vars(config_template, command_template, tag, preprocess_template, postprocess_template)
-    filtered_vars = {k: v for k, v in variables.items() if k in used_vars}
-
+    filtered_vars = {}
+    for k, v in variables.items():
+      # In case of [(abs_path, file_stem)]
+      if len(v) > 0 and isinstance(v[0], tuple):
+        if k in used_vars or f'{k}_filename' in used_vars:
+          filtered_vars[k] = v
+      else:
+        if k in used_vars:
+          filtered_vars[k] = v
+    
     if not filtered_vars:
       # If no variables are used, launch a single job
       config_name = _substitute(config_template, {})

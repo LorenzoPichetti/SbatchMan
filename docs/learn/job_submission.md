@@ -74,25 +74,32 @@ Variables can be defined in three ways:
 1.  **As a list of values:**
   ```yaml
   variables:
-    learning_rate: [0.01, 0.001]
-    use_gpu: [True, False]
+    float_var: [0.01, 0.001]
+    str_var: ['String1', 'String2']
   ```
-2.  **As a path to a file:** SbatchMan will treat each line in the file as a value for the variable.
+2.  **As a path to a file:** SbatchMan will treat **each line in the file** as a value for the variable.
   ```yaml
   variables:
-    dataset_path: datasets.txt
+    dataset: "datasets.txt"
   ```
-3.  **As a path to a directory:** SbatchMan will treat each file in the directory as a value for the variable.
+3.  **As a path to a directory:** SbatchMan will treat **each file in the directory** as a value for the variable.
     ```yaml
     variables:
-      dataset_path: datasets/
+      dataset: "datasets/"
     ```
-    If `datasets/` contains:
+    If the `datasets/` directory contains:
     ```
-    data1.csv
-    data2.csv
+    datasets/
+      └── data1.csv
+      └── data2.csv
     ```
-    Then `dataset_path` will have two possible values: `datasets/data1.csv` and `datasets/data2.csv`.
+    Then `dataset` will have two possible values: `absolute/path/to/datasets/data1.csv` and `absolute/path/to/datasets/data2.csv`.  
+    A new variable `dataset_filename` (in general `*_filename`) will be automatically generated. This variable will only contain the stem of the file, in this example: `data1` and `data2`.  
+    You can find an example here [https://github.com/ThomasPasquali/SbatchManTutorial/blob/main/yaml_files/jobs/dir_var.yaml](https://github.com/ThomasPasquali/SbatchManTutorial/blob/main/yaml_files/jobs/dir_var.yaml)
+
+!!! warning "Important Note"
+    DO NOT use an absolute path in the definition of job tags.  
+    SbatchMan internally uses tags as part of paths. Including special characters (e.g, /?*$) in the jobs tag, will mess up the path of the directories where SbatchMan will store job results.  
 
 ### The `sequential` Global Flag
 
@@ -118,9 +125,9 @@ You can specify commands to run before and after your main job using the `prepro
 Example:
 
 ```yaml
-command: python train.py --lr {learning_rate} --data {dataset_path}
-preprocess: echo "Starting job with dataset {dataset_path}"
-postprocess: echo "Finished job with dataset {dataset_path}"
+command: python train.py --lr {learning_rate} --data {dataset}
+preprocess: echo "Starting job with dataset {dataset}"
+postprocess: echo "Finished job with dataset {dataset}"
 ```
 
 You can override `preprocess` and `postprocess` at any level in the hierarchy, just like `command`.
