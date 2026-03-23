@@ -324,11 +324,12 @@ def launch(
 
 @app.command("status")
 def status(
-  experiments_dir: Optional[Path] = typer.Argument(None, help="Path to the experiments directory to monitor. Defaults to auto-detected SbatchMan/experiments.", exists=True, file_okay=False, dir_okay=True, readable=True)
+  experiments_dir: Optional[Path] = typer.Argument(None, help="Path to the experiments directory to monitor. Defaults to auto-detected SbatchMan/experiments.", exists=True, file_okay=False, dir_okay=True, readable=True),
+  columns: Optional[List[str]] = typer.Option(None, "--columns", "-c", help="Columns to display (e.g., time,config,tag,id,status,command). Can be used multiple times, example: -c id -c tag)."),
 ):
   """Shows the status of all experiments in an interactive TUI."""
   try:
-    run_tui(experiments_dir)
+    run_tui(experiments_dir=experiments_dir, columns=columns)
   except SbatchManError as e:
     console.print(f"[bold red]Error:[/bold red] {e}")
     raise typer.Exit(1)

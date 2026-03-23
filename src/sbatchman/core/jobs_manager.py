@@ -389,10 +389,79 @@ def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optio
 
   return jobs_to_archive
 
+def archive_job(job: Job, archive_name: str) -> None:
+  """
+  Archives a single active job to the named archive, creating the archive if
+  it does not already exist.
+
+  Args:
+      job:          The Job instance to archive.
+      archive_name: Name of the destination archive.  The directory
+                    <archive_root>/<archive_name> will be created if absent.
+
+  Raises:
+      ValueError:  If the job's experiment directory cannot be resolved.
+      FileNotFoundError: If the source experiment directory does not exist.
+  """
+  if not job.exp_dir:
+    raise ValueError(f"Job {job!r} has no exp_dir set.")
+
+  exp_dir_root = get_experiments_dir()
+  archive_root = get_archive_dir()
+
+  source_job_dir = exp_dir_root / job.exp_dir
+  if not source_job_dir.exists():
+    raise FileNotFoundError(f"Source directory not found: {source_job_dir}")
+
+  # Create the archive (or just the destination sub-directory) if needed.
+  dest_job_dir = archive_root / archive_name / job.exp_dir
+  dest_job_dir.parent.mkdir(parents=True, exist_ok=True)
+
+  # Update metadata to record the archive name before moving.
+  job.archive_name = archive_name
+  shutil.move(str(source_job_dir), str(dest_job_dir))
+
+  # Rewrite metadata in the new location so it stays consistent.
+  job.write_metadata()
+ 
+ 
+def unarchive_job(job: Job) -> None:
+  """
+  Moves a single archived job back to the active experiments directory.
+
+  Args:
+      job: The Job instance to restore.  ``job.archive_name`` must be set.
+
+  Raises:
+      ValueError: If the job has no archive_name or no exp_dir.
+      FileNotFoundError: If the archived experiment directory does not exist.
+  """
+  if not job.archive_name:
+    raise ValueError(f"Job {job!r} is not archived (archive_name is not set).")
+  if not job.exp_dir:
+    raise ValueError(f"Job {job!r} has no exp_dir set.")
+
+  archive_root = get_archive_dir()
+  exp_dir_root = get_experiments_dir()
+
+  source_job_dir = archive_root / job.archive_name / job.exp_dir
+  if not source_job_dir.exists():
+    raise FileNotFoundError(f"Archived directory not found: {source_job_dir}")
+
+  dest_job_dir = exp_dir_root / job.exp_dir
+  dest_job_dir.parent.mkdir(parents=True, exist_ok=True)
+
+  # Clear the archive tag before moving so active metadata is clean.
+  job.archive_name = None
+  shutil.move(str(source_job_dir), str(dest_job_dir))
+
+  job.write_metadata()
+
 def delete_jobs(
   cluster_name: Optional[str] = None,
   config_name: Optional[str] = None,
   tag: Optional[str] = None,
+  id: Optional[int] = None,
   archive_name: Optional[str] = None,
   archived: bool = False,
   not_archived: bool = False,
@@ -406,6 +475,7 @@ def delete_jobs(
     cluster_name: Filter by cluster name.
     config_name: Filter by configuration name.
     tag: Filter by tag.
+    id: Filter by id (only one will be deleted).
     archive_name: If provided, only delete jobs from this archive.
     archived: If True, delete only archived jobs.
     not_archived: If True, delete only active jobs.
@@ -426,6 +496,10 @@ def delete_jobs(
     update_jobs=False,
     variables=variables
   )
+
+  # Delete at most one by id
+  if id:
+    jobs_to_delete = [j for j in jobs_to_delete if int(j.job_id) == int(id)]
 
   if not jobs_to_delete:
     return 0
