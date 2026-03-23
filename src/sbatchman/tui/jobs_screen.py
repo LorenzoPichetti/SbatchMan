@@ -39,10 +39,12 @@ def _fmt_ts(ts: Optional[str]) -> str:
     if not ts:
         return "N/A"
     try:
+        if '.' in ts:
+            base, frac = ts.split('.', 1)
+            ts = f"{base}.{frac[:6]}"  # keep only microseconds
         return datetime.strptime(ts, "%Y%m%d_%H%M%S.%f").strftime("%Y-%m-%d %H:%M:%S")
     except (ValueError, TypeError):
         return ts
-
 
 COLUMN_REGISTRY: Dict[str, tuple] = {
     # display_name: (header_label, extractor)
