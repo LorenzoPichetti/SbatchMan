@@ -44,6 +44,12 @@ Here is the general structure:
 variables:
   <var1>: [value1, value2]
   <var2>: path/to/file_or_dir
+  <var3>:
+    default: <optional_default_value>
+    per-cluster:
+      <cluster_name_1>: <value_for_cluster_1>
+      <cluster_name_2>: <value_for_cluster_2>
+      ...
 
 <cluster_name_1>:
   scheduler: <slurm|pbs|local>

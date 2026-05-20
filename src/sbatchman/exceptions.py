@@ -19,6 +19,12 @@ class SchedulerMismatchError(SbatchManError):
   def __init__(self, message: str):
     self.message = message
     super().__init__(self.message)
+    
+class SyntaxError(SbatchManError):
+  """Raised when there is a syntax error."""
+  def __init__(self, message: str):
+    self.message = message
+    super().__init__(self.message)
 
 class ConfigurationError(SbatchManError):
   """Raised when there is an error in the configuration."""
@@ -47,6 +53,12 @@ class ArchiveExistsError(SbatchManError):
 class ClusterNameNotSetError(SbatchManError):
   """Raised when the cluster name is not set in the global configuration."""
   def __init__(self, message="Cluster name not set. Please run 'sbatchman set-cluster-name'."):
+    self.message = message
+    super().__init__(self.message)
+    
+class ClusterNameNotFoundError(SbatchManError):
+  """Raised when the cluster name is not found."""
+  def __init__(self, message: str):
     self.message = message
     super().__init__(self.message)
 

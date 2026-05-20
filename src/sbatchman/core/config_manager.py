@@ -6,7 +6,7 @@ import re
 
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_project_configs_file_path
-from sbatchman.exceptions import ConfigurationError
+from sbatchman.exceptions import ClusterNameNotFoundError, ConfigurationError, SyntaxError
 from typing import TYPE_CHECKING, Any, List, Optional, Union
 from sbatchman.schedulers.base import BaseConfig
 from sbatchman.schedulers.local import LocalConfig
@@ -17,6 +17,15 @@ def _load_variable_values(var_value):
   # If var_value is a list, return as is
   if isinstance(var_value, list):
     return var_value
+  # This may be a `per-cluster` variable
+  elif isinstance(var_value, dict):
+    if 'per_cluster' in var_value and isinstance(var_value['per_cluster'], dict):
+      val = var_value['per_cluster'].get(get_cluster_name()) or var_value.get('default')
+      if not val: 
+        raise ClusterNameNotFoundError(f'Cluster "{get_cluster_name()}" not found in {var_value} and no "default" value specified.')
+      return _load_variable_values(val)
+    else:
+      raise SyntaxError(f"Invalid variable value {var_value}. In case the variable value is a dictionary, you must specify a 'per-cluster' dictionary (+ optional default value).")
   elif isinstance(var_value, str):
     path = Path(var_value)
     if path.is_file():

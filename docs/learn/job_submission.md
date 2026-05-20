@@ -96,6 +96,16 @@ Variables can be defined in three ways:
     Then `dataset` will have two possible values: `absolute/path/to/datasets/data1.csv` and `absolute/path/to/datasets/data2.csv`.  
     A new variable `dataset_filename` (in general `*_filename`) will be automatically generated. This variable will only contain the stem of the file, in this example: `data1` and `data2`.  
     You can find an example here [https://github.com/ThomasPasquali/SbatchManTutorial/blob/main/yaml_files/jobs/dir_var.yaml](https://github.com/ThomasPasquali/SbatchManTutorial/blob/main/yaml_files/jobs/dir_var.yaml)
+4.  **As 'per-cluster':**
+    ```yaml
+    variables:
+      ncpus:
+        default: [1] # 'optional default value'
+        per-cluster:
+          cluster1: [1, 2, 4]
+          cluster2: [1, 2, 4, 8, 16]
+    ```
+    In this example, the `ncpus` variable value(s) will be automatically selected based on the cluster name set with the `sbatchman set-cluster-name <name>` command.
 
 !!! warning "Important Note"
     DO NOT use an absolute path in the definition of job tags.  
