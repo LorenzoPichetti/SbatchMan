@@ -1,5 +1,5 @@
+import shutil
 from typing import List, Optional
-from sbatchman.core.jobs_manager import clean_jobs_cache
 from sbatchman.core.status import Status
 from sbatchman.schedulers.base import BaseConfig
 import typer
@@ -13,7 +13,7 @@ import importlib.metadata
 
 from .tui.tui import run_tui
 
-console = Console()
+console = Console(width=shutil.get_terminal_size().columns)
 app = typer.Typer(help="A utility to create, launch, and monitor code experiments.")
 configure_app = typer.Typer(help="Create a configuration for a scheduler.")
 app.add_typer(configure_app, name="configure")

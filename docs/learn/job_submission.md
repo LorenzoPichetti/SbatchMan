@@ -96,16 +96,28 @@ Variables can be defined in three ways:
     Then `dataset` will have two possible values: `absolute/path/to/datasets/data1.csv` and `absolute/path/to/datasets/data2.csv`.  
     A new variable `dataset_filename` (in general `*_filename`) will be automatically generated. This variable will only contain the stem of the file, in this example: `data1` and `data2`.  
     You can find an example here [https://github.com/ThomasPasquali/SbatchManTutorial/blob/main/yaml_files/jobs/dir_var.yaml](https://github.com/ThomasPasquali/SbatchManTutorial/blob/main/yaml_files/jobs/dir_var.yaml)
-4.  **As 'per-cluster':**
+4.  **As 'per_cluster':**
     ```yaml
     variables:
       ncpus:
-        default: [1] # 'optional default value'
-        per-cluster:
+        default: [1] # optional default value
+        per_cluster:
           cluster1: [1, 2, 4]
           cluster2: [1, 2, 4, 8, 16]
     ```
     In this example, the `ncpus` variable value(s) will be automatically selected based on the cluster name set with the `sbatchman set-cluster-name <name>` command.
+5.  **As 'map':**
+    ```yaml
+    variables:
+      type_size:
+        default: [4] # optional default value
+        map:
+          float:  [4]
+          double: [8]
+          uint32: [4]
+          int32:  [4]
+    ```
+    The substitution wildcard uses the following syntax: `{<map_variable>[<variable_to_be_used_as_key>]}` (e.g., `{type_size[data_type]}`). You can specify multiple values in the values array.
 
 !!! warning "Important Note"
     DO NOT use an absolute path in the definition of job tags.  
@@ -124,23 +136,25 @@ This is the default behavior when using the `local` scheduler.
     There is no guarantee about the order of the jobs.   
     For SLURM, this is internally implemented using the `--dependency=afterany:$prev_job_id` option (PBS has a similar option)
 
-### The `command`, `preprocess`, and `postprocess` Blocks
+### The `command`, `preprocess`, `postprocess`, and `check` Blocks
 
 You can specify commands to run before and after your main job using the `preprocess` and `postprocess` keys. These can be set globally, per experiment, or per tag, and support variable substitution just like `command`.
 
-- **`command`**: The main command to run for the job.
-- **`preprocess`**: (Optional) Command to run before the main job.
-- **`postprocess`**: (Optional) Command to run after the main job.
+- **`command`**: The main command to run for the job. Its exit code will be used to determine the job status.
+- **`preprocess`**: (Optional) Command to run before `command`.
+- **`postprocess`**: (Optional) Command to run after `command`.
+- **`check`**: (Optional) Command to run after `postprocess`. It will override `command` exit status.
 
 Example:
 
 ```yaml
-command: python train.py --lr {learning_rate} --data {dataset}
-preprocess: echo "Starting job with dataset {dataset}"
-postprocess: echo "Finished job with dataset {dataset}"
+command:      'python train.py --lr {learning_rate} --data {dataset}"'
+preprocess:   'echo "Starting job with dataset {dataset}"'
+postprocess:  'echo "Finished job with dataset {dataset}"'
+check:        '[[ -f "train_result_{learning_rate}_{dataset}" ]]'
 ```
 
-You can override `preprocess` and `postprocess` at any level in the hierarchy, just like `command`.
+You can override `preprocess`, `postprocess`, and `check` at any level in the hierarchy, just like `command`.
 
 
 ### Hierarchy and Variable wildcards

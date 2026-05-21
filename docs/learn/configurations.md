@@ -46,9 +46,14 @@ variables:
   <var2>: path/to/file_or_dir
   <var3>:
     default: <optional_default_value>
-    per-cluster:
+    per_cluster:
       <cluster_name_1>: <value_for_cluster_1>
       <cluster_name_2>: <value_for_cluster_2>
+  <var4>:
+    default: <optional_default_value>
+    map:
+      <key_1>: <value_for_key_1>
+      <key_2>: <value_for_key_2>
       ...
 
 <cluster_name_1>:

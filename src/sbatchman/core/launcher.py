@@ -1,7 +1,8 @@
+import re
+import shutil
 import subprocess
 import datetime
 import itertools
-import re
 import time
 import yaml
 import fnmatch
@@ -9,10 +10,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from rich.console import Console
 
+from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, resolve_map_variable, map_info_to_vars
 from sbatchman.core.config_manager import load_local_config
 from sbatchman.core.job import Job, Status
 from sbatchman.core.jobs_manager import job_exists, register_job, count_active_jobs
-from sbatchman.exceptions import ClusterNameNotFoundError, SyntaxError, ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError
+from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError
 from sbatchman.config.global_config import get_cluster_name, get_max_queued_jobs
 from sbatchman.config.project_config import get_project_config_dir, get_scheduler_from_cluster_name
 
@@ -20,7 +22,7 @@ from sbatchman.config.project_config import get_experiments_dir
 from sbatchman.schedulers.pbs import pbs_submit
 from sbatchman.schedulers.slurm import slurm_submit
 
-console = Console()
+console = Console(width=shutil.get_terminal_size().columns)
 
 DEFAULT_QUEUE_WAIT_INTERVAL = 30  # seconds to wait between queue checks
 
@@ -132,6 +134,8 @@ def job_submit(
     "{CMD}", str(job.command)
   ).replace(
     "{POSTPROCESS}", str(job.postprocess) if job.postprocess is not None else ''
+  ).replace(
+    "{CHECK}", str(job.check) if hasattr(job, 'check') and job.check is not None else ''
   )
   
   run_script_path = exp_dir / "run.sh"
@@ -152,6 +156,7 @@ def job_submit(
     archive_name=None,
     preprocess=job.preprocess,
     postprocess=job.postprocess,
+    check=job.check,
     variables=job.variables if job.variables is not None else {},
     queued_timestamp=queued_ts,
   )
@@ -207,6 +212,7 @@ def launch_job(
   tag: str = "notag",
   preprocess: Optional[str] = None,
   postprocess: Optional[str] = None,
+  check: Optional[str] = None,
   force: bool = False,
   previous_job_id: Optional[int] = None,
   variables: Optional[Dict[str, Any]] = None,
@@ -225,6 +231,7 @@ def launch_job(
     tag: A tag for this experiment run, used in directory structure.
     preprocess: Optional; a command to run before the main command.
     postprocess: Optional; a command to run after the main command.
+    check: Optional; a command to run after postprocess whose exit code determines job status.
     previous_job_id: Optional; if this is set, the job will be only launched after the previous is done.
     max_queued_jobs: Optional; if set, will wait before submitting if the queue has this many jobs.
   Returns:
@@ -313,6 +320,8 @@ def launch_job(
     "{CMD}", str(command)
   ).replace(
     "{POSTPROCESS}", str(postprocess) if postprocess is not None else ''
+  ).replace(
+    "{CHECK}", str(check) if check is not None else ''
   )
   
   if not dry_run:
@@ -342,6 +351,7 @@ def launch_job(
     archive_name=None,
     preprocess=preprocess,
     postprocess=postprocess,
+    check=check,
     variables=job_vars,
     queued_timestamp=queued_ts,
   )
@@ -392,42 +402,6 @@ def launch_job(
     return job
 
 
-def _load_variable_values(var_value):
-  # If var_value is a list, return as is
-  if isinstance(var_value, list):
-    return var_value
-  # This may be a `per-cluster` variable
-  elif isinstance(var_value, dict):
-    if 'per_cluster' in var_value and isinstance(var_value['per_cluster'], dict):
-      val = var_value['per_cluster'].get(get_cluster_name()) or var_value.get('default')
-      if not val: 
-        raise ClusterNameNotFoundError(f'Cluster "{get_cluster_name()}" not found in {var_value} and no "default" value specified.')
-      return _load_variable_values(val)
-    else:
-      raise SyntaxError(f"Invalid variable value {var_value}. In case the variable value is a dictionary, you must specify a 'per-cluster' dictionary (+ optional default value).")
-  # If var_value is a string and a file, read lines
-  elif isinstance(var_value, str):
-    path = Path(var_value)
-    if path.is_file():
-      with open(path, "r") as f:
-        return [line.strip().replace('\n', '') for line in f if line.strip()]
-    elif path.is_dir():
-      # Return sorted list of file names in the directory
-      return sorted([(str(p.absolute()), p.stem) for p in path.iterdir() if p.is_file()])
-    else:
-      raise JobSubmitError(
-        f"Variable value '{var_value}' is not a list, file, or directory.\n"
-        "YAML script semantics:\n"
-        "- Variables can be lists, a path to a file (one value per line), or a path to a directory (all file absolute paths used as values).\n"
-        "- The cartesian product of all variable values is used to generate jobs.\n"
-        "- Experiments can define configuration names (possibly using variables) and tags.\n"
-        "- 'command' and 'variables' can be redefined or extended in inner YAML tags.\n"
-        "- The '{var_name}' syntax is substituted with the actual value of 'var_name'."
-      )
-  else:
-    return [var_value]
-
-
 def _merge_dicts(base, override):
   # Recursively merge two dictionaries
   result = dict(base)
@@ -437,48 +411,6 @@ def _merge_dicts(base, override):
     else:
       result[k] = v
   return result
-
-
-_VAR_SUBSTITUTION_PATTERN = re.compile(r'(?<!\$)\{([^\s{}]+)\}')
-
-def _substitute(template, variables):
-  """
-  Replace occurrences of {var_name} in template with values from variables,
-  where:
-    - var_name contains no spaces or newlines
-    - pattern is not preceded by $
-    - if variable value is a tuple, {var_name} gets the first element, {var_name_filename} gets the second
-  """
-  if not isinstance(template, str):
-    return template
-
-  def replacer(match):
-    var_name = match.group(1)
-    if var_name.endswith("_filename"):
-      base_name = var_name[:-len("_filename")]
-      value = variables.get(base_name)
-      if isinstance(value, tuple) and len(value) > 1:
-        return str(value[1])
-    else:
-      value = variables.get(var_name)
-      if isinstance(value, tuple):
-        return str(value[0])
-      elif value is not None:
-        return str(value)
-    # If variable not found, leave unchanged
-    return match.group(0)
-
-  return _VAR_SUBSTITUTION_PATTERN.sub(replacer, template)
-
-
-
-def _extract_used_vars(*templates):
-  """Extract variable names used in {var} format from given templates."""
-  var_names = set()
-  for template in templates:
-    if isinstance(template, str):
-      var_names.update(re.findall(r"{(\w+)}", template))
-  return var_names
 
 
 def _should_skip_job(
@@ -549,6 +481,7 @@ def launch_jobs_from_file(
   global_command = config.get("command", None)
   global_preprocess = config.get("preprocess", None)
   global_postprocess = config.get("postprocess", None)
+  global_check = config.get("check", None)
   global_cluster_name = config.get("cluster_name", None)
   
   machine_cluster_name = None
@@ -561,7 +494,7 @@ def launch_jobs_from_file(
     console.print('[yellow]Jobs will be scheduled sequentially.[/yellow]')
   
   # Prepare global variable values (expand files if needed)
-  expanded_global_vars = {k: _load_variable_values(v) for k, v in global_vars.items()}
+  expanded_global_vars = {k: load_variable_values(v) for k, v in global_vars.items()}
   
   launched_jobs = []
   job_definitions = config.get("jobs", [])
@@ -575,10 +508,11 @@ def launch_jobs_from_file(
     job_command_template = job_def.get("command", global_command)
     job_preprocess_template = job_def.get("preprocess", global_preprocess)
     job_postprocess_template = job_def.get("postprocess", global_postprocess)
+    job_check_template = job_def.get("check", global_check)
     job_cluster_name = job_def.get("cluster_name", global_cluster_name)
     job_vars = job_def.get("variables", {})
 
-    expanded_job_vars = {k: _load_variable_values(v) for k, v in job_vars.items()}
+    expanded_job_vars = {k: load_variable_values(v) for k, v in job_vars.items()}
 
     # Merge global and job-specific variables
     merged_job_vars = {**expanded_global_vars, **expanded_job_vars}
@@ -603,6 +537,7 @@ def launch_jobs_from_file(
         job_tag,
         job_preprocess_template,
         job_postprocess_template,
+        job_check_template,
         job_cluster_name,
         merged_job_vars,
         launched_jobs,
@@ -624,7 +559,7 @@ def launch_jobs_from_file(
 
         # Early tag filter: skip if static tag doesn't match any filter pattern
         # (dynamic tags with variables like {model} are checked later after substitution)
-        if filter_tags is not None and not _extract_used_vars(tag_name):
+        if filter_tags is not None and not extract_used_vars(tag_name):
           matched = any(fnmatch.fnmatch(tag_name, pattern) for pattern in filter_tags)
           if not matched:
             continue
@@ -632,9 +567,10 @@ def launch_jobs_from_file(
         entry_command_template = entry.get("command", job_command_template)
         entry_preprocess_template = entry.get("preprocess", job_preprocess_template)
         entry_postprocess_template = entry.get("postprocess", job_postprocess_template)
+        entry_check_template = entry.get("check", job_check_template)
         entry_cluster_name = entry.get("cluster_name", job_cluster_name)
         entry_vars = entry.get("variables", {})
-        expanded_entry_vars = {k: _load_variable_values(v) for k, v in entry_vars.items()}
+        expanded_entry_vars = {k: load_variable_values(v) for k, v in entry_vars.items()}
         
         # Merge all variables: global -> job -> entry
         final_vars = {**merged_job_vars, **expanded_entry_vars}
@@ -648,6 +584,7 @@ def launch_jobs_from_file(
           tag_name,
           entry_preprocess_template,
           entry_postprocess_template,
+          entry_check_template,
           entry_cluster_name,
           final_vars,
           launched_jobs,
@@ -664,12 +601,14 @@ def launch_jobs_from_file(
 
   return launched_jobs
 
+
 def _launch_job_combinations(
   config_template: str,
   command_template: str,
   tag: str,
   preprocess_template: Optional[str],
   postprocess_template: Optional[str],
+  check_template: Optional[str],
   cluster_name: Optional[str],
   variables: Dict[str, Any],
   launched_jobs: List[Job],
@@ -685,21 +624,42 @@ def _launch_job_combinations(
 ) -> Optional[int]:
     """
     Generates and launches jobs for all combinations of variables.
-
+    
+    Map variables are resolved dynamically based on their key variable's value.
+ 
     Args:
       filter_tags: If provided, only launch jobs whose substituted tag matches one of these values.
       filter_variables: If provided, only launch jobs where variables match all key=value pairs.
-
+ 
     Returns: the id of the last submitted job
     """
     if not command_template:
       return
-
+    
     # Determine which variables are actually used in the templates
-    used_vars = _extract_used_vars(config_template, command_template, tag, preprocess_template, postprocess_template)
+    used_vars = extract_used_vars(config_template, command_template, tag, preprocess_template, postprocess_template, check_template)
+    
+    # Find map variables and their key variables
+    map_info = {}  # map_name -> (map_dict, key_var_name)
     filtered_vars = {}
+    
     for k, v in variables.items():
-      # In case of [(abs_path, file_stem)]
+      if isinstance(v, dict) and '__map__' in v:
+        if k in used_vars:
+          # Find the key variable for this map by searching templates
+          key_var = None
+          for template in [config_template, command_template, tag, preprocess_template, postprocess_template, check_template]:
+            if isinstance(template, str):
+              pattern = re.compile(rf"\{{{k}\[(\w+)\]\}}")
+              match = pattern.search(template)
+              if match:
+                key_var = match.group(1)
+                break
+          if key_var:
+            map_info[k] = (v, key_var)
+        continue
+      
+      # In case of [(abs_path, file_stem)] tuples
       if len(v) > 0 and isinstance(v[0], tuple):
         if k in used_vars or f'{k}_filename' in used_vars:
           filtered_vars[k] = v
@@ -707,25 +667,19 @@ def _launch_job_combinations(
         if k in used_vars:
           filtered_vars[k] = v
     
-    if not filtered_vars:
+    if not filtered_vars and not map_info:
       # If no variables are used, launch a single job
-      config_name = _substitute(config_template, {})
-      command = _substitute(command_template, {})
-      job_tag = _substitute(tag, {})
-      preprocess = _substitute(preprocess_template, {})
-      postprocess = _substitute(postprocess_template, {})
+      config_name = substitute(config_template, {})
+      command = substitute(command_template, {})
+      job_tag = substitute(tag, {})
+      preprocess = substitute(preprocess_template, {})
+      postprocess = substitute(postprocess_template, {})
+      check = substitute(check_template, {})
       
       # Check if this job should be skipped based on filters
       if _should_skip_job(job_tag, {}, filter_tags, filter_variables):
         return previous_job_id
       
-      # print('='*40)
-      # print(f'{config_name=}')
-      # print(f'{preprocess=}')
-      # print(f'{command=}')
-      # print(f'{postprocess=}')
-      # print(f'{job_tag=}')
-      # print('='*40)
       try:
         job = launch_job(
           config_name,
@@ -733,6 +687,7 @@ def _launch_job_combinations(
           tag=job_tag,
           preprocess=preprocess,
           postprocess=postprocess,
+          check=check,
           force=force,
           previous_job_id=(previous_job_id if sequential else None),
           cluster_name=cluster_name,
@@ -749,49 +704,106 @@ def _launch_job_combinations(
       except JobSubmitError as e:
         console.print(f"Failed to submit job: {e.message}")
       return previous_job_id
-
+ 
     keys, values = zip(*filtered_vars.items())
     for combination in itertools.product(*values):
       var_dict = dict(zip(keys, combination))
-      config_name = _substitute(config_template, var_dict)
-      command = _substitute(command_template, var_dict)
-      job_tag = _substitute(tag, var_dict)
-      preprocess = _substitute(preprocess_template, var_dict)
-      postprocess = _substitute(postprocess_template, var_dict)
       
-      # Check if this job should be skipped based on filters
-      if _should_skip_job(job_tag, var_dict, filter_tags, filter_variables):
-        continue
+      # Merge with map variables for substitution
+      # Map variables stay as map dicts so substitute() can resolve them with their key
+      substitution_vars = {**map_info_to_vars(map_info), **var_dict}
       
-      # print('='*40)
-      # print(f'{config_name=}')
-      # print(f'{preprocess=}')
-      # print(f'{command=}')
-      # print(f'{postprocess=}')
-      # print(f'{job_tag=}')
-      # print('='*40)
-      try:
-        job = launch_job(
-          config_name,
-          command,
-          tag=job_tag,
-          preprocess=preprocess,
-          postprocess=postprocess,
-          force=force,
-          previous_job_id=(previous_job_id if sequential else None),
-          variables=var_dict,
-          cluster_name=cluster_name,
-          dry_run=dry_run,
-          ignore_archived=ignore_archived,
-          ignore_conf_in_dup_check=ignore_conf_in_dup_check,
-          ignore_commands_in_dup_check=ignore_commands_in_dup_check,
-        )
-        console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
-        launched_jobs.append(job)
-        previous_job_id = job.job_id
-      except JobExistsError as e:
-        console.print(f"Skipping job: {e.message}")
-      except JobSubmitError as e:
-        console.print(f"Failed to submit job: {e.message}")
+      # For the cartesian product of map-dependent values, we need to iterate through
+      # all possible combinations of resolved values from each map variable
+      map_resolved = {}  # map_name -> list of resolved values
+      for map_name, (map_var_dict, key_var_name) in map_info.items():
+        if key_var_name in var_dict:
+          try:
+            resolved_list = resolve_map_variable(map_var_dict, var_dict[key_var_name])
+            map_resolved[map_name] = resolved_list
+          except KeyError as e:
+            console.print(f"[red]Error resolving map variable '{map_name}': {e}[/red]")
+            continue
+      
+      # If there are resolved map variables, iterate through their combinations
+      if map_resolved:
+        map_keys, map_values = zip(*map_resolved.items())
+        for map_combination in itertools.product(*map_values):
+          map_dict = dict(zip(map_keys, map_combination))
+          # Use the combined vars for substitution
+          final_vars = {**substitution_vars, **map_dict}
+          
+          config_name = substitute(config_template, final_vars)
+          command = substitute(command_template, final_vars)
+          job_tag = substitute(tag, final_vars)
+          preprocess = substitute(preprocess_template, final_vars)
+          postprocess = substitute(postprocess_template, final_vars)
+          check = substitute(check_template, final_vars)
+          
+          # Check if this job should be skipped based on filters
+          if _should_skip_job(job_tag, final_vars, filter_tags, filter_variables):
+            continue
+          
+          try:
+            job = launch_job(
+              config_name,
+              command,
+              tag=job_tag,
+              preprocess=preprocess,
+              postprocess=postprocess,
+              check=check,
+              force=force,
+              previous_job_id=(previous_job_id if sequential else None),
+              variables=final_vars,
+              cluster_name=cluster_name,
+              dry_run=dry_run,
+              ignore_archived=ignore_archived,
+              ignore_conf_in_dup_check=ignore_conf_in_dup_check,
+              ignore_commands_in_dup_check=ignore_commands_in_dup_check,
+            )
+            console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
+            launched_jobs.append(job)
+            previous_job_id = job.job_id
+          except JobExistsError as e:
+            console.print(f"Skipping job: {e.message}")
+          except JobSubmitError as e:
+            console.print(f"Failed to submit job: {e.message}")
+      else:
+        # No map variables to resolve, process normally
+        config_name = substitute(config_template, substitution_vars)
+        command = substitute(command_template, substitution_vars)
+        job_tag = substitute(tag, substitution_vars)
+        preprocess = substitute(preprocess_template, substitution_vars)
+        postprocess = substitute(postprocess_template, substitution_vars)
+        check = substitute(check_template, substitution_vars)
+        
+        # Check if this job should be skipped based on filters
+        if _should_skip_job(job_tag, var_dict, filter_tags, filter_variables):
+          continue
+        
+        try:
+          job = launch_job(
+            config_name,
+            command,
+            tag=job_tag,
+            preprocess=preprocess,
+            postprocess=postprocess,
+            check=check,
+            force=force,
+            previous_job_id=(previous_job_id if sequential else None),
+            variables=var_dict,
+            cluster_name=cluster_name,
+            dry_run=dry_run,
+            ignore_archived=ignore_archived,
+            ignore_conf_in_dup_check=ignore_conf_in_dup_check,
+            ignore_commands_in_dup_check=ignore_commands_in_dup_check,
+          )
+          console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
+          launched_jobs.append(job)
+          previous_job_id = job.job_id
+        except JobExistsError as e:
+          console.print(f"Skipping job: {e.message}")
+        except JobSubmitError as e:
+          console.print(f"Failed to submit job: {e.message}")
     
     return previous_job_id

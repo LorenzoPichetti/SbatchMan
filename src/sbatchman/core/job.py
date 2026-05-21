@@ -27,7 +27,8 @@ class Job:
   queued_timestamp: str
   exitcode: Optional[int] = None
   preprocess: Optional[str] = None
-  postprocess: Optional[str] = None 
+  postprocess: Optional[str] = None
+  check: Optional[str] = None
   archive_name: Optional[str] = None
   variables: Optional[dict[str, Any]] = None
   start_timestamp: Optional[str] = None
