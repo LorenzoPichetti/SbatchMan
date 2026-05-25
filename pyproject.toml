@@ -24,7 +24,8 @@ dependencies = [
     "rich",
     "PyYAML",
     "platformdirs",
-    "pandas"
+    "pandas",
+    "tomli_w"
 ]
 
 [project.urls]

@@ -12,9 +12,10 @@ from sbatchman.config.project_config import get_project_config_dir, get_project_
 @dataclass
 class BaseConfig(ABC):
   """Abstract base class for all scheduler configs."""
-
+  
   name: str
   cluster_name: str
+  scheduler: str = ''
   template_path: Optional[Path] = None
   env: Optional[List[str]] = None
   modules: Optional[List[str]] = None
@@ -66,9 +67,9 @@ class BaseConfig(ABC):
       "\n# Update job_id in metadata.yaml",
       self._generate_jobid_update_line(),
       "\n# Update status to RUNNING",
-      'if [ -f "{EXP_DIR}/metadata.yaml" ]; then',
-      ' perl -i -pe\'s/status: .*/status: RUNNING/\' {EXP_DIR}/metadata.yaml',
-      'fi',
+      #'if [ -f "{EXP_DIR}/metadata.yaml" ]; then',
+      'perl -i -pe\'s/status: .*/status: RUNNING/\' {EXP_DIR}/metadata.yaml',
+      #'fi',
     ]
 
     # Set environment variables
@@ -84,26 +85,41 @@ class BaseConfig(ABC):
     footer = [
       "\n# (Optional) Preprocess command",
       '{PREPROCESS}',
+
       "\n# User command",
       '{CMD}',
-      'EXIT_CODE=$?',
+      'CMD_EXIT_CODE=$?',
+
+      "\n# Default final exit code/status from CMD",
+      'EXIT_CODE=$CMD_EXIT_CODE',
+      'STATUS="COMPLETED"',
+
+      'if [ $CMD_EXIT_CODE -ne 0 ]; then',
+      '  STATUS="FAILED"',
+      'fi',
+
       "\n# (Optional) Postprocess command",
       '{POSTPROCESS}',
-      "\n# (Optional) Check command (overrides exit code)",
+
+      "\n# (Optional) Check command (overrides only on failure)",
       'if [ -n "{CHECK}" ]; then',
       '  {CHECK}',
-      '  EXIT_CODE=$?',
-      'fi',
-      "\n# Update status based on final EXIT_CODE",
-      'if [ -f "{EXP_DIR}/metadata.yaml" ]; then',
-      '  if [ $EXIT_CODE -eq 0 ]; then',
-      '    perl -i -pe\'s/status: .*/status: COMPLETED/\' {EXP_DIR}/metadata.yaml',
-      '  else',
-      '    perl -i -pe\'s/status: .*/status: CHECK_FAIL/\' {EXP_DIR}/metadata.yaml',
+      '  CHECK_EXIT_CODE=$?',
+
+      '  if [ $CHECK_EXIT_CODE -ne 0 ]; then',
+      '    EXIT_CODE=$CHECK_EXIT_CODE',
+      '    STATUS="CHECK_FAIL"',
       '  fi',
-      '  perl -i -pe"s/exitcode: .*/exitcode: $EXIT_CODE/" {EXP_DIR}/metadata.yaml',
       'fi',
-      '\necho "end_timestamp: \'$(date +%Y%m%d_%H%M%S.%N)\'" >> "{EXP_DIR}/metadata.yaml"\n'
+
+      "\n# Update metadata",
+      # 'if [ -f "{EXP_DIR}/metadata.yaml" ]; then',
+      'perl -i -pe"s/status: .*/status: $STATUS/" {EXP_DIR}/metadata.yaml',
+      'perl -i -pe"s/exitcode: .*/exitcode: $EXIT_CODE/" {EXP_DIR}/metadata.yaml',
+      # 'fi',
+
+      '\necho "end_timestamp: \'$(date +%Y%m%d_%H%M%S.%N)\'" >> "{EXP_DIR}/metadata.yaml"\n',
+
       '\nexit $EXIT_CODE',
     ]
 
@@ -138,9 +154,11 @@ class BaseConfig(ABC):
       data = {}
 
     scheduler_name = self.get_scheduler_name()
-    if self.cluster_name in data:
-      if data[self.cluster_name].get('scheduler') != scheduler_name:
-        raise SchedulerMismatchError(f"Cluster '{self.cluster_name}' is already configured with scheduler '{data[self.cluster_name]['scheduler']}'. Cannot add a '{scheduler_name}' configuration.")
+    
+    # NOW YOU CAN HAVE SCHEDULER OVERRIDES INSIDE CONFIGS (usually for compilation jobs)
+    # if self.cluster_name in data:
+    #   if data[self.cluster_name].get('scheduler') != scheduler_name:
+    #     raise SchedulerMismatchError(f"Cluster '{self.cluster_name}' is already configured with scheduler '{data[self.cluster_name]['scheduler']}'. Cannot add a '{scheduler_name}' configuration.")
     
     if not overwrite and self.cluster_name in data and self.name in data[self.cluster_name].get('configs', {}):
       raise ConfigurationError(f"Configuration '{self.name}' for cluster '{self.cluster_name}' already exists. Use '--overwrite' to update it.")

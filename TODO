@@ -1,6 +1,4 @@
 sbatchman launch -f config.yaml --exclude_tag shortDiam --include_config bfs1cpu,bfs2cpu
 # also include/exclude the other way around
 
-Campaigns
-
-Switch scheduler for compilation yamls
+Campaigns: on resume, delete non-completed jobs

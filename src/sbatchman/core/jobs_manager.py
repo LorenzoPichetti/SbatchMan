@@ -2,23 +2,22 @@ from ast import Tuple
 import shutil
 import fnmatch
 import os
-from typing import List, Optional, Dict, Any, Tuple
+from typing import Callable, List, Optional, Dict, Any, Tuple
 import concurrent.futures
 from pathlib import Path
-
+import pandas as pd
+from dataclasses import asdict
 import yaml
 try:
-    from yaml import CSafeLoader as SafeLoader
+  from yaml import CSafeLoader as SafeLoader
 except ImportError:
-    from yaml import SafeLoader
+  from yaml import SafeLoader
 
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_archive_dir, get_experiments_dir
 from sbatchman.core.job import Job
 from sbatchman.core.status import TERMINAL_STATES, Status
 from sbatchman.exceptions import ArchiveExistsError
-import pandas as pd
-from dataclasses import asdict
 
 JOBS_CACHE = {}
 
@@ -329,30 +328,242 @@ def jobs_list(
     
   return jobs
 
-def jobs_df(
-  cluster_name: Optional[str] = None,
-  config_name: Optional[str] = None,
-  tag: Optional[str] = None,
-  include_archived: bool = False
+def job_by_id(
+  id: int,
+  from_active: bool = True,
+  from_archived: bool = True,
+  archive_name: Optional[str] = None,
+) -> Optional[Job]:
+  """
+  Find a job by scheduler/job id.
+
+  Searches active and/or archived jobs and returns the first match.
+
+  Args:
+      id: Job id to search for.
+      from_active: Search active experiments.
+      from_archived: Search archived experiments.
+      archive_name: Restrict archived search to a specific archive.
+
+  Returns:
+      Matching Job or None if not found.
+  """
+
+  target_id = str(id)
+
+  def _match_metadata(metadata_path: Path) -> Optional[Job]:
+    try:
+      with open(metadata_path, "r") as f:
+        job_dict = yaml.load(f, Loader=SafeLoader)
+
+      if not job_dict:
+        return None
+
+      if str(job_dict.get("job_id")) != target_id:
+        return None
+
+      return Job(**job_dict)
+
+    except Exception:
+      return None
+
+  def _iter_metadata_paths(root: Path, archived: bool):
+    """
+    Yield metadata.yaml paths without recursive globbing.
+    """
+
+    try:
+      if archived:
+        archives = _get_matching_subdirs(root, archive_name)
+      else:
+        archives = [root]
+
+      for base in archives:
+        # cluster
+        with os.scandir(base) as clusters:
+          for cluster_entry in clusters:
+              if not cluster_entry.is_dir():
+                continue
+
+              cluster_dir = Path(cluster_entry.path)
+
+              # config
+              with os.scandir(cluster_dir) as configs:
+                for config_entry in configs:
+                  if not config_entry.is_dir():
+                    continue
+
+                  config_dir = Path(config_entry.path)
+
+                  # tag
+                  with os.scandir(config_dir) as tags:
+                    for tag_entry in tags:
+                      if not tag_entry.is_dir():
+                        continue
+
+                      tag_dir = Path(tag_entry.path)
+
+                      # timestamp
+                      with os.scandir(tag_dir) as timestamps:
+                        for ts_entry in timestamps:
+                          if ts_entry.is_dir():
+                            yield Path(ts_entry.path) / "metadata.yaml"
+    except OSError:
+        return
+
+  search_roots = []
+
+  if from_active:
+    search_roots.append((get_experiments_dir(), False))
+
+  if from_archived:
+    search_roots.append((get_archive_dir(), True))
+
+  # Parallel metadata parsing
+  with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+
+    future_to_path = {}
+
+    for root, archived in search_roots:
+      for metadata_path in _iter_metadata_paths(root, archived):
+        future = executor.submit(_match_metadata, metadata_path)
+        future_to_path[future] = metadata_path
+
+    for future in concurrent.futures.as_completed(future_to_path):
+      job = future.result()
+
+      if job is not None:
+        # Cancel remaining tasks early
+        executor.shutdown(wait=False, cancel_futures=True)
+        return job
+
+  return None
+
+# def jobs_metadata_dataframe(
+#   cluster_name: Optional[str] = None,
+#   config_name: Optional[str] = None,
+#   tag: Optional[str] = None,
+#   include_archived: bool = False
+# ) -> pd.DataFrame:
+#   """
+#   Returns a pandas DataFrame of jobs, with optional filtering.
+#   Args:
+#     cluster_name: Filter by cluster name.
+#     config_name: Filter by configuration name.
+#     tag: Filter by tag.
+#     include_archived: If True, include archived jobs in the DataFrame.
+#   Returns:
+#     A pandas DataFrame containing job metadata.
+#   """
+#   jobs = jobs_list(
+#     cluster_name=cluster_name,
+#     config_name=config_name,
+#     tag=tag,
+#     from_archived=include_archived
+#   )
+#   jobs_dicts = [job.__dict__ for job in jobs]
+#   return pd.DataFrame(jobs_dicts)
+
+JobFilter = Callable[[Job], bool]
+JobExtractor = Callable[[Job], dict[str, Any]]
+
+def jobs_to_dataframe(
+    cluster_name: Optional[str] = None,
+    config_name: Optional[str] = None,
+    tag: Optional[str] = None,
+    status: Optional[list[Status]] = None,
+    archive_name: Optional[str] = None,
+    from_active: bool = True,
+    from_archived: bool = False,
+    update_jobs: bool = True,
+    variables: Optional[dict[str, Any]] = None,
+
+    # custom pipeline
+    job_filter: Optional[JobFilter] = None,
+    extractors: Optional[list[JobExtractor]] = None,
+
+    # include base metadata automatically
+    include_job_variables: bool = True,
+    include_job_fields: bool = False,
 ) -> pd.DataFrame:
   """
-  Returns a pandas DataFrame of jobs, with optional filtering.
+  Convert jobs into a pandas DataFrame.
+
+  The dataframe is built by applying user-defined extractor callbacks
+  to each job.
+
   Args:
-    cluster_name: Filter by cluster name.
-    config_name: Filter by configuration name.
-    tag: Filter by tag.
-    include_archived: If True, include archived jobs in the DataFrame.
+      Same filtering arguments as jobs_list().
+
+      job_filter:
+          Optional callback(job) -> bool.
+          Additional filtering applied after jobs_list().
+          If the filter returns True, the job will be kept, otherwise is discarded.
+
+      extractors:
+          List of callbacks(job) -> dict.
+          Each extractor contributes columns to the dataframe.
+
+      include_job_variables:
+          If True, includes Job variables (defined in then YAML).
+          
+      include_job_fields:
+          If True, includes Job dataclass fields ['config_name', 'cluster_name', 'status', 'tag', 'job_id', 'exitcode', 'archive_name', 'sbm_queue_time_s', 'sbm_run_time_s'].
+
   Returns:
-    A pandas DataFrame containing job metadata.
+      pandas.DataFrame
   """
+
   jobs = jobs_list(
     cluster_name=cluster_name,
     config_name=config_name,
     tag=tag,
-    from_archived=include_archived
+    status=status,
+    archive_name=archive_name,
+    from_active=from_active,
+    from_archived=from_archived,
+    update_jobs=update_jobs,
+    variables=variables,
   )
-  jobs_dicts = [job.__dict__ for job in jobs]
-  return pd.DataFrame(jobs_dicts)
+
+  rows = []
+
+  for job in jobs:
+
+    # optional custom filter
+    if job_filter is not None and not job_filter(job):
+      continue
+
+    row: dict[str, Any] = {}
+
+    # include dataclass fields
+    if include_job_fields:
+      job_dict = {}
+      for k in ['config_name', 'cluster_name', 'status', 'tag', 'job_id', 'exitcode', 'archive_name']:
+        job_dict[k] = getattr(job, k)
+        
+      job_dict["sbm_queue_time_s"] = job.get_time_in_queue()
+      job_dict["sbm_run_time_s"] = job.get_run_time()
+      
+      row.update(job_dict)
+        
+    if include_job_variables and job.variables:
+      row.update(job.variables)
+
+
+    # custom extractors
+    if extractors:
+      for extractor in extractors:
+        try:
+          data = extractor(job)
+          if data:
+            row.update(data)
+        except Exception as e:
+            row[f"{extractor.__name__}_error"] = str(e)
+
+    rows.append(row)
+
+  return pd.DataFrame(rows)
   
 def archive_jobs(archive_name: str, overwrite: bool = False, cluster_name: Optional[str] = None, config_name: Optional[str] = None, tag: Optional[str] = None, status: Optional[List[Status]] = None) -> List[Job]:
   """

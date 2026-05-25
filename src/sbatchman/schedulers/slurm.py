@@ -41,6 +41,8 @@ SLURM_STATUS_MAP = {
 @dataclass
 class SlurmConfig(BaseConfig):
   """Scheduler for SLURM."""
+  
+  scheduler: str = 'slurm'
 
   partition: Optional[str] = None
   nodes: Optional[str] = None

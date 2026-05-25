@@ -16,7 +16,7 @@ from sbatchman.core.job import Job, Status
 from sbatchman.core.jobs_manager import job_exists, register_job, count_active_jobs
 from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError
 from sbatchman.config.global_config import get_cluster_name, get_max_queued_jobs
-from sbatchman.config.project_config import get_project_config_dir, get_scheduler_from_cluster_name
+from sbatchman.config.project_config import get_project_config_dir, get_scheduler_from_cluster_and_config_name
 
 from sbatchman.config.project_config import get_experiments_dir
 from sbatchman.schedulers.pbs import pbs_submit
@@ -79,7 +79,7 @@ def job_submit(
         "Please provide '--cluster-name' or use 'sbatchman set-cluster-name <cluster_name>' to set a global default."
       )
   
-  scheduler = get_scheduler_from_cluster_name(job.cluster_name)
+  scheduler = get_scheduler_from_cluster_and_config_name(job.cluster_name, job.config_name)
 
   config_path = get_project_config_dir() / job.cluster_name / f"{job.config_name}.sh"
   if not config_path.exists():
@@ -259,7 +259,7 @@ def launch_job(
         "Please provide '--cluster-name' or use 'sbatchman set-cluster-name <cluster_name>' to set a global default."
       )
   
-  scheduler = get_scheduler_from_cluster_name(cluster_name)
+  scheduler = get_scheduler_from_cluster_and_config_name(cluster_name, config_name)
 
   config_path = get_project_config_dir() / cluster_name / f"{config_name}.sh"
   if not config_path.exists():

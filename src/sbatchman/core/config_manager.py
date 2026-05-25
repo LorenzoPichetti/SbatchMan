@@ -1,4 +1,5 @@
 from copy import deepcopy
+import os
 from pathlib import Path
 import re
 import yaml
@@ -7,7 +8,7 @@ import itertools
 from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, map_info_to_vars, resolve_map_variable
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_project_configs_file_path
-from sbatchman.exceptions import ConfigurationError
+from sbatchman.exceptions import ConfigurationError, SyntaxError
 from typing import Any, List, Optional, Union
 from sbatchman.schedulers.base import BaseConfig
 from sbatchman.schedulers.local import LocalConfig
@@ -223,14 +224,22 @@ def _create_config_from_params(scheduler: str, params: dict[str, Any]) -> BaseCo
   Calls the appropriate API function to create a single configuration.
   """
   params = {k.replace('-', '_'): v for k, v in params.items()}
-  if scheduler == "slurm":
-    return create_slurm_config(**params)
-  elif scheduler == "pbs":
-    return create_pbs_config(**params)
-  elif scheduler == "local":
-    return create_local_config(**params)
-  else:
-    raise ConfigurationError(f"Unsupported scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
+  
+  if 'scheduler' in params:
+    scheduler = params['scheduler']
+    del params['scheduler']
+    
+  try:
+    if scheduler == "slurm":
+      return create_slurm_config(**params)
+    elif scheduler == "pbs":
+      return create_pbs_config(**params)
+    elif scheduler == "local":
+      return create_local_config(**params)
+    else:
+      raise ConfigurationError(f"Unsupported scheduler '{scheduler}'. Supported schedulers are: slurm, pbs, local.")
+  except Exception as e:
+    raise SyntaxError(str(e))
 
   
 def create_local_config(

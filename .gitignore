@@ -19,6 +19,7 @@ experiments/
 configs/
 archive/
 SbatchMan/
+campaign_results/
 datasets/
 jobs.yaml
 modes.txt

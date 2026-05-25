@@ -1,17 +1,19 @@
+import importlib.metadata
 import shutil
-from typing import List, Optional
-from sbatchman.core.status import Status
-from sbatchman.schedulers.base import BaseConfig
 import typer
+from typing import List, Optional
 from rich.console import Console
 from pathlib import Path
 
-import sbatchman as sbtc
+import sbatchman as sbm
+from sbatchman.core.status import Status
+from sbatchman.schedulers.base import BaseConfig
 from sbatchman.config import global_config
 from sbatchman.exceptions import ProjectNotInitializedError, SbatchManError
-import importlib.metadata
-
-from .tui.tui import run_tui
+from sbatchman.tui.tui import run_tui
+from sbatchman.core.campaign import run_campaign
+# from sbatchman.remote.fetch import fetch_remotes
+# from sbatchman.tui.tui_remote import run_config_tui
 
 console = Console(width=shutil.get_terminal_size().columns)
 app = typer.Typer(help="A utility to create, launch, and monitor code experiments.")
@@ -27,7 +29,7 @@ def _handle_not_initialized():
   )
   if init_choice:
     try:
-      sbtc.init_project(Path.cwd())
+      sbm.init_project(Path.cwd())
       console.print("[green]✓[/green] SbatchMan project created successfully. Please re-run your previous command.")
     except SbatchManError as e:
       console.print(f"[bold red]Error:[/bold red] {e}")
@@ -136,7 +138,7 @@ def init(
 ):
   """Initializes a SbatchMan project and sets up global configuration if needed."""
   try:
-    sbtc.init_project(path)
+    sbm.init_project(path)
     console.print(f"[green]✓[/green] SbatchMan project initialized successfully in {(path / 'SbatchMan').resolve().absolute()}")
   except SbatchManError as e:
     console.print(f"[bold red]Error:[/bold red] {e}")
@@ -167,7 +169,7 @@ def configure_slurm(
   """Creates a SLURM configuration."""
   while True:
     try:
-      config = sbtc.create_slurm_config(
+      config = sbm.create_slurm_config(
         name=name, cluster_name=cluster_name,
         partition=partition, nodes=nodes, ntasks=ntasks, tasks_per_node=tasks_per_node, cpus_per_task=cpus_per_task, mem=mem, account=account,
         time=time, gpus=gpus, constraint=constraint, nodelist=nodelist, exclude=exclude, qos=qos, reservation=reservation, exclusive=exclusive,
@@ -195,7 +197,7 @@ def configure_pbs(
   """Creates a PBS configuration."""
   while True:
     try:
-      config = sbtc.create_pbs_config(name=name, cluster_name=cluster_name, queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, overwrite=overwrite)
+      config = sbm.create_pbs_config(name=name, cluster_name=cluster_name, queue=queue, cpus=cpus, mem=mem, walltime=walltime, env=env, overwrite=overwrite)
       _save_config_print(config)
       break
     except ProjectNotInitializedError:
@@ -215,7 +217,7 @@ def configure_local(
   """Creates a configuration for local execution."""
   while True:
     try:
-      config = sbtc.create_local_config(name=name, env=env, time=time, cluster_name=cluster_name, overwrite=overwrite)
+      config = sbm.create_local_config(name=name, env=env, time=time, cluster_name=cluster_name, overwrite=overwrite)
       _save_config_print(config)
       break
     except ProjectNotInitializedError:
@@ -245,7 +247,7 @@ def configure(
   """
   if file:
     try:
-      for config in sbtc.create_configs_from_file(file, overwrite):
+      for config in sbm.create_configs_from_file(file, overwrite):
         _save_config_print(config)
       console.print(f"✅ Configurations from '[bold cyan]{file.name}[/bold cyan]' loaded successfully.")
     except SbatchManError as e:
@@ -261,8 +263,8 @@ def launch(
   tag: Optional[List[str]] = typer.Option(None, "--tag", "-t", help="Tag for the experiment. If --file is used, it filters jobs by tag (can be used multiple times)."),
   command: Optional[str] = typer.Argument(None, help="The executable and its parameters, enclosed in quotes."),
   preprocess: Optional[str] = typer.Option(None, "--preprocess", help="Command to run before the main job (optional)."),
-  postprocess: Optional[str] = typer.Option(None, "--postprocess", 
-  help="Command to run after the main job (optional)."),
+  postprocess: Optional[str] = typer.Option(None, "--postprocess", help="Command to run after the main job (optional)."),
+  dry_run: bool = typer.Option(False, "--dry-run", help="If set, will show the list of jobs but will not launch them (warning: won't work for sequential jobs)"),
   force: bool = typer.Option(False, "--force", help="Force submission even if identical jobs already exist."),
   variable: Optional[List[str]] = typer.Option(None, "--variable", "-v", help="Only launch jobs where variable matches value (e.g. model=gpt4). Can be used multiple times. Only applicable with --file."),
   ignore_archived: bool = typer.Option(False, "--ignore-archived", "-ia", help="If True, do not check for duplicates in jobs archives."),
@@ -287,9 +289,10 @@ def launch(
 
     # Call the API/launcher
     if file:
-      jobs = sbtc.launch_jobs_from_file(
+      jobs = sbm.launch_jobs_from_file(
         file,
         force=force,
+        dry_run=dry_run,
         filter_tags=tag,
         filter_variables=filter_variables_dict if filter_variables_dict else None,
         ignore_archived=ignore_archived,
@@ -303,13 +306,14 @@ def launch(
         console.print(f"❌ Failed to submit {failed_sub_jobs_count} jobs (you can find the errors in the jobs stderr file, from `sbatchman status`).")
     elif config and command:
         actual_tag = tag[0] if tag else "default"
-        job = sbtc.launch_job(
+        job = sbm.launch_job(
           config_name=config,
           command=command,
           tag=actual_tag,
           preprocess=preprocess,
           postprocess=postprocess,
           force=force,
+          dry_run=dry_run,
           ignore_archived=ignore_archived,
         )
         console.print(f"✅ Experiment for config '[bold cyan]{config}[/bold cyan]' submitted successfully.")
@@ -321,6 +325,9 @@ def launch(
   except SbatchManError as e:
     console.print(f"[bold red]Error:[/bold red] {e}")
     raise typer.Exit(1)
+  
+  if dry_run:
+    console.print(f"[bold yellow]This was a dry-run. No job has run.[/bold yellow]")
 
 @app.command("status")
 def status(
@@ -349,7 +356,7 @@ def archive(
     if status_list is not None:
       casted_status_list = _cast_status_list(status_list)
         
-    archived_count = sbtc.archive_jobs(
+    archived_count = sbm.archive_jobs(
       archive_name=archive_name,
       overwrite=overwrite,
       cluster_name=cluster_name,
@@ -403,7 +410,7 @@ def delete_jobs(
         key, value = var.split("=", 1)
         variables_dict[key] = value
         
-    deleted_count = sbtc.delete_jobs(
+    deleted_count = sbm.delete_jobs(
       cluster_name=cluster_name,
       config_name=config_name,
       tag=tag,
@@ -428,13 +435,40 @@ def update_jobs_status(
 ):
   """Updates the status of all jobs in the experiments directory."""
   try:
-    updated_count = sbtc.update_jobs_status()
+    updated_count = sbm.update_jobs_status()
     console.print(f"✅ Successfully updated status for {updated_count} jobs.")
   except ProjectNotInitializedError:
     _handle_not_initialized()
   except SbatchManError as e:
     console.print(f"[bold red]Error:[/bold red] {e}")
     raise typer.Exit(1)
+  
+@app.command("campaign")
+def campaign(
+  file: Path = typer.Argument(..., help="The campaign YAML file."),  
+  results_dir: Path = typer.Option(Path("./campaign_results"), "--results-dir", "-r", help="Root directory for aggregated results."),
+  clusters: List[str] = typer.Option([sbm.get_cluster_name()], "--clusters", "-c", help="Run the campaign using multiple cluster names."),
+  verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output with all commands executed."),
+  dry_run: bool = typer.Option(False, "--dry-run", help="Print what would be done without actually running commands."),
+):
+  run_campaign(config_file=file, results_dir=results_dir, clusters=clusters, verbose=verbose, dry_run=dry_run)
+  
+# TODO implement
+# @app.command("fetch")
+# def fetch(
+#   clusters: List[str] = typer.Option(None, "--clusters", "-c", help="Cluster name(s). Can be used multiple times (e.g., -c cluster1 -c cluster2)"),
+# ):
+#   fetch_remotes(clusters=clusters)
+  
+# @app.command("sync")
+# def fetch(
+#   clusters: List[str] = typer.Option(None, "--clusters", "-c", help="Cluster name(s). Can be used multiple times (e.g., -c cluster1 -c cluster2)"),
+# ):
+#   sync_remotes(clusters=clusters)
+  
+# @app.command("remotes-config")
+# def config_cmd():
+#   run_config_tui()
 
 if __name__ == "__main__":
   app()

@@ -50,6 +50,7 @@ COLUMN_REGISTRY: Dict[str, tuple] = {
     # display_name: (header_label, extractor)
     "config":   ("Config",   lambda j: getattr(j, "config_name", "N/A") or "N/A"),
     "id":       ("Job ID",   lambda j: getattr(j, "job_id", "N/A") or "N/A"),
+    "cluster":  ("Cluster",  lambda j: getattr(j, "cluster_name", "N/A") or "N/A"),
     "tag":      ("Tag",      lambda j: getattr(j, "tag", "N/A") or "N/A"),
     "status":   ("Status",   lambda j: getattr(j, "status", "UNKNOWN") or "UNKNOWN"),
     "command":  ("Command",  lambda j: getattr(j, "command", "") or ""),
@@ -59,7 +60,7 @@ COLUMN_REGISTRY: Dict[str, tuple] = {
     "runtime":  ("Runtime",  lambda j: str(j.get_run_time()) if callable(getattr(j, "get_run_time", None)) else "N/A"),
 }
 
-DEFAULT_COLUMNS = ["id", "status", "config", "tag", "command"]
+DEFAULT_COLUMNS = ["id", "cluster", "status", "config", "tag", "command"]
 
 
 # ---------------------------------------------------------------------------

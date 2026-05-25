@@ -197,7 +197,6 @@ class Job:
     """
     Returns the time spent in queue in seconds, or None if not queued or start time not available.
     """
-    print(self)
     if not self.queued_timestamp or not self.start_timestamp:
       return None
     try:

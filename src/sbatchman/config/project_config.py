@@ -9,7 +9,12 @@ PROJECT_ROOT_DIR_NAME = "SbatchMan"
 
 _cached_sbatchman_home: Optional[Path] = None
 
-def init_project(path: Path):
+def reset_cached_sbatchman_home():
+  """SbatchMan caches its current project directory as an optimization. Calling this function will force the path to be re-fetched."""
+  global _cached_sbatchman_home
+  _cached_sbatchman_home = None
+
+def init_project(path: Path, no_logo=False):
   """Initializes a new SbatchMan root directory."""
   project_dir = path / PROJECT_ROOT_DIR_NAME
   if project_dir.exists():
@@ -24,29 +29,29 @@ def init_project(path: Path):
     with open(main_config_path, "w") as f:
       yaml.dump({}, f)
 
-  # Printing Sbatchman logo
-  print("                                                                          %#@@@@@@@@@                         ")
-  print("                                                                         %=**=====%@                          ")
-  print("  %@@@@@@@@@ @@@@@@@@@@  @@@@@@@@@ @@@@@@@@@@  @@@@@@@@@% @@      @@     ***=====%@                           ")
-  print("  @*         @+      +@ @%      =@      %      @          @#      %#    #%*=====%@                            ")
-  print("  @@@@@@@@@# @%@@@@@@%@ %%@@@@@@%@     -@      @          @%@@@@@@%#   #%*=====%@                             ")
-  print("          *@ @+      +@ %%      #@     =@      @          @#      %#  #%*=====%@                              ")
-  print("  @@@@@@@@@@ @@@@@@@@@@ @@      @@     #@      @@@@@@@@@% @@      @@ .%*=====%@                               ")
-  print("                                                                     @#======%                                ")
-  print("                                                                    %%=======%@@@@@                           ")
-  print("                                                                    @+=========+%@                            ")
-  print("                                                                   @*=========%@@                             ")
-  print("                                                                  @@@@@@%*===%@                               ")
-  print("                                                                        :*==%@                                ")
-  print("                                                                       #@**@@                                 ")
-  print("                                                                      # %%@                                   ")
-  print("                                                                      +@@@  @@@@@@@@@@ @@@@@@@@@@ @@@     @@  ")
-  print("                                                                     #%%@   @   @@  @@ @%      %@ @%@@@   @@  ")
-  print("                                                                    #@@@    @   @@  @@ @@@@@@@@@@ @@  @@* @@  ")
-  print("                                                                    @@      @   @@  @@ @@      @@ @@    @@@@  ")
-  print("                                                                   @@       @+  @@  @@ @@      @@ @@      @@  ")
-  print("                                                                  @@                                          ")
-  print("                                                                 +@                                           ")
+  if not no_logo:
+    print("                                                                          %#@@@@@@@@@                         ")
+    print("                                                                         %=**=====%@                          ")
+    print("  %@@@@@@@@@ @@@@@@@@@@  @@@@@@@@@ @@@@@@@@@@  @@@@@@@@@% @@      @@     ***=====%@                           ")
+    print("  @*         @+      +@ @%      =@      %      @          @#      %#    #%*=====%@                            ")
+    print("  @@@@@@@@@# @%@@@@@@%@ %%@@@@@@%@     -@      @          @%@@@@@@%#   #%*=====%@                             ")
+    print("          *@ @+      +@ %%      #@     =@      @          @#      %#  #%*=====%@                              ")
+    print("  @@@@@@@@@@ @@@@@@@@@@ @@      @@     #@      @@@@@@@@@% @@      @@ .%*=====%@                               ")
+    print("                                                                     @#======%                                ")
+    print("                                                                    %%=======%@@@@@                           ")
+    print("                                                                    @+=========+%@                            ")
+    print("                                                                   @*=========%@@                             ")
+    print("                                                                  @@@@@@%*===%@                               ")
+    print("                                                                        :*==%@                                ")
+    print("                                                                       #@**@@                                 ")
+    print("                                                                      # %%@                                   ")
+    print("                                                                      +@@@  @@@@@@@@@@ @@@@@@@@@@ @@@     @@  ")
+    print("                                                                     #%%@   @   @@  @@ @%      %@ @%@@@   @@  ")
+    print("                                                                    #@@@    @   @@  @@ @@@@@@@@@@ @@  @@* @@  ")
+    print("                                                                    @@      @   @@  @@ @@      @@ @@    @@@@  ")
+    print("                                                                   @@       @+  @@  @@ @@      @@ @@      @@  ")
+    print("                                                                  @@                                          ")
+    print("                                                                 +@                                           ")
                                                                                                               
 
 def get_project_root() -> Path:
@@ -100,7 +105,7 @@ def get_archive_dir() -> Path:
   archive_dir.mkdir(exist_ok=True)
   return archive_dir
 
-def get_scheduler_from_cluster_name(cluster_name: str) -> str:
+def get_scheduler_from_cluster_and_config_name(cluster_name: str, config_name: str) -> str:
   """
   Detects the scheduler type based on the cluster name, as stored in the project configuration.
   Returns the scheduler name as a string.
@@ -116,4 +121,6 @@ def get_scheduler_from_cluster_name(cluster_name: str) -> str:
   if cluster_name not in all_configs:
     raise ConfigurationError(f"No configurations found for cluster '{cluster_name}'.")
   
-  return all_configs[cluster_name].get('scheduler', '')
+  default_scheduler = all_configs[cluster_name].get('scheduler', '')
+  config_scheduler = all_configs[cluster_name].get('configs', {}).get(config_name, {}).get('scheduler')
+  return config_scheduler or default_scheduler

@@ -12,6 +12,7 @@ from .base import BaseConfig
 class LocalConfig(BaseConfig):
   """Scheduler for running on the local machine."""
   
+  scheduler: str = 'local'
   time: Optional[str] = None
 
   def _generate_scheduler_directives(self) -> List[str]:
