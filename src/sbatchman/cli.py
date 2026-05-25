@@ -13,7 +13,7 @@ from sbatchman.exceptions import ProjectNotInitializedError, SbatchManError
 from sbatchman.tui.tui import run_tui
 from sbatchman.core.campaign import run_campaign
 # from sbatchman.remote.fetch import fetch_remotes
-# from sbatchman.tui.tui_remote import run_config_tui
+from sbatchman.tui.tui_remote import run_config_tui
 
 console = Console(width=shutil.get_terminal_size().columns)
 app = typer.Typer(help="A utility to create, launch, and monitor code experiments.")
@@ -466,9 +466,9 @@ def campaign(
 # ):
 #   sync_remotes(clusters=clusters)
   
-# @app.command("remotes-config")
-# def config_cmd():
-#   run_config_tui()
+@app.command("remotes-config")
+def config_cmd():
+  run_config_tui()
 
 if __name__ == "__main__":
   app()
