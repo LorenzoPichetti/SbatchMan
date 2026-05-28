@@ -1,7 +1,8 @@
 import importlib.metadata
 import shutil
 import typer
-from typing import List, Optional
+from enum import Enum
+from typing import List, Optional, Literal, Annotated
 from rich.console import Console
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from sbatchman.exceptions import ProjectNotInitializedError, SbatchManError
 from sbatchman.tui.tui import run_tui
 from sbatchman.core.campaign import run_campaign
 # from sbatchman.remote.fetch import fetch_remotes
-from sbatchman.tui.tui_remote import run_config_tui
+from sbatchman.tui.tui_remote import run_remotes_config_tui
 
 console = Console(width=shutil.get_terminal_size().columns)
 app = typer.Typer(help="A utility to create, launch, and monitor code experiments.")
@@ -453,22 +454,104 @@ def campaign(
 ):
   run_campaign(config_file=file, results_dir=results_dir, clusters=clusters, verbose=verbose, dry_run=dry_run)
   
-# TODO implement
-# @app.command("fetch")
-# def fetch(
-#   clusters: List[str] = typer.Option(None, "--clusters", "-c", help="Cluster name(s). Can be used multiple times (e.g., -c cluster1 -c cluster2)"),
-# ):
-#   fetch_remotes(clusters=clusters)
-  
-# @app.command("sync")
-# def fetch(
-#   clusters: List[str] = typer.Option(None, "--clusters", "-c", help="Cluster name(s). Can be used multiple times (e.g., -c cluster1 -c cluster2)"),
-# ):
-#   sync_remotes(clusters=clusters)
-  
+
+
+class TransferBackend(str, Enum):
+    rsync = "rsync"
+    sftp  = "sftp"
+ 
+
+@app.command("fetch")
+def fetch(
+    clusters: List[str] = typer.Option(
+        None,
+        "--clusters", "-c",
+        help=(
+            "Cluster name(s) to pull from. "
+            "Can be repeated: -c cluster1 -c cluster2. "
+            "Default: all clusters."
+        ),
+    ),
+    backend: TransferBackend = typer.Option(
+        "rsync",
+        "--backend", "-b",
+        help="Transfer backend: rsync (default) or sftp.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run", "-n",
+        help=(
+            "Simulate the transfer without copying any files "
+            "(rsync backend only; sftp ignores this flag)."
+        ),
+    ),
+) -> None:
+    """Pull remote fetch_dirs into their configured local destinations."""
+    import sbatchman.remote.fetch as fe
+    fe.fetch_remotes(
+        clusters=clusters or None,
+        backend=backend.value,
+        dry_run=dry_run,
+    )
+ 
+@app.command("sync")
+def sync(
+    clusters: List[str] = typer.Option(
+        None,
+        "--clusters", "-c",
+        help=(
+            "Cluster name(s) to push to. "
+            "Can be repeated: -c cluster1 -c cluster2. "
+            "Default: all clusters."
+        ),
+    ),
+    aliases: List[str] = typer.Option(
+        None,
+        "--aliases", "-a",
+        help=(
+            "sync_dir alias(es) to push. "
+            "Can be repeated: -a app1 -a app2. "
+            "Default: all aliases."
+        ),
+    ),
+    backend: TransferBackend = typer.Option(
+        "rsync",
+        "--backend", "-b",
+        help="Transfer backend: rsync (default) or sftp.",
+    ),
+    extra_excludes: List[str] = typer.Option(
+        None,
+        "--exclude", "-e",
+        help=(
+            "Extra names to exclude (merged on top of config excludes). "
+            "Can be repeated: -e dir1 -e file2."
+        ),
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run", "-n",
+        help=(
+            "Simulate the transfer without uploading any files "
+            "(rsync backend only; sftp ignores this flag)."
+        ),
+    ),
+) -> None:
+    """Push local sync_dirs to their configured remote destinations."""
+    import sbatchman.remote.sync as sy
+    sy.sync_remotes(
+        clusters=clusters or None,
+        aliases=aliases or None,
+        backend=backend.value,
+        extra_excludes=extra_excludes or None,
+        dry_run=dry_run,
+    )
+ 
+
+
+
 @app.command("remotes-config")
 def config_cmd():
-  run_config_tui()
+  run_remotes_config_tui()
 
 if __name__ == "__main__":
   app()

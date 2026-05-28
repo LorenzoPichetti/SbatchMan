@@ -25,6 +25,7 @@ dependencies = [
     "PyYAML",
     "platformdirs",
     "pandas",
+    "paramiko",
     "tomli_w"
 ]
 

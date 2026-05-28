@@ -177,7 +177,7 @@ def _fetch_cluster(
                 )
                 continue
 
-            excludes = resolve_excludes(cfg, cdef, pair)
+            excludes = resolve_excludes(cfg, cdef, pair, operation="fetch")
             l_target = Path(l_dir).expanduser()
 
             progress.update(
@@ -245,7 +245,7 @@ def _fetch_cluster(
             )
             continue
 
-        excludes = set(resolve_excludes(cfg, cdef, pair))
+        excludes = set(resolve_excludes(cfg, cdef, pair, operation="fetch"))
         l_target = Path(l_dir).expanduser()
 
         progress.update(
@@ -296,6 +296,11 @@ def fetch_remotes(
         When True and backend is rsync, passes ``--dry-run`` to rsync.
         For sftp the option is noted but no transfer is skipped (sftp has no
         native dry-run; use rsync for that).
+
+    Excludes applied (in order, lowest → highest priority):
+        global.common_excludes → global.fetch_excludes →
+        cluster.excludes → cluster.fetch_excludes →
+        fetch_dir.excludes
     """
     cfg = load_config()
     cluster_configs: list[dict] = cfg.get("clusters", [])

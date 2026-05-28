@@ -214,13 +214,15 @@ def _sync_cluster(
                 )
                 continue
 
-            # Build final exclude list: global + cluster + pair + CLI extras
+            # Build final exclude list: global + global.sync + cluster + cluster.sync
+            # + pair + CLI extras.  Pass extra_excludes via a temporary pair overlay
+            # so they land at the highest priority tier.
             pair_with_extra = dict(pair)
             if extra_excludes:
                 pair_with_extra["excludes"] = list(
                     pair.get("excludes", [])
                 ) + extra_excludes
-            excludes = resolve_excludes(cfg, cdef, pair_with_extra)
+            excludes = resolve_excludes(cfg, cdef, pair_with_extra, operation="sync")
 
             label = (
                 f"[cyan]{alias}[/cyan]  {local_path} → {user}@{host}:{remote}  "
@@ -323,6 +325,11 @@ def sync_remotes(
         Additional names to exclude, appended after the merged config excludes.
     dry_run:
         Pass ``--dry-run`` to rsync (rsync backend only).
+
+    Excludes applied (in order, lowest → highest priority):
+        global.common_excludes → global.sync_excludes →
+        cluster.excludes → cluster.sync_excludes →
+        sync_dir.excludes → extra_excludes (CLI)
     """
     cfg = load_config()
     cluster_configs: list[dict] = cfg.get("clusters", [])

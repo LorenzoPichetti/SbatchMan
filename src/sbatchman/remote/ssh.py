@@ -17,7 +17,7 @@ console = Console()
 # ---------------------------------------------------------------------------
 
 CONFIG_DIR  = Path(platformdirs.user_config_dir("sbatchman", "sbatchman"))
-CONFIG_FILE = CONFIG_DIR / "fetch-config.toml"
+CONFIG_FILE = CONFIG_DIR / "remotes-config.toml"
 
 DEFAULT_CONFIG: str = """\
 # sbatchman config
@@ -26,7 +26,15 @@ DEFAULT_CONFIG: str = """\
 #   rsync is always preferred; sftp is used as a fallback when rsync is not
 #   available on PATH, or when explicitly set here / via CLI.
 #
-# common_excludes: merged with per-cluster "excludes" lists.
+# Exclude lists are merged in this order (lowest → highest priority):
+#
+#   common_excludes          – applied to BOTH fetch and sync
+#   fetch_excludes           – applied to fetch only  (global or per-cluster)
+#   sync_excludes            – applied to sync only   (global or per-cluster)
+#   cluster.excludes         – applied to all ops on that cluster
+#   cluster.fetch_excludes   – fetch only on that cluster
+#   cluster.sync_excludes    – sync only on that cluster
+#   dir_pair.excludes        – applied to that specific directory pair
 #
 # Each [[clusters]] block describes one remote cluster.
 # SSH credentials (host / port / user / key_path) are shared by both
@@ -35,18 +43,14 @@ DEFAULT_CONFIG: str = """\
 # [[clusters.fetch_dirs]]  – remote → local  (pull)
 # [[clusters.sync_dirs]]   – local  → remote (push)
 #
-# fetch_dirs and sync_dirs both support an optional "excludes" list
-# that is merged with global common_excludes.
-#
 # Example
 # -------
 # [global]
 # local_base        = "~/SbatchMan"
 # transfer_backend  = "rsync"
-# common_excludes   = [
-#   ".git", ".venv", "__pycache__", "build", "target",
-#   "results", "data", "datasets",
-# ]
+# common_excludes   = [".git", ".venv", "__pycache__", "build"]
+# fetch_excludes    = ["src", "configs"]   # never pull source back down
+# sync_excludes     = ["results", "data"]  # never push large outputs up
 #
 # [[clusters]]
 # name     = "leonardo"
@@ -54,22 +58,26 @@ DEFAULT_CONFIG: str = """\
 # port     = 22
 # user     = "alice"
 # key_path = "~/.ssh/id_ed25519"
-# # transfer_backend = "sftp"   # override for this cluster only
-# excludes = ["scratch", "logs"]
+# excludes         = ["scratch"]           # all ops on this cluster
+# fetch_excludes   = ["logs"]              # fetch only on this cluster
+# sync_excludes    = ["datasets"]          # sync only on this cluster
 #
 #   [[clusters.fetch_dirs]]
 #   remote = "~/app1"
 #   local  = "~/results/app1"
+#   excludes = ["tmp"]   # merged with all of the above
 #
 #   [[clusters.sync_dirs]]
 #   alias   = "myproject"
 #   local   = "~/projects/myproject"
 #   remote  = "~/myproject"
-#   excludes = ["data", "results"]  # merged with cluster + global excludes
+#   excludes = ["data", "results"]
 
 [global]
 local_base        = "~/SbatchMan"
 transfer_backend  = "rsync"
+
+# Excluded from BOTH fetch and sync
 common_excludes   = [
   ".git",
   ".venv",
@@ -77,12 +85,17 @@ common_excludes   = [
   "__pycache__",
   "build",
   "target",
+  "bin",
+]
+
+# Excluded from fetch only (remote → local pulls)
+fetch_excludes    = []
+
+# Excluded from sync only (local → remote pushes)
+sync_excludes     = [
+  "SbatchMan",
   "results",
-  "data",
-  "datasets",
   "plots",
-  "parquets",
-  "workerpool_out",
 ]
 """
 
@@ -121,12 +134,31 @@ def resolve_excludes(
     cfg: dict,
     cluster_def: dict,
     dir_pair: Optional[dict] = None,
+    operation: str = "common",
 ) -> list[str]:
     """
     Return the merged exclude list for a transfer operation.
 
-    Precedence (lowest → highest, duplicates removed, order preserved):
-      global.common_excludes  →  cluster.excludes  →  dir_pair.excludes
+    Merge order (lowest → highest priority, duplicates removed, order preserved):
+
+    1. global ``common_excludes``          – both fetch and sync
+    2. global ``{operation}_excludes``     – fetch or sync only
+    3. cluster ``excludes``                – all ops on this cluster
+    4. cluster ``{operation}_excludes``    – fetch or sync only on this cluster
+    5. dir_pair ``excludes``               – this directory pair only
+
+    Parameters
+    ----------
+    cfg:
+        Full parsed config dict.
+    cluster_def:
+        The ``[[clusters]]`` block for the current cluster.
+    dir_pair:
+        The ``[[clusters.fetch_dirs]]`` or ``[[clusters.sync_dirs]]`` block,
+        if any.
+    operation:
+        ``"fetch"`` or ``"sync"``.  Any other value skips the
+        operation-specific layers (useful for testing).
     """
     seen: set[str] = set()
     result: list[str] = []
@@ -137,8 +169,23 @@ def resolve_excludes(
                 seen.add(item)
                 result.append(item)
 
-    _add(cfg.get("global", {}).get("common_excludes", []))
+    global_cfg = cfg.get("global", {})
+
+    # 1. Shared base
+    _add(global_cfg.get("common_excludes", []))
+
+    # 2. Global operation-specific
+    if operation in ("fetch", "sync"):
+        _add(global_cfg.get(f"{operation}_excludes", []))
+
+    # 3. Cluster-level shared
     _add(cluster_def.get("excludes", []))
+
+    # 4. Cluster-level operation-specific
+    if operation in ("fetch", "sync"):
+        _add(cluster_def.get(f"{operation}_excludes", []))
+
+    # 5. Directory-pair level
     if dir_pair:
         _add(dir_pair.get("excludes", []))
 

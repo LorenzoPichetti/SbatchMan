@@ -836,7 +836,7 @@ class SbatchManTUI(App):
 # Entry point
 # ---------------------------------------------------------------------------
 
-def run_config_tui() -> None:
+def run_remotes_config_tui() -> None:
     """Call this from your typer/click app or directly."""
     ensure_config()
     SbatchManTUI().run()
