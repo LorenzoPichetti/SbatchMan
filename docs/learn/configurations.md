@@ -67,6 +67,7 @@ variables:
     - name: <config_name_1>
       <param_3>: <value_3>
     - name: <config_name_2>
+      scheduler: <override_default_cluster_scheduler_only_for_config_name_2>
       <param_1>: <overridden_value_1>
       <param_4>: <value_4>
 
@@ -77,7 +78,7 @@ variables:
 
 -   **`variables`**: (Optional) Top-level block for variable expansion.
 -   **`<cluster_name>`**: The name of the cluster (e.g., `my_gpu_cluster`).
--   **`scheduler`**: The scheduler used by the cluster (`slurm`, `pbs`, or `local`).
+-   **`scheduler`**: The scheduler used by the cluster (`slurm`, `pbs`, or `local`). Can be overwritten with configs parameters.
 -   **`default_conf` (Optional)**: A dictionary of default parameters that apply to all configurations under this cluster.
 -   **`configs`**: A list of configuration templates. Wildcards in `name` or parameter values will be expanded using the variables.
 

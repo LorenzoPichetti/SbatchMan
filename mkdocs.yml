@@ -68,6 +68,10 @@ nav:
     - Tutorial: learn/tutorial.md
     - Configurations: learn/configurations.md
     - Job submission: learn/job_submission.md
+    - Sync: learn/sync.md
+    - Campaigns: learn/campaigns.md
+    - Fetch: learn/fetch.md
+    - Results: learn/results.md
     - Aliases: learn/aliases.md
   - API: api.md
   - Development Guide: development.md
