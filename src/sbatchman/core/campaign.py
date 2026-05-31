@@ -123,8 +123,8 @@ class StepConfig:
 
     name: str
     script: Optional[str] = None  # Bash script to run before jobs
-    jobs: str = ""  # Path to jobs YAML file
-    on_fails: str = "terminate"  # terminate | continue | skip
+    jobs: Optional[str] = None    # Path to jobs YAML file
+    on_fails: str = "terminate"   # terminate | continue | skip
 
     def __post_init__(self):
         """Validate on_fails value."""
@@ -354,11 +354,12 @@ def load_step_config(step_data: dict) -> StepConfig:
 
         logger.debug(f"Loading step '{name}'")
 
-        jobs = step_data.get("jobs", "")
-        if not jobs:
-            raise ConfigurationError(f"Step '{name}' missing 'jobs'")
-
         script = step_data.get("script")
+        jobs = step_data.get("jobs")
+        
+        if not jobs and not script:
+            raise ConfigurationError(f"Step '{name}' missing both 'script' and 'jobs'")
+
         on_fails = step_data.get("on_fails", "terminate")
         
         logger.debug(f"Script: {script if script else 'None'}")
@@ -988,6 +989,12 @@ class CampaignRunner:
                 cwd=cwd,
                 timeout=3600,  # 1 hour timeout
             )
+            if result.stdout:
+                print('-- STDOUT --')
+                print(result.stdout)
+            if result.stderr:
+                print('-- STDERR --')
+                print(result.stderr)
 
             success = result.returncode == 0
             

@@ -67,12 +67,12 @@ apps:
         # Type: string
 
         script: "rm -rf bin; mkdir bin"
-        # Optional
+        # Optional (if not set, `jobs` is required)
         # Shell command executed before launching jobs
         # Type: string
 
         jobs: compile_jobs.yaml
-        # Required
+        # Optional (if not set, `script` is required)
         # SbatchMan jobs YAML file
         # Relative to `dir`
         # Type: string

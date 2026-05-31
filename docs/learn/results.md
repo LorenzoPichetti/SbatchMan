@@ -29,14 +29,14 @@ def extract_problem_size(job: sbm.Job) -> dict:
 
 def extract_flops(job: sbm.Job) -> dict:
     stdout = job.get_stdout()
-    match = re.search(r"FLOPS:\s*([0-9.eE+-]+)", stdout)
-    if not match:
+    m = re.search(r"FLOPS:\s*([0-9.eE+-]+)", stdout)
+    if not m:
         return {}
     return {
-        "flops": float(match.group(1))
+        "flops": float(m.group(1))
     }
 
-df = jobs_to_dataframe(
+df = sbm.jobs_to_dataframe(
     status=[sbm.Status.COMPLETED],
     job_filter=job_filter,
     extractors=[
