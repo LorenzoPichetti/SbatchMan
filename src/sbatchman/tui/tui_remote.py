@@ -77,65 +77,50 @@ def _open_in_editor(path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Shared row widget: two text inputs + a delete button
+# Fetch dir row: alias | remote | local | ✕
+# (mirrors SyncDirRow layout)
 # ---------------------------------------------------------------------------
 
-class _TwoInputRow(Horizontal):
-    """Generic row: [left input] [right input] [✕ button]."""
+class FetchDirRow(Horizontal):
+    """Four-field row: alias | remote | local | ✕"""
 
     DEFAULT_CSS = """
-    _TwoInputRow {
+    FetchDirRow {
         height: auto;
         margin-top: 1;
     }
-    _TwoInputRow Input {
+    FetchDirRow Input {
         width: 1fr;
     }
-    _TwoInputRow Button {
-        width: 5;
+    FetchDirRow Button {
+        width: 2;
         margin-left: 1;
     }
     """
 
     def __init__(
         self,
-        left_val: str = "",
-        right_val: str = "",
-        left_ph: str = "",
-        right_ph: str = "",
-        prefix: str = "pair",
+        alias: str = "",
+        remote: str = "",
+        local: str = "",
         row_id: int = 0,
     ) -> None:
         super().__init__()
-        self._prefix    = prefix
-        self._row_id    = row_id
-        self._left_val  = left_val
-        self._right_val = right_val
-        self._left_ph   = left_ph
-        self._right_ph  = right_ph
+        self._row_id = row_id
+        self._alias  = alias
+        self._remote = remote
+        self._local  = local
 
     def compose(self) -> ComposeResult:
-        yield Input(
-            value=self._left_val,
-            placeholder=self._left_ph,
-            id=f"{self._prefix}-left-{self._row_id}",
-        )
-        yield Input(
-            value=self._right_val,
-            placeholder=self._right_ph,
-            id=f"{self._prefix}-right-{self._row_id}",
-        )
-        yield Button("✕", variant="error", id=f"{self._prefix}-del-{self._row_id}")
+        yield Input(value=self._alias,  placeholder="alias",                        id=f"fetch-alias-{self._row_id}")
+        yield Input(value=self._remote, placeholder="~/app1  (remote)",             id=f"fetch-remote-{self._row_id}")
+        yield Input(value=self._local,  placeholder="~/results/app1  (local)",      id=f"fetch-local-{self._row_id}")
+        yield Button("✕", variant="error", id=f"fetch-del-{self._row_id}",)
 
 
-class FetchDirRow(_TwoInputRow):
-    def __init__(self, remote: str = "", local: str = "", row_id: int = 0) -> None:
-        super().__init__(
-            left_val=remote, right_val=local,
-            left_ph="~/app1  (remote)", right_ph="~/results/app1  (local)",
-            prefix="fetch", row_id=row_id,
-        )
-
+# ---------------------------------------------------------------------------
+# Sync dir row: alias | local | remote | ✕
+# ---------------------------------------------------------------------------
 
 class SyncDirRow(Horizontal):
     """Four-field row: alias | local | remote | ✕"""
@@ -149,7 +134,7 @@ class SyncDirRow(Horizontal):
         width: 1fr;
     }
     SyncDirRow Button {
-        width: 5;
+        width: 2;
         margin-left: 1;
     }
     """
@@ -168,10 +153,10 @@ class SyncDirRow(Horizontal):
         self._remote = remote
 
     def compose(self) -> ComposeResult:
-        yield Input(value=self._alias,  placeholder="alias",                       id=f"sync-alias-{self._row_id}")
-        yield Input(value=self._local,  placeholder="~/projects/app  (local)",     id=f"sync-local-{self._row_id}")
-        yield Input(value=self._remote, placeholder="~/app  (remote)",             id=f"sync-remote-{self._row_id}")
-        yield Button("✕", variant="error", id=f"sync-del-{self._row_id}")
+        yield Input(value=self._alias,  placeholder="alias",                        id=f"sync-alias-{self._row_id}")
+        yield Input(value=self._local,  placeholder="~/projects/app  (local)",      id=f"sync-local-{self._row_id}")
+        yield Input(value=self._remote, placeholder="~/app  (remote)",              id=f"sync-remote-{self._row_id}")
+        yield Button("✕", variant="error", id=f"sync-del-{self._row_id}",)
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +222,10 @@ class GlobalExcludesScreen(ModalScreen[Optional[list[str]]]):
     #excl-subtitle { color: $text-muted; margin-bottom: 1; }
     #excl-rows-container { height: auto; }
     .add-excl-btn { margin-top: 1; width: auto; }
-    #excl-btn-row { margin-top: 2; }
+    #btn-row {
+        margin-top: 1;
+        height: auto;
+    }
     """
 
     def __init__(self, current: list[str]) -> None:
@@ -321,7 +309,7 @@ BASIC_FIELDS = [
     ("name",     "Cluster name",        "my-cluster"),
     ("host",     "Hostname / IP",       "login.hpc.example.com"),
     ("port",     "SSH port",            "22"),
-    ("user",     "SSH user",            "alice"),
+    ("user",     "SSH user",            "myname"),
     ("key_path", "Key path (optional)", "~/.ssh/id_ed25519"),
 ]
 
@@ -340,12 +328,12 @@ class ClusterFormScreen(ModalScreen[Optional[dict]]):
         align: center middle;
     }
     #form-container {
-        width: 120;
+        width: 98%;
         height: auto;
-        max-height: 92vh;
+        max-height: 96vh;
         background: $surface;
         border: round $primary;
-        padding: 1 2;
+        padding: 1 2 2 2;
     }
     .field-label {
         margin-top: 1;
@@ -365,7 +353,7 @@ class ClusterFormScreen(ModalScreen[Optional[dict]]):
     #cluster-excl-rows-container { height: auto; }
     .add-pair-btn { margin-top: 1; width: auto; }
     #backend-label { margin-top: 1; color: $text-muted; }
-    #btn-row { margin-top: 2; }
+    #btn-row { height: auto; }
     """
 
     def __init__(self, existing: Optional[dict] = None) -> None:
@@ -412,6 +400,7 @@ class ClusterFormScreen(ModalScreen[Optional[dict]]):
                 # ---- Fetch tab ----
                 with TabPane("Fetch dirs  (remote → local)", id="tab-fetch"):
                     with Horizontal(classes="cols-header"):
+                        yield Label("Alias")
                         yield Label("Remote path")
                         yield Label("Local path")
                         yield Label("   ")
@@ -424,6 +413,7 @@ class ClusterFormScreen(ModalScreen[Optional[dict]]):
                             rid = self._new_id()
                             self._fetch_ids.append(rid)
                             yield FetchDirRow(
+                                alias=p.get("alias", ""),
                                 remote=p.get("remote", ""),
                                 local=p.get("local", ""),
                                 row_id=rid,
@@ -526,7 +516,7 @@ class ClusterFormScreen(ModalScreen[Optional[dict]]):
                 self._set_error("At least one fetch mapping is required.")
                 return
             self._fetch_ids.remove(rid)
-            self.query_one(f"#fetch-left-{rid}").parent.remove()
+            self.query_one(f"#fetch-alias-{rid}").parent.remove()
 
         elif bid.startswith("sync-del-"):
             rid = int(bid.split("-")[-1])
@@ -567,12 +557,16 @@ class ClusterFormScreen(ModalScreen[Optional[dict]]):
         fetch_pairs: list[dict] = []
         for rid in self._fetch_ids:
             try:
-                remote = self.query_one(f"#fetch-left-{rid}",  Input).value.strip()
-                local  = self.query_one(f"#fetch-right-{rid}", Input).value.strip()
+                alias  = self.query_one(f"#fetch-alias-{rid}",  Input).value.strip()
+                remote = self.query_one(f"#fetch-remote-{rid}", Input).value.strip()
+                local  = self.query_one(f"#fetch-local-{rid}",  Input).value.strip()
             except Exception:
                 continue
             if remote and local:
-                fetch_pairs.append({"remote": remote, "local": local})
+                entry: dict = {"remote": remote, "local": local}
+                if alias:
+                    entry["alias"] = alias
+                fetch_pairs.append(entry)
         if fetch_pairs:
             result["fetch_dirs"] = fetch_pairs
 
@@ -586,7 +580,7 @@ class ClusterFormScreen(ModalScreen[Optional[dict]]):
             except Exception:
                 continue
             if local and remote:
-                entry: dict = {"local": local, "remote": remote}
+                entry = {"local": local, "remote": remote}
                 if alias:
                     entry["alias"] = alias
                 sync_pairs.append(entry)
@@ -728,12 +722,12 @@ class SbatchManTUI(App):
             fetch_pairs: list[dict] = c.get("fetch_dirs", c.get("dirs", []))
             sync_pairs:  list[dict] = c.get("sync_dirs", [])
 
-            fetch_summary = "  |  ".join(
-                f"{p.get('remote', '?')} → {p.get('local', '?')}"
+            fetch_summary = "|".join(
+                p.get("alias") or f"{p.get('remote', '?')} → {p.get('local', '?')}"
                 for p in fetch_pairs
             ) or "—"
 
-            sync_summary = "  |  ".join(
+            sync_summary = "|".join(
                 p.get("alias") or f"{p.get('local','?')} → {p.get('remote','?')}"
                 for p in sync_pairs
             ) or "—"

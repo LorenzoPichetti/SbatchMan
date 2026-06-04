@@ -472,6 +472,15 @@ def fetch(
             "Default: all clusters."
         ),
     ),
+    aliases: List[str] = typer.Option(
+        None,
+        "--aliases", "-a",
+        help=(
+            "fetch_dirs alias(es) to pull. "
+            "Can be repeated: -a results -a logs. "
+            "Default: all fetch_dirs."
+        ),
+    ),
     backend: TransferBackend = typer.Option(
         "rsync",
         "--backend", "-b",
@@ -490,6 +499,7 @@ def fetch(
     import sbatchman.remote.fetch as fe
     fe.fetch_remotes(
         clusters=clusters or None,
+        aliases=aliases or None,
         backend=backend.value,
         dry_run=dry_run,
     )

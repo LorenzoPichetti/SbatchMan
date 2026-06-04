@@ -146,8 +146,8 @@ def _fetch_cluster(
     cdef: dict,
     cfg: dict,
     backend: str,
+    alias_filter: Optional[set[str]],
     dry_run: bool,
-    progress: Progress,
 ) -> None:
     name     = cdef.get("name", cdef.get("host", "unknown"))
     host     = cdef["host"]
@@ -161,34 +161,39 @@ def _fetch_cluster(
         console.print(f"[yellow]  {name}: no fetch_dirs entries, skipping.[/yellow]")
         return
 
-    task = progress.add_task(f"[cyan]Connecting to {name}…", total=None)
+    if alias_filter is not None:
+        dir_pairs = [p for p in dir_pairs if p.get("alias") in alias_filter]
+        if not dir_pairs:
+            console.print(
+                f"[yellow]  {name}: no matching aliases, skipping.[/yellow]"
+            )
+            return
+
+    console.rule(f"[bold cyan]{name}[/bold cyan]")
 
     # rsync does not need a persistent SSH connection
     if backend == "rsync":
-        progress.update(task, description=f"[cyan]Fetching from {name} (rsync)…")
-        total_updated = total_skipped = 0
-
         for pair in dir_pairs:
-            r_dir = pair.get("remote", "").strip()
-            l_dir = pair.get("local",  "").strip()
+            alias  = pair.get("alias", "?")
+            r_dir  = pair.get("remote", "").strip()
+            l_dir  = pair.get("local",  "").strip()
+
             if not r_dir or not l_dir:
                 console.print(
-                    f"[yellow]  {name}: skipping incomplete dir pair {pair}[/yellow]"
+                    f"[yellow]  {name}/{alias}: incomplete fetch_dir pair, skipping.[/yellow]"
                 )
                 continue
 
             excludes = resolve_excludes(cfg, cdef, pair, operation="fetch")
             l_target = Path(l_dir).expanduser()
 
-            progress.update(
-                task,
-                description=f"[cyan]rsync fetch {name}:{r_dir} → {l_target}…",
+            label = (
+                f"[cyan]{alias}[/cyan]  {user}@{host}:{r_dir} → {l_target}  "
+                f"[dim]({backend})[/dim]"
             )
-
             if dry_run:
-                console.print(
-                    f"  [dim](dry-run)[/dim] rsync {user}@{host}:{r_dir}/ → {l_target}/"
-                )
+                label = "[dim](dry-run)[/dim] " + label
+            console.print(f"  ↓ {label}")
 
             try:
                 _rsync_fetch(
@@ -200,75 +205,99 @@ def _fetch_cluster(
                     excludes=excludes,
                     dry_run=dry_run,
                 )
-                # rsync streams its own output; we count pairs not files
-                total_updated += 1
+                console.print(f"  [green]✓ {alias} done[/green]")
             except subprocess.CalledProcessError as exc:
                 console.print(
-                    f"  [red]✗ {name}/{r_dir}: rsync exited {exc.returncode}[/red]"
+                    f"  [red]✗ {alias} failed (rsync exit {exc.returncode})[/red]"
                 )
+            except Exception as exc:
+                console.print(f"  [red]✗ {alias}: {exc}[/red]")
 
-        progress.update(
-            task,
-            description=f"[green]✓ {name}[/green] — {total_updated} pair(s) synced",
-            completed=1,
-            total=1,
-        )
         return
 
-    # sftp path
+    # sftp path — needs a persistent SSH connection
+    ssh: Optional[paramiko.SSHClient]  = None
+    sftp: Optional[paramiko.SFTPClient] = None
+
     try:
         ssh  = build_ssh_client(host, port, user, key_path)
         sftp = ssh.open_sftp()
     except Exception as exc:
-        progress.update(task, description=f"[red]✗ {name}: {exc}[/red]")
+        console.print(f"[red]  ✗ {name}: cannot connect – {exc}[/red]")
         return
 
-    total_updated = total_skipped = 0
+    try:
+        for pair in dir_pairs:
+            alias  = pair.get("alias", "?")
+            r_dir  = pair.get("remote", "").strip()
+            l_dir  = pair.get("local",  "").strip()
 
-    for pair in dir_pairs:
-        r_dir = pair.get("remote", "").strip()
-        l_dir = pair.get("local",  "").strip()
-        if not r_dir or not l_dir:
-            console.print(
-                f"[yellow]  {name}: skipping incomplete dir pair {pair}[/yellow]"
+            if not r_dir or not l_dir:
+                console.print(
+                    f"[yellow]  {name}/{alias}: incomplete fetch_dir pair, skipping.[/yellow]"
+                )
+                continue
+
+            # Expand ~ on the remote side via the shell
+            if r_dir.startswith("~/") and ssh is not None:
+                _, stdout, _ = ssh.exec_command(f"echo {r_dir}")
+                r_dir = stdout.read().decode().strip() or r_dir
+
+            if not _sftp_is_dir(sftp, r_dir):
+                console.print(
+                    f"[yellow]  {name}/{alias}: remote path not found: {r_dir}[/yellow]"
+                )
+                continue
+
+            excludes = set(resolve_excludes(cfg, cdef, pair, operation="fetch"))
+            l_target = Path(l_dir).expanduser()
+
+            label = (
+                f"[cyan]{alias}[/cyan]  {user}@{host}:{r_dir} → {l_target}  "
+                f"[dim]({backend})[/dim]"
             )
-            continue
+            if dry_run:
+                label = "[dim](dry-run)[/dim] " + label
+            console.print(f"  ↓ {label}")
 
-        # Expand ~ on the remote side via the shell
-        if r_dir.startswith("~/"):
-            _, stdout, _ = ssh.exec_command(f"echo {r_dir}")
-            r_dir = stdout.read().decode().strip() or r_dir
-
-        if not _sftp_is_dir(sftp, r_dir):
-            console.print(
-                f"[yellow]  {name}: remote path not found: {r_dir}[/yellow]"
-            )
-            continue
-
-        excludes = set(resolve_excludes(cfg, cdef, pair, operation="fetch"))
-        l_target = Path(l_dir).expanduser()
-
-        progress.update(
-            task,
-            description=f"[cyan]sftp fetch {name}:{r_dir} → {l_target}…",
-        )
-
-        u, s = _sftp_fetch_tree(sftp, r_dir, l_target, excludes, progress, task)
-        total_updated += u
-        total_skipped += s
-
-    sftp.close()
-    ssh.close()
-
-    progress.update(
-        task,
-        description=(
-            f"[green]✓ {name}[/green] — "
-            f"{total_updated} updated, {total_skipped} skipped"
-        ),
-        completed=1,
-        total=1,
-    )
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                transient=False,
+            ) as progress:
+                task_id = progress.add_task(
+                    f"[cyan]Downloading {alias}…", total=None
+                )
+                try:
+                    u, s = _sftp_fetch_tree(
+                        sftp=sftp,
+                        remote_path=r_dir,
+                        local_path=l_target,
+                        excludes=excludes,
+                        progress=progress,
+                        task_id=task_id,
+                    )
+                    progress.update(
+                        task_id,
+                        description=(
+                            f"[green]✓ {alias}[/green] — "
+                            f"{u} updated, {s} skipped"
+                        ),
+                        completed=1,
+                        total=1,
+                    )
+                except Exception as exc:
+                    progress.update(
+                        task_id,
+                        description=f"[red]✗ {alias}: {exc}[/red]",
+                        completed=1,
+                        total=1,
+                    )
+    finally:
+        if sftp is not None:
+            sftp.close()
+        if ssh is not None:
+            ssh.close()
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +306,7 @@ def _fetch_cluster(
 
 def fetch_remotes(
     clusters: Optional[list[str]] = None,
+    aliases: Optional[list[str]] = None,
     backend: Optional[str] = None,
     dry_run: bool = False,
 ) -> None:
@@ -286,8 +316,10 @@ def fetch_remotes(
     Parameters
     ----------
     clusters:
-        If given, only those cluster names are processed; otherwise all
-        clusters defined in the config file are used.
+        Names of clusters to target.  ``None`` → all clusters.
+    aliases:
+        Limit to fetch_dirs whose ``alias`` field matches one of these values.
+        ``None`` → all fetch_dirs on the selected clusters.
     backend:
         ``"rsync"`` or ``"sftp"``.  Overrides config when supplied (CLI flag).
         Falls back through per-cluster → global → "rsync" hard default.
@@ -322,11 +354,14 @@ def fetch_remotes(
             )
             return
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        transient=False,
-    ) as progress:
-        for cdef in cluster_configs:
-            effective_backend = resolve_backend(cfg, cdef, cli_override=backend)
-            _fetch_cluster(cdef, cfg, effective_backend, dry_run, progress)
+    alias_filter: Optional[set[str]] = set(aliases) if aliases else None
+
+    for cdef in cluster_configs:
+        effective_backend = resolve_backend(cfg, cdef, cli_override=backend)
+        _fetch_cluster(
+            cdef=cdef,
+            cfg=cfg,
+            backend=effective_backend,
+            alias_filter=alias_filter,
+            dry_run=dry_run,
+        )
