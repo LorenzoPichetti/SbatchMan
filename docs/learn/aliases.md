@@ -8,13 +8,17 @@ The `sbatchman` CLI provides powerful functionality, but the commands can be len
 
 | Command                         | Alias   |
 |---------------------------------|---------|
-| `sbatchman`                     | `sbm`  |
+| `sbatchman`                     | `sbm`   |
 | `sbatchman init`                | `sbmi`  |
 | `sbatchman launch`              | `sbml`  |
 | `sbatchman status`              | `sbms`  |
 | `sbatchman archive`             | `sbma`  |
 | `sbatchman delete-jobs`         | `sbmdj` |
 | `sbatchman configure`           | `sbmc`  |
+| `sbatchman campaign`            | `sbmca` |
+| `sbatchman sync`                | `sbmsy` |
+| `sbatchman fetch`               | `sbmfe` |
+| `sbatchman remotes-config`      | `sbmrc` |
 
 Append `h` to any alias to get the help message for the command.
 
@@ -36,6 +40,7 @@ cat << 'EOF' >> "$SHELL_RC"
 # SbatchMan CLI Aliases
 alias sbm='sbatchman'
 alias sbmh='sbatchman --help'
+alias sbmh='sbatchman --help'
 alias sbmi='sbatchman init'
 alias sbmih='sbatchman init --help'
 alias sbml='sbatchman launch'
@@ -48,7 +53,13 @@ alias sbmdj='sbatchman delete-jobs'
 alias sbmdjh='sbatchman delete-jobs --help'
 alias sbmc='sbatchman configure'
 alias sbmch='sbatchman configure --help'
-alias sbmh='sbatchman --help'
+alias sbmca='sbatchman campaign'
+alias sbmcah='sbatchman campaign --help'
+alias sbmsy='sbatchman sync'
+alias sbmsyh='sbatchman sync --help'
+alias sbmfe='sbatchman fetch'
+alias sbmfeh='sbatchman fetch --help'
+alias sbmrc='sbatchman remotes-config'
 # End SbatchMan Aliases
 EOF
 echo "SbatchMan aliases added to $SHELL_RC. Run 'source $SHELL_RC' to activate them."
