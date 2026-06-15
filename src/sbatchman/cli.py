@@ -448,7 +448,7 @@ def update_jobs_status(
 def campaign(
   file: Path = typer.Argument(..., help="The campaign YAML file."),  
   results_dir: Path = typer.Option(Path("./campaign_results"), "--results-dir", "-r", help="Root directory for aggregated results."),
-  clusters: List[str] = typer.Option([sbm.get_cluster_name()], "--clusters", "-c", help="Run the campaign using multiple cluster names."),
+  clusters: List[str] = typer.Option([], "--clusters", "-c", help="Run the campaign using multiple cluster names."),
   verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output with all commands executed."),
   dry_run: bool = typer.Option(False, "--dry-run", help="Print what would be done without actually running commands."),
 ):
