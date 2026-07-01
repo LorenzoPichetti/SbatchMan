@@ -998,7 +998,7 @@ function renderSchemaTree() {
           tabEl(tab.id, 'db-select').value = dbName;
           tab.state.database = dbName;
           const sql = tabEl(tab.id, 'sql-input');
-          if (!sql.value.trim()) sql.value = `SELECT * FROM ${tname} LIMIT 1000`;
+          if (!sql.value.trim()) sql.value = `SELECT * FROM ${tname}`;
         }
       });
       tableList.appendChild(ti);
@@ -1164,7 +1164,7 @@ function workspaceHTML(id) {
     <div class="b-col" style="min-width:240px;flex:1.2">
       <div class="b-col-title">SQL query</div>
       <select id="db-select-${id}" style="margin-bottom:5px">${dbOpts}</select>
-      <textarea id="sql-input-${id}" rows="5" spellcheck="false" placeholder="SELECT * FROM results LIMIT 1000" style="font-size:11px;flex:1"></textarea>
+      <textarea id="sql-input-${id}" rows="5" spellcheck="false" placeholder="SELECT * FROM results" style="font-size:11px;flex:1"></textarea>
       <button class="btn sm" id="run-query-btn-${id}" data-tip="Run SQL without rendering — populates column selectors">Load columns</button>
     </div>
 

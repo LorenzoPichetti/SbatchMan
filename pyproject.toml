@@ -28,7 +28,6 @@ dependencies = [
     "paramiko",
     "tomli_w",
     "pysqlite3",
-    
 ]
 
 [project.urls]

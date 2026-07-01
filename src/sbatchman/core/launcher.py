@@ -460,6 +460,7 @@ def launch_jobs_from_file(
   ignore_archived: bool = False,
   ignore_conf_in_dup_check: bool = False,
   ignore_commands_in_dup_check: bool = False,
+  skip_configs_load: bool = False
 ) -> List[Job]:
   """  Launches jobs based on a YAML configuration file.
   Args:
@@ -480,33 +481,65 @@ def launch_jobs_from_file(
   global_is_sequential = bool(config.get("sequential"))
   global_configs_file = config.get("configs")
   global_vars = config.get("variables", {})
+  global_vars_file = config.get("include_variables")
   global_command = config.get("command", None)
   global_preprocess = config.get("preprocess", None)
   global_postprocess = config.get("postprocess", None)
   global_check = config.get("check", None)
   global_cluster_name = config.get("cluster_name", None)
-  
-  global_configs = []
-  if global_configs_file:
-    if isinstance(global_configs_file, list):
-      global_configs = [str(f) for f in global_configs_file]
-    elif isinstance(global_configs_file, str):
-      global_configs = [global_configs_file]
-    else:
-      raise ConfigurationError(f'Unsupported config type: {global_configs_file}')
 
-  for conf_file in global_configs:
-    conf_file = Path(conf_file)
-    console.print(f'[cyan]Loading configs from file[/cyan] {conf_file}')
-    if not Path(conf_file).exists():
-      raise ConfigurationError(f'Configuration file {global_configs_file} does NOT exist')
-    try:
-      for c in create_configs_from_file(conf_file, True):
-        console.print(f"✅ Configuration '[bold cyan]{c.name}[/bold cyan]' saved to {c.template_path}")
-      console.print(f"✅ Configurations from '[bold cyan]{conf_file}[/bold cyan]' loaded successfully.")
-    except SbatchManError as e:
-      console.print(f"[bold red]Error:[/bold red] {e}")
-      raise typer.Exit(1)
+  if global_vars_file:
+    global_vars_file_list = []
+    all_included_vars = {}
+    if isinstance(global_vars_file, list):
+      global_vars_file_list = [str(f) for f in global_vars_file]
+    elif isinstance(global_vars_file, str):
+      global_vars_file_list = [global_vars_file]
+    else:
+      raise ConfigurationError(f'Unsupported variables file type: {global_vars_file}')
+
+    for vars_file in global_vars_file_list:
+      vars_file = Path(vars_file)
+      if not vars_file.is_absolute():
+        vars_file = jobs_file_path.parent / vars_file
+      if not Path(vars_file).exists():
+        raise ConfigurationError(f'Variables file {vars_file} does NOT exist')
+    
+      with open(vars_file, "r") as f:
+        included_vars = dict(yaml.safe_load(f))
+        all_included_vars.update(included_vars)
+      
+    all_included_vars.update(global_vars)
+    global_vars = all_included_vars
+    # for rem_k in ['configs', 'include_variables']:
+    #   if rem_k in global_vars:
+    #     del global_vars[rem_k]
+
+  
+  if not skip_configs_load:
+    global_configs = []
+    if global_configs_file:
+      if isinstance(global_configs_file, list):
+        global_configs = [str(f) for f in global_configs_file]
+      elif isinstance(global_configs_file, str):
+        global_configs = [global_configs_file]
+      else:
+        raise ConfigurationError(f'Unsupported config file type: {global_configs_file}')
+
+    for conf_file in global_configs:
+      conf_file = Path(conf_file)
+      if not conf_file.is_absolute():
+        conf_file = jobs_file_path.parent / conf_file
+      console.print(f'[cyan]Loading configs from file[/cyan] {conf_file.resolve().absolute()}')
+      if not Path(conf_file).exists():
+        raise ConfigurationError(f'Configuration file {conf_file} does NOT exist')
+      try:
+        for c in create_configs_from_file(conf_file, True):
+          console.print(f"✅ Configuration '[bold cyan]{c.name}[/bold cyan]' saved to {c.template_path}")
+        console.print(f"✅ Configurations from '[bold cyan]{conf_file.resolve().absolute()}[/bold cyan]' loaded successfully.")
+      except SbatchManError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(1)
   
   machine_cluster_name = None
   try:
@@ -518,7 +551,7 @@ def launch_jobs_from_file(
     console.print('[yellow]Jobs will be scheduled sequentially.[/yellow]')
   
   # Prepare global variable values (expand files if needed)
-  expanded_global_vars = {k: load_variable_values(v) for k, v in global_vars.items()}
+  expanded_global_vars = {k: load_variable_values(v, k) for k, v in global_vars.items()}
   
   launched_jobs = []
   job_definitions = config.get("jobs", [])
@@ -536,7 +569,7 @@ def launch_jobs_from_file(
     job_cluster_name = job_def.get("cluster_name", global_cluster_name)
     job_vars = job_def.get("variables", {})
 
-    expanded_job_vars = {k: load_variable_values(v) for k, v in job_vars.items()}
+    expanded_job_vars = {k: load_variable_values(v, k) for k, v in job_vars.items()}
 
     # Merge global and job-specific variables
     merged_job_vars = {**expanded_global_vars, **expanded_job_vars}
@@ -594,7 +627,7 @@ def launch_jobs_from_file(
         entry_check_template = entry.get("check", job_check_template)
         entry_cluster_name = entry.get("cluster_name", job_cluster_name)
         entry_vars = entry.get("variables", {})
-        expanded_entry_vars = {k: load_variable_values(v) for k, v in entry_vars.items()}
+        expanded_entry_vars = {k: load_variable_values(v, k) for k, v in entry_vars.items()}
         
         # Merge all variables: global -> job -> entry
         final_vars = {**merged_job_vars, **expanded_entry_vars}

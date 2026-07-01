@@ -33,8 +33,9 @@ The batch submission file is a YAML file that defines global variables and a lis
 The file has the following main top-level keys:
 
 -   `sequential`: If set to `true`, will ensure that jobs are scheduled sequentially.
--   `configs`: (optional) Path(s) to configuration file(s). If set, it is equivalent to run `sbatchman configure -f <file> --overwrite` before the job submission. *Note:* paths are relative to the directory from which the `sbatchman launch` command is run.
+-   `configs`: (optional) Path(s) to configuration file(s). If set, it is equivalent to run `sbatchman configure -f <file> --overwrite` before the job submission. **Note:** absolute paths will remain unchanged. Realative paths will use as base directory the location of the file that includes it.
 -   `variables`: Defines global variables applicable to all jobs.
+-   `include_variables`(optional) Path(s) to file(s) containing a block of variables (without `variables:` top-level key). Variable values are overwritten according to the order in which they are included. The current file `variables` block will always be the last one to be merged. **Note:** absolute paths will remain unchanged. Realative paths will use as base directory the location of the file that includes it.
 -   `cluster_name`: Optional parameter that defines the cluster configuration to use.
 -   `jobs`: A list of job templates.
 

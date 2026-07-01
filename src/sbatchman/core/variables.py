@@ -4,7 +4,7 @@ from pathlib import Path
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.exceptions import ClusterNameNotFoundError, SyntaxError
 
-def load_variable_values(var_value):
+def load_variable_values(var_value, key):
   # If var_value is a list, return as is
   if isinstance(var_value, list):
     return var_value
@@ -14,7 +14,7 @@ def load_variable_values(var_value):
       val = var_value['per_cluster'].get(get_cluster_name()) or var_value.get('default')
       if not val: 
         raise ClusterNameNotFoundError(f'Cluster "{get_cluster_name()}" not found in {var_value} and no "default" value specified.')
-      return load_variable_values(val)
+      return load_variable_values(val, key)
     elif 'map' in var_value and isinstance(var_value['map'], dict):
       # Store the map structure for later use in substitution
       # Return a special marker that _substitute will recognize
@@ -32,7 +32,7 @@ def load_variable_values(var_value):
       return sorted([(str(p.absolute()), p.stem) for p in path.iterdir() if p.is_file()])
     else:
       raise SyntaxError(
-        f"Variable value '{var_value}' is not a list, file, or directory.\n"
+        f"Variable value '{var_value}' (key: {key}) is not a list, file, or directory.\n"
         "YAML script semantics:\n"
         "- Variables can be lists, map/per_cluster objects, a path to a file (one value per line), or a path to a directory (all file absolute paths used as values).\n"
         "- The cartesian product of all variable values is used to generate jobs.\n"

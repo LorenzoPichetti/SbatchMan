@@ -11,7 +11,7 @@ from sbatchman.core.status import Status
 from sbatchman.schedulers.base import BaseConfig
 from sbatchman.config import global_config
 from sbatchman.exceptions import ProjectNotInitializedError, SbatchManError
-from sbatchman.tui.tui import run_tui
+from sbatchman.tui.tui_status import run_tui
 from sbatchman.core.campaign import run_campaign
 from sbatchman.tui.tui_remote import run_remotes_config_tui
 from sbatchman.visualize import launch_visualize_web_server

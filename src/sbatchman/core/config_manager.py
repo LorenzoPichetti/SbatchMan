@@ -68,7 +68,33 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
  
   # Handle variables at the top level
   variables = data.pop("variables", {})
-  expanded_vars = {k: load_variable_values(v) for k, v in variables.items()}
+  global_vars_file = data.get("include_variables")
+
+  if global_vars_file:
+    global_vars_file_list = []
+    all_included_vars = {}
+    if isinstance(global_vars_file, list):
+      global_vars_file_list = [str(f) for f in global_vars_file]
+    elif isinstance(global_vars_file, str):
+      global_vars_file_list = [global_vars_file]
+    else:
+      raise ConfigurationError(f'Unsupported variables file type: {global_vars_file}')
+
+    for vars_file in global_vars_file_list:
+      vars_file = Path(vars_file)
+      if not vars_file.is_absolute():
+        vars_file = file_path.parent / vars_file
+      if not Path(vars_file).exists():
+        raise ConfigurationError(f'Variables file {vars_file} does NOT exist')
+    
+      with open(vars_file, "r") as f:
+        included_vars = dict(yaml.safe_load(f))
+        all_included_vars.update(included_vars)
+      
+    all_included_vars.update(variables)
+    variables = all_included_vars
+
+  expanded_vars = {k: load_variable_values(v, k) for k, v in variables.items()}
  
   if not isinstance(data, dict):
     raise ConfigurationError("The root of the configuration file must be a dictionary of clusters.")
