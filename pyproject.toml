@@ -27,7 +27,7 @@ dependencies = [
     "pandas",
     "paramiko",
     "tomli_w",
-    "sqlite3",
+    "pysqlite3",
     
 ]
 
