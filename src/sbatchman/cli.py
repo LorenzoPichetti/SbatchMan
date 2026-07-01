@@ -598,7 +598,7 @@ Example
   ),
   presets: Path = typer.Option(
     "plots.json",
-    "--presets", "-p",
+    "--presets",
     help="web UI pre-defined plots workspace. (WIP)"
   ),
   describe: Path = typer.Option(
