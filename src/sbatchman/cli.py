@@ -2,7 +2,7 @@ import importlib.metadata
 import shutil
 import typer
 from enum import Enum
-from typing import List, Optional, Literal, Annotated
+from typing import List, Optional
 from rich.console import Console
 from pathlib import Path
 
@@ -13,8 +13,9 @@ from sbatchman.config import global_config
 from sbatchman.exceptions import ProjectNotInitializedError, SbatchManError
 from sbatchman.tui.tui import run_tui
 from sbatchman.core.campaign import run_campaign
-# from sbatchman.remote.fetch import fetch_remotes
 from sbatchman.tui.tui_remote import run_remotes_config_tui
+from sbatchman.visualize import launch_visualize_web_server
+from sbatchman.parser import print_sqlite_db
 
 console = Console(width=shutil.get_terminal_size().columns)
 app = typer.Typer(help="A utility to create, launch, and monitor code experiments.")
@@ -557,11 +558,66 @@ def sync(
     )
  
 
-
-
 @app.command("remotes-config")
 def config_cmd():
   run_remotes_config_tui()
+
+
+@app.command("visualize")
+def visualize(
+  parser: Path = typer.Option(
+    "./parser.py",
+    "--parser", "-p",
+    help=(
+      """
+API-compliant Python script to parse jobs.
+
+
+Parser API contract
+--------------------
+The parser script must define:
+
+    def parse(job: sbm.Job) -> dict | None:
+        ...
+
+`parse` should return either:
+  - None / {} if the job produced no rows, or
+  - a dict mapping table_name -> row(s), where each value is either
+      - a single row: a dict of {column_name: value}, or
+      - multiple rows: a list of such dicts.
+
+Example
+-------
+    def parse(job: sbm.Job) -> dict:
+        return {
+            "jobs": {"id": job.id, "status": job.status},
+            "job_tags": [{"job_id": job.id, "tag": t} for t in job.tags],
+        }
+      """
+    ),
+  ),
+  presets: Path = typer.Option(
+    "plots.json",
+    "--presets", "-p",
+    help="web UI pre-defined plots workspace. (WIP)"
+  ),
+  describe: Path = typer.Option(
+    None,
+    "--describe", "-d",
+    help="A path or name of a SQLite database to describe. This will NOT start the web UI."
+  ),
+  verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose database description."),
+):
+  if describe:
+    if not describe.exists():
+      console.print(f"[bold red]Could not find SQLite database at:[/bold red] {describe.resolve().absolute()}")
+      raise typer.Exit(1)
+    # TODO automatic search in Sbatchman project root
+    print_sqlite_db(db_path=describe, verbose=verbose)
+  else:
+    # TODO implement preset loading
+    launch_visualize_web_server(parser, presets)
+
 
 if __name__ == "__main__":
   app()

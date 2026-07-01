@@ -6,15 +6,16 @@ import itertools
 import time
 import yaml
 import fnmatch
+import typer
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from rich.console import Console
 
 from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, resolve_map_variable, map_info_to_vars
-from sbatchman.core.config_manager import load_local_config
+from sbatchman.core.config_manager import load_local_config, create_configs_from_file
 from sbatchman.core.job import Job, Status
 from sbatchman.core.jobs_manager import job_exists, register_job, count_active_jobs
-from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError
+from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError, SbatchManError
 from sbatchman.config.global_config import get_cluster_name, get_max_queued_jobs
 from sbatchman.config.project_config import get_project_config_dir, get_scheduler_from_cluster_and_config_name
 
@@ -477,12 +478,35 @@ def launch_jobs_from_file(
     config = yaml.safe_load(f)
 
   global_is_sequential = bool(config.get("sequential"))
+  global_configs_file = config.get("configs")
   global_vars = config.get("variables", {})
   global_command = config.get("command", None)
   global_preprocess = config.get("preprocess", None)
   global_postprocess = config.get("postprocess", None)
   global_check = config.get("check", None)
   global_cluster_name = config.get("cluster_name", None)
+  
+  global_configs = []
+  if global_configs_file:
+    if isinstance(global_configs_file, list):
+      global_configs = [str(f) for f in global_configs_file]
+    elif isinstance(global_configs_file, str):
+      global_configs = [global_configs_file]
+    else:
+      raise ConfigurationError(f'Unsupported config type: {global_configs_file}')
+
+  for conf_file in global_configs:
+    conf_file = Path(conf_file)
+    console.print(f'[cyan]Loading configs from file[/cyan] {conf_file}')
+    if not Path(conf_file).exists():
+      raise ConfigurationError(f'Configuration file {global_configs_file} does NOT exist')
+    try:
+      for c in create_configs_from_file(conf_file, True):
+        console.print(f"✅ Configuration '[bold cyan]{c.name}[/bold cyan]' saved to {c.template_path}")
+      console.print(f"✅ Configurations from '[bold cyan]{conf_file}[/bold cyan]' loaded successfully.")
+    except SbatchManError as e:
+      console.print(f"[bold red]Error:[/bold red] {e}")
+      raise typer.Exit(1)
   
   machine_cluster_name = None
   try:
