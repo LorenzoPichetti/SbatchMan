@@ -23,6 +23,9 @@ If you prefer to learn by doing, check out this hands-on tutorial: [https://gith
 - **Archive utility**: Keep track of your past experiments and their results.
 - **User friendly**: All configurations and logs are stored locally within your project directory, making it easy to manually inspect the commands and results.
 
+!!! warn
+    Features still in testing are available only with a [developer installation](development.md)
+
 ### Supported Workload Managers
 
 - **SLURM**
