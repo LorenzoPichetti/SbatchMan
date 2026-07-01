@@ -55,6 +55,11 @@ This is a list where each item defines a job template. Each template can have th
 !!! tip
     In general, higher-level variables and blocks can be overwritten by redeclaring them for more specific scopes.
 
+!!! tip
+    In these commands you can always assume that the following environment variables are set:
+    - `SBATCHMAN_JOB_DIR` -> directory where the job data will be saved.
+    - `SBATCHMAN_WD` -> directory from which the `launch` command is run.
+
 #### The `config_jobs` Block
 
 Each entry in the `config_jobs` list defines a specific set of runs for a configuration and must contain a `tag`. It can also contain:

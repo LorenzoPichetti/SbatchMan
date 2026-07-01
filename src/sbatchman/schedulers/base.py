@@ -55,6 +55,12 @@ class BaseConfig(ABC):
       modules.append('\n# Load System Modules')
       modules.append(f'module load {" ".join(self.modules)}')
 
+    global_sbm_env = [
+      '\n# Global SbatchMan env variables',
+      'export SBATCHMAN_JOB_DIR={EXP_DIR}',
+      'export SBATCHMAN_WD={CWD}\n',
+    ]
+
     start_timestamp = ['echo "start_timestamp: \'$(date +%Y%m%d_%H%M%S.%N)\'" >> "{EXP_DIR}/metadata.yaml"\n']
 
     # Get scheduler-specific lines from the subclass implementation.
@@ -123,7 +129,7 @@ class BaseConfig(ABC):
       '\nexit $EXIT_CODE',
     ]
 
-    all_lines = header + scheduler_directives + modules + start_timestamp + working_dir_setup + env_vars + footer
+    all_lines = header + scheduler_directives + modules + global_sbm_env + start_timestamp + working_dir_setup + env_vars + footer
     return "\n".join(all_lines)
 
   @abstractmethod
