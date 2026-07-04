@@ -63,12 +63,14 @@ See example in the [Tutorial Repository](https://github.com/ThomasPasquali/Sbatc
 To let the web ui understand your results, create (in your app directory) a `parser.py` file which provides a `def parse(job: sbm.Job) -> dict | None` function.
 
 `parse` should return either:
+
 - `None / {}` if the job produced no rows, or
 - a `dict` mapping `table_name -> row(s)`, where each value is either
     - a single row: a dict of {column_name: value}, or
     - multiple rows: a list of such dicts.
 
 This lets the user:
+
 - choose table names freely (dict keys)
 - emit any number of rows per job (list values)
 - emit rows into multiple tables from one job (multiple dict keys)
