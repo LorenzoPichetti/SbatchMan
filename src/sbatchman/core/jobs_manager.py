@@ -538,14 +538,7 @@ def jobs_to_dataframe(
 
     # include dataclass fields
     if include_job_fields:
-      job_dict = {}
-      for k in ['config_name', 'cluster_name', 'status', 'tag', 'job_id', 'exitcode', 'archive_name']:
-        job_dict[k] = getattr(job, k)
-        
-      job_dict["sbm_queue_time_s"] = job.get_time_in_queue()
-      job_dict["sbm_run_time_s"] = job.get_run_time()
-      
-      row.update(job_dict)
+      row.update(job.get_fields())
         
     if include_job_variables and job.variables:
       row.update(job.variables)

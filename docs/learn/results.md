@@ -5,7 +5,7 @@
 
 Once you have all you results in one `SbatchMan` project, you can use the `jobs_list` or `jobs_to_dataframe()` Python APIs to get your results.
 
-### Example
+## Manual Results Parsing
 
 ```python
 import sbatchman as sbm
@@ -51,4 +51,32 @@ df = sbm.jobs_to_dataframe(
 The resulting `pandas.DataFrame` columns are the union of:
 - User-defined: `executable`, `size`, `flops`
 - YAML variables: all variables used in the jobs' wildcards `{var_name}`
-- Metadata: `config_name`, `cluster_name`, `status`, `tag`, `job_id`, `exitcode`, `archive_name`, `sbm_queue_time_s`, `sbm_run_time_s`
+- Metadata (fields): `config_name`, `cluster_name`, `status`, `tag`, `job_id`, `exitcode`, `archive_name`, `sbm_queue_time_s`, `sbm_run_time_s`
+
+
+## Web-UI
+
+SbatchMan provides and interactive web user interface to simplify data management and visualization.
+
+See example in the [Tutorial Repository](https://github.com/ThomasPasquali/SbatchManTutorial/tree/main/campaign/program2)
+
+To let the web ui understand your results, create (in your app directory) a `parser.py` file which provides a `def parse(job: sbm.Job) -> dict | None` function.
+
+`parse` should return either:
+- `None / {}` if the job produced no rows, or
+- a `dict` mapping `table_name -> row(s)`, where each value is either
+    - a single row: a dict of {column_name: value}, or
+    - multiple rows: a list of such dicts.
+
+This lets the user:
+- choose table names freely (dict keys)
+- emit any number of rows per job (list values)
+- emit rows into multiple tables from one job (multiple dict keys)
+
+Then, run
+
+```bash
+sbatchman visualize
+```
+
+And, in you browser, go to: `http://localhost:8765/`

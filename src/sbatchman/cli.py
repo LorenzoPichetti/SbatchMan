@@ -13,6 +13,7 @@ from sbatchman.config import global_config
 from sbatchman.exceptions import ProjectNotInitializedError, SbatchManError
 from sbatchman.tui.tui_status import run_tui
 from sbatchman.core.campaign import run_campaign
+from sbatchman.tui.tui_campaign import run_campaign_tui
 from sbatchman.tui.tui_remote import run_remotes_config_tui
 from sbatchman.visualize import launch_visualize_web_server
 from sbatchman.parser import print_sqlite_db
@@ -445,6 +446,15 @@ def update_jobs_status(
     console.print(f"[bold red]Error:[/bold red] {e}")
     raise typer.Exit(1)
   
+
+@app.command("campaign-tui")
+def show_campaign_tui():
+  """
+  Runs a Terminal User Interface (TUI) to monitor and manage campaigns.
+  """
+  run_campaign_tui()
+
+  
 @app.command("campaign")
 def campaign(
   file: Path = typer.Argument(..., help="The campaign YAML file."),  
@@ -454,7 +464,7 @@ def campaign(
   dry_run: bool = typer.Option(False, "--dry-run", help="Print what would be done without actually running commands."),
 ):
   run_campaign(config_file=file, results_dir=results_dir, clusters=clusters, verbose=verbose, dry_run=dry_run)
-  
+
 
 
 class TransferBackend(str, Enum):

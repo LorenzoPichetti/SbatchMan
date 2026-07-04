@@ -219,3 +219,15 @@ class Job:
     except ValueError:
       return None
 
+  def get_fields(self) -> dict:
+    """
+    Returns a dict with the following keys: ['config_name', 'cluster_name', 'status', 'tag', 'job_id', 'exitcode', 'archive_name', 'sbm_queue_time_s', 'sbm_run_time_s'].
+    """
+    job_dict = {}
+    for k in ['config_name', 'cluster_name', 'status', 'tag', 'job_id', 'exitcode', 'archive_name']:
+      job_dict[k] = getattr(self, k)
+      
+    job_dict["sbm_queue_time_s"] = self.get_time_in_queue()
+    job_dict["sbm_run_time_s"] = self.get_run_time()
+
+    return job_dict

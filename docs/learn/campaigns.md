@@ -1,5 +1,8 @@
 # Campaigns
 
+!!! warn
+    This features is under development. Bugs and changes may be expeted.
+
 Do you need to **run multiple applications/benchmarks together**?  
 If so, this is what you need! 
 
@@ -17,6 +20,11 @@ If so, this is what you need!
 **CLI Example**
 ```bash
 sbatchman campaign campaign.yaml -c cluster-a -c cluster-b
+```
+
+**TUI**
+```bash
+sbatchman campaign-tui
 ```
 
 ## YAML Configuration Format
