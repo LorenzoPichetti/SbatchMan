@@ -1,13 +1,16 @@
-# `sbatchman sync` — push files to remote clusters
+# Sync — push files to remote clusters
 
 The `sync` command copies files **from your local machine to a remote cluster**.
 It reads every `[[clusters.sync_dirs]]` block in the config and, for each pair,
 uploads the local directory to the remote destination, skipping files that are
 already up-to-date on the cluster.
 
+!!! tip
+    Use the `sbatchman remotes-config` TUI to manage you configurations.
+
 ---
 
-## Quick start
+## CLI Usage
 
 ```bash
 # Push all clusters, all sync_dirs
@@ -41,8 +44,6 @@ sbatchman sync -b sftp
 5. Remote directories are created automatically if they do not exist.
 6. Progress is streamed to the terminal in real time.
 
-### Backends
-
 | Backend | Requires | Notes |
 |---------|----------|-------|
 | `rsync` | `rsync` on your local PATH | Default. Streams output; supports `--dry-run`. |
@@ -54,6 +55,8 @@ automatically.
 ---
 
 ## Config reference
+
+You can manually edit the config file or use the TUI (`sbatchman remotes-config`).
 
 ```toml
 [global]
@@ -78,11 +81,11 @@ excludes      = ["scratch"]
 # Excluded from sync only on this cluster
 sync_excludes = ["checkpoints"]
 
-  [[clusters.sync_dirs]]
-  alias    = "myproject"              # short name used with -a / --aliases
-  local    = "~/projects/myproject"   # local source directory
-  remote   = "~/myproject"            # destination on the cluster
-  excludes = ["data", "results"]      # excluded for this pair only
+[[clusters.sync_dirs]]
+alias    = "myproject"              # short name used with -a / --aliases
+local    = "~/projects/myproject"   # local source directory
+remote   = "~/myproject"            # destination on the cluster
+excludes = ["data", "results"]      # excluded for this pair only
 ```
 
 > **Tip:** An `alias` is required for each `sync_dirs` entry. It lets you push
