@@ -119,6 +119,7 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
       # Find which variables are used in config parameters
       used_vars = set()
       used_vars |= extract_used_vars(config_name_template)
+      
       for v in config_params.values():
         if isinstance(v, str):
           used_vars |= extract_used_vars(v)
@@ -136,10 +137,14 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
           if k in used_vars:
             # Find the key variable for this map by searching config parameters
             key_var = None
-            for template in [config_name_template] + [val for val in config_params.values() if isinstance(val, str)]:
+            for template in [config_name_template] + [val for val in config_params.values() if isinstance(val, str) or isinstance(val, list)]:
+              template_list = template
               if isinstance(template, str):
+                template_list = [template]
+
+              for t in template_list:
                 pattern = re.compile(rf"\{{{k}\[(\w+)\]\}}")
-                match = pattern.search(template)
+                match = pattern.search(t)
                 if match:
                   key_var = match.group(1)
                   break
