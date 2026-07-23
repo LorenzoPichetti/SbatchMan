@@ -475,6 +475,7 @@ def launch_jobs_from_file(
     ConfigurationError: If the jobs file is not found or has invalid syntax.
   """
 
+  jobs_file_path = Path(jobs_file_path)
   with open(jobs_file_path, "r") as f:
     config = yaml.safe_load(f)
 

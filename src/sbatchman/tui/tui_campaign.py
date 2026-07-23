@@ -105,7 +105,7 @@ class RunScreen(Screen):
 
     CSS = """
     #status_table { height: 1fr; }
-    #log_view { height: 12; border: solid $accent; }
+    #log_view { height: 16; border: solid $accent; }
     #progress_label { height: 1; }
     #controls { height: 3; align: center middle; }
     """
@@ -154,7 +154,7 @@ class RunScreen(Screen):
         yield ProgressBar(id="job_progress", show_eta=False)
         yield RichLog(id="log_view", markup=True, highlight=False, wrap=True)
         with Horizontal(id="controls"):
-            yield Button("Pause", id="pause_btn")
+            # yield Button("Pause", id="pause_btn")
             yield Button("Cancel", id="cancel_btn", variant="error")
             yield Button("Back", id="back_btn", disabled=True)
         yield Footer()
