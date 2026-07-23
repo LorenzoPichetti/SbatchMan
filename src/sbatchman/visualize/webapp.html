@@ -1,563 +1,4 @@
-"""
-A self-contained local web server for interactive SQLite data visualization.
-
-Plugin API — any .py in a plugins dir:
-    PLOT_NAME        = "my_plot"
-    PLOT_LABEL       = "My Custom Plot"
-    PLOT_DESCRIPTION = "Does something"
-    PLOT_DEFAULTS    = {"param": 42}
-    def plot(df_data, config): ...  -> list[dict]  (Plotly traces)
-"""
-
-import importlib.util
-import json
-import sqlite3
-import sys
-import traceback
-import shutil
-import typer
-from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
-from urllib.parse import urlparse
-from typing import List
-from rich.console import Console
-
-from sbatchman.config.project_config import get_project_root
-from sbatchman.parser import parse_jobs_and_generate_sqlite_db
-
-console = Console(width=shutil.get_terminal_size().columns)
-
-# ---------------------------------------------------------------------------
-# Hook functions — customise these to integrate with your infrastructure
-# ---------------------------------------------------------------------------
-
-def hook_reparse(db_name: str, db_path: str) -> dict:
-    """
-    Called when the user requests a data re-parse / re-load for a database.
-    Replace this with your own ETL / ingestion logic.
-
-    Args:
-        db_name:  The logical name registered in DB_REGISTRY.
-        db_path:  Absolute path to the SQLite file on disk.
-
-    Returns:
-        dict with keys:
-            "ok"      (bool)   – whether the operation succeeded
-            "message" (str)    – human-readable status shown in the UI log
-    """
-    # --- DEFAULT: just verify the file is readable and return row counts ---
-    try:
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [r[0] for r in cur.fetchall()]
-        counts = {}
-        for t in tables:
-            cur.execute(f"SELECT COUNT(*) FROM {t}")
-            counts[t] = cur.fetchone()[0]
-        conn.close()
-        summary = ", ".join(f"{t}={n}" for t, n in counts.items())
-        return {"ok": True, "message": f"Re-parsed '{db_name}': {summary}"}
-    except Exception as e:
-        return {"ok": False, "message": f"Re-parse failed for '{db_name}': {e}"}
-
-
-def hook_fetch_remote(system: str, paths: list[str]) -> dict:
-    """
-    Called when the user requests a remote fetch for selected paths.
-    Replace this with your own scp / rsync / API / S3 / etc. logic.
-
-    Args:
-        system:  The system key (e.g. "cluster-a", "hpc-login-01").
-        paths:   List of remote path strings the user selected.
-
-    Returns:
-        dict with keys:
-            "ok"          (bool)        – overall success
-            "message"     (str)         – summary shown in UI log
-            "loaded_dbs"  (list[str])   – names of any new DBs registered
-    """
-    # --- DEFAULT: simulate a fetch with a log message ---
-    loaded = []
-    messages = []
-    for path in paths:
-        # TODO: implement actual transfer, e.g.:
-        #   local = Path("/tmp") / Path(path).name
-        #   subprocess.run(["scp", f"{system}:{path}", str(local)], check=True)
-        #   load_databases([str(local)])
-        #   loaded.append(local.stem)
-        messages.append(f"[stub] Would fetch {system}:{path}")
-    return {
-        "ok": True,
-        "message": "; ".join(messages) or "Nothing selected.",
-        "loaded_dbs": loaded,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Remote systems registry — customise with your actual systems/paths
-# ---------------------------------------------------------------------------
-
-REMOTE_SYSTEMS = {
-    "cluster-a": [
-        "/scratch/benchmarks/2024/run_001.db",
-        "/scratch/benchmarks/2024/run_002.db",
-        "/scratch/benchmarks/2025/mpi_scaling.db",
-    ],
-    "hpc-login-01": [
-        "/home/user/results/omp_bench.db",
-        "/home/user/results/gpu_roofline.db",
-    ],
-    "cloud-runner": [
-        "/data/ci/nightly/latest.db",
-        "/data/ci/weekly/summary.db",
-    ],
-}
-
-
-# ---------------------------------------------------------------------------
-# Built-in plot types
-# ---------------------------------------------------------------------------
-
-BUILTIN_PLOTS: dict = {}
-
-
-def register_plot(name, label, description, defaults=None):
-    def decorator(fn):
-        BUILTIN_PLOTS[name] = {
-            "name": name, "label": label,
-            "description": description,
-            "defaults": defaults or {}, "fn": fn,
-        }
-        return fn
-    return decorator
-
-
-def _col_idx(columns):
-    return {c: i for i, c in enumerate(columns)}
-
-
-def _split_groups(rows, col_idx, group_col):
-    groups: dict = {}
-    for row in rows:
-        g = row[col_idx[group_col]]
-        groups.setdefault(g, []).append(row)
-    return groups
-
-
-@register_plot("line", "Line Chart", "X vs Y with optional grouping", {"mode": "lines+markers"})
-def plot_line(df, cfg):
-    ci = _col_idx(df["columns"]); rows = df["rows"]
-    x, ys, grp = cfg.get("x"), cfg.get("y", []), cfg.get("group")
-    if isinstance(ys, str): ys = [ys]
-    if not x or not ys: raise ValueError("Line chart requires x and at least one y.")
-    traces = []
-    if grp and grp in ci:
-        for g, gr in sorted(_split_groups(rows, ci, grp).items()):
-            for y in ys:
-                traces.append({"type":"scatter","mode":cfg.get("mode","lines+markers"),
-                    "name":f"{g} — {y}" if len(ys)>1 else str(g),
-                    "x":[r[ci[x]] for r in gr],"y":[r[ci[y]] for r in gr]})
-    else:
-        for y in ys:
-            traces.append({"type":"scatter","mode":cfg.get("mode","lines+markers"),
-                "name":y,"x":[r[ci[x]] for r in rows],"y":[r[ci[y]] for r in rows]})
-    return traces
-
-
-@register_plot("bar", "Bar Chart", "Categorical comparisons", {"barmode": "group"})
-def plot_bar(df, cfg):
-    ci = _col_idx(df["columns"]); rows = df["rows"]
-    x, ys, grp = cfg.get("x"), cfg.get("y", []), cfg.get("group")
-    if isinstance(ys, str): ys = [ys]
-    if not x or not ys: raise ValueError("Bar chart requires x and at least one y.")
-    traces = []
-    if grp and grp in ci:
-        for g, gr in sorted(_split_groups(rows, ci, grp).items()):
-            for y in ys:
-                traces.append({"type":"bar","name":f"{g} — {y}" if len(ys)>1 else str(g),
-                    "x":[r[ci[x]] for r in gr],"y":[r[ci[y]] for r in gr]})
-    else:
-        for y in ys:
-            traces.append({"type":"bar","name":y,
-                "x":[r[ci[x]] for r in rows],"y":[r[ci[y]] for r in rows]})
-    return traces
-
-
-@register_plot("scatter", "Scatter Plot", "X vs Y correlation", {})
-def plot_scatter(df, cfg):
-    ci = _col_idx(df["columns"]); rows = df["rows"]
-    x, ys, grp = cfg.get("x"), cfg.get("y", []), cfg.get("group")
-    if isinstance(ys, str): ys = [ys]
-    if not x or not ys: raise ValueError("Scatter requires x and at least one y.")
-    traces = []
-    if grp and grp in ci:
-        for g, gr in sorted(_split_groups(rows, ci, grp).items()):
-            for y in ys:
-                traces.append({"type":"scatter","mode":"markers",
-                    "name":f"{g} — {y}" if len(ys)>1 else str(g),
-                    "x":[r[ci[x]] for r in gr],"y":[r[ci[y]] for r in gr]})
-    else:
-        for y in ys:
-            traces.append({"type":"scatter","mode":"markers","name":y,
-                "x":[r[ci[x]] for r in rows],"y":[r[ci[y]] for r in rows]})
-    return traces
-
-
-@register_plot("histogram", "Histogram", "Distribution of a numeric column", {"nbinsx": 30})
-def plot_histogram(df, cfg):
-    ci = _col_idx(df["columns"]); rows = df["rows"]
-    x = cfg.get("x")
-    if not x: raise ValueError("Histogram requires an x column.")
-    return [{"type":"histogram","name":x,"x":[r[ci[x]] for r in rows],"nbinsx":int(cfg.get("nbinsx",30))}]
-
-
-@register_plot("box", "Box Plot", "Distribution summary per category", {})
-def plot_box(df, cfg):
-    ci = _col_idx(df["columns"]); rows = df["rows"]
-    x, ys = cfg.get("x"), cfg.get("y", [])
-    if isinstance(ys, str): ys = [ys]
-    if not ys: raise ValueError("Box plot requires at least one y column.")
-    traces = []
-    for y in ys:
-        t = {"type":"box","name":y,"y":[r[ci[y]] for r in rows]}
-        if x and x in ci: t["x"] = [r[ci[x]] for r in rows]
-        traces.append(t)
-    return traces
-
-
-@register_plot("heatmap", "Heatmap", "2D density / matrix view", {})
-def plot_heatmap(df, cfg):
-    ci = _col_idx(df["columns"]); rows = df["rows"]
-    x, yc, z = cfg.get("x"), cfg.get("y", []), cfg.get("z")
-    if isinstance(yc, list): yc = yc[0] if yc else None
-    if not x or not yc or not z: raise ValueError("Heatmap requires x, y, and z columns.")
-    xs = sorted(set(r[ci[x]] for r in rows))
-    ys = sorted(set(r[ci[yc]] for r in rows))
-    xi = {v: i for i, v in enumerate(xs)}
-    yi = {v: i for i, v in enumerate(ys)}
-    mat = [[None]*len(xs) for _ in range(len(ys))]
-    for row in rows: mat[yi[row[ci[yc]]]][xi[row[ci[x]]]] = row[ci[z]]
-    return [{"type":"heatmap","x":xs,"y":ys,"z":mat,"colorscale":"Viridis"}]
-
-
-@register_plot("violin", "Violin Plot", "Distribution shape per category", {})
-def plot_violin(df, cfg):
-    ci = _col_idx(df["columns"]); rows = df["rows"]
-    x, ys = cfg.get("x"), cfg.get("y", [])
-    if isinstance(ys, str): ys = [ys]
-    if not ys: raise ValueError("Violin plot requires at least one y column.")
-    traces = []
-    for y in ys:
-        t = {"type":"violin","name":y,"y":[r[ci[y]] for r in rows],
-             "box":{"visible":True},"meanline":{"visible":True}}
-        if x and x in ci: t["x"] = [r[ci[x]] for r in rows]
-        traces.append(t)
-    return traces
-
-
-@register_plot("pie", "Pie / Donut", "Proportional breakdown", {"hole": 0})
-def plot_pie(df, cfg):
-    ci = _col_idx(df["columns"]); rows = df["rows"]
-    lc, vc = cfg.get("x"), cfg.get("y", [])
-    if isinstance(vc, list): vc = vc[0] if vc else None
-    if not lc or not vc: raise ValueError("Pie chart requires x (labels) and y (values).")
-    return [{"type":"pie","labels":[r[ci[lc]] for r in rows],
-             "values":[r[ci[vc]] for r in rows],"hole":float(cfg.get("hole",0))}]
-
-
-# ---------------------------------------------------------------------------
-# Plugin loader
-# ---------------------------------------------------------------------------
-
-PLUGIN_PLOTS: dict = {}
-
-
-def load_plugins(plugin_dirs):
-    for d in plugin_dirs:
-        p = Path(d)
-        if not p.is_dir():
-            print(f"[warn] Plugin dir not found: {d}", file=sys.stderr); continue
-        for pyfile in p.glob("*.py"):
-            try:
-                spec = importlib.util.spec_from_file_location(pyfile.stem, pyfile)
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                if hasattr(mod, "PLOT_NAME") and hasattr(mod, "plot"):
-                    PLUGIN_PLOTS[mod.PLOT_NAME] = {
-                        "name": mod.PLOT_NAME,
-                        "label": getattr(mod, "PLOT_LABEL", mod.PLOT_NAME),
-                        "description": getattr(mod, "PLOT_DESCRIPTION", ""),
-                        "defaults": getattr(mod, "PLOT_DEFAULTS", {}),
-                        "fn": mod.plot, "source": str(pyfile),
-                    }
-                    print(f"[plugin] Loaded: {mod.PLOT_NAME} from {pyfile.name}")
-            except Exception as e:
-                print(f"[warn] Failed to load plugin {pyfile}: {e}", file=sys.stderr)
-
-
-# ---------------------------------------------------------------------------
-# Database helpers
-# ---------------------------------------------------------------------------
-
-DB_REGISTRY: dict = {}  # logical_name -> abs_path
-
-
-def load_databases(paths):
-    for path in paths:
-        p = Path(path).resolve()
-        if not p.exists():
-            print(f"[warn] Database not found: {path}", file=sys.stderr); continue
-        name = p.stem
-        base, n = name, 1
-        while name in DB_REGISTRY:
-            name = f"{base}_{n}"; n += 1
-        DB_REGISTRY[name] = str(p)
-        print(f"[db] Registered: {name} -> {p}")
-
-
-def get_db_schema(db_name):
-    path = DB_REGISTRY.get(db_name)
-    if not path: return None
-    conn = sqlite3.connect(path)
-    cur = conn.cursor()
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    tables = {}
-    for (tname,) in cur.fetchall():
-        cur.execute(f"PRAGMA table_info({tname})")
-        tables[tname] = [{"name": row[1], "type": row[2]} for row in cur.fetchall()]
-    conn.close()
-    return tables
-
-
-def run_query(db_name, sql, limit=10000):
-    path = DB_REGISTRY.get(db_name)
-    if not path: raise ValueError(f"Unknown database: {db_name}")
-    s = sql.strip().upper()
-    if not (s.startswith("SELECT") or s.startswith("WITH")):
-        raise ValueError("Only SELECT / WITH queries are allowed.")
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute(sql)
-    rows_raw = cur.fetchmany(limit)
-    columns = [d[0] for d in cur.description]
-    rows = [list(r) for r in rows_raw]
-    conn.close()
-    return {"columns": columns, "rows": rows, "truncated": len(rows) == limit}
-
-
-def run_custom_plot_script(source, df_data, config):
-    ns: dict = {}
-    exec(compile(source, "<custom_plot>", "exec"), ns)
-    if "plot" not in ns:
-        raise ValueError("Custom script must define a `plot(df_data, config)` function.")
-    return ns["plot"](df_data, config)
-
-
-def build_layout(config, layout_overrides):
-    y_label = config.get("y", [])
-    if isinstance(y_label, list): y_label = ", ".join(y_label)
-    layout = {
-        "title": {"text": config.get("title", ""), "font": {"size": 16}},
-        "xaxis": {
-            "title": {"text": config.get("x_label") or config.get("x", "")},
-            "type": config.get("x_scale", "linear"),
-            "showgrid": True, "gridcolor": "#21262d",
-            "tickformat": config.get("x_tickformat", ""),
-        },
-        "yaxis": {
-            "title": {"text": config.get("y_label") or y_label},
-            "type": config.get("y_scale", "linear"),
-            "showgrid": True, "gridcolor": "#21262d",
-            "tickformat": config.get("y_tickformat", ""),
-        },
-        "barmode": config.get("barmode", "group"),
-        "template": "plotly_dark",
-        "paper_bgcolor": "#0d1117",
-        "plot_bgcolor": "#0d1117",
-        "font": {"color": "#e6edf3", "family": "JetBrains Mono, monospace"},
-        "legend": {"bgcolor": "rgba(0,0,0,0)", "bordercolor": "#30363d", "borderwidth": 1},
-        "margin": {"l": 60, "r": 20, "t": 50, "b": 50},
-    }
-    layout.update(layout_overrides)
-    return layout
-
-
-# ---------------------------------------------------------------------------
-# Server-side log
-# ---------------------------------------------------------------------------
-
-SERVER_LOG: list = []  # list of {"ts": str, "level": str, "msg": str}
-
-
-def log(msg, level="info"):
-    entry = {"ts": datetime.now().strftime("%H:%M:%S"), "level": level, "msg": msg}
-    SERVER_LOG.append(entry)
-    print(f"[{entry['ts']}] [{level.upper()}] {msg}", file=sys.stderr)
-    return entry
-
-
-# ---------------------------------------------------------------------------
-# HTTP handler
-# ---------------------------------------------------------------------------
-
-class Handler(BaseHTTPRequestHandler):
-    def log_message(self, fmt, *args): pass  # suppress default stdout log
-
-    def send_json(self, data, status=200):
-        body = json.dumps(data).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def send_html(self, html):
-        body = html.encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def read_body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        return self.rfile.read(length)
-
-    def do_GET(self):
-        path = urlparse(self.path).path
-        if path in ("/", "/index.html"):
-            self.send_html(HTML_APP)
-        elif path == "/api/databases":
-            schema = {n: get_db_schema(n) for n in DB_REGISTRY}
-            self.send_json({"databases": schema})
-        elif path == "/api/plot_types":
-            out = {}
-            for k, v in BUILTIN_PLOTS.items():
-                out[k] = {x: v[x] for x in ("name","label","description","defaults")}
-            for k, v in PLUGIN_PLOTS.items():
-                out[k] = {x: v[x] for x in ("name","label","description","defaults")}
-                out[k]["is_plugin"] = True
-                out[k]["source"] = v.get("source","")
-            self.send_json({"plot_types": out})
-        elif path == "/api/remote_systems":
-            self.send_json({"systems": {s: paths for s, paths in REMOTE_SYSTEMS.items()}})
-        elif path == "/api/logs":
-            self.send_json({"logs": SERVER_LOG[-200:]})
-        else:
-            self.send_json({"error": "Not found"}, 404)
-
-    def do_POST(self):
-        path = urlparse(self.path).path
-        try:
-            body = self.read_body()
-            payload = json.loads(body) if body else {}
-        except Exception:
-            self.send_json({"error": "Invalid JSON"}, 400); return
-
-        if path == "/api/query":
-            try:
-                result = run_query(payload["database"], payload["sql"],
-                                   int(payload.get("limit", 10000)))
-                log(f"Query on '{payload['database']}': {len(result['rows'])} rows")
-                self.send_json(result)
-            except Exception as e:
-                log(str(e), "error")
-                self.send_json({"error": str(e)}, 400)
-
-        elif path == "/api/plot":
-            try:
-                db, sql = payload["database"], payload["sql"]
-                plot_type = payload.get("plot_type", "line")
-                config = payload.get("config", {})
-                custom_script = payload.get("custom_script", "")
-                layout_overrides = payload.get("layout", {})
-
-                df_data = run_query(db, sql)
-                if custom_script.strip():
-                    traces = run_custom_plot_script(custom_script, df_data, config)
-                    log(f"Custom script plot on '{db}'")
-                elif plot_type in PLUGIN_PLOTS:
-                    traces = PLUGIN_PLOTS[plot_type]["fn"](df_data, config)
-                    log(f"Plugin plot '{plot_type}' on '{db}'")
-                elif plot_type in BUILTIN_PLOTS:
-                    traces = BUILTIN_PLOTS[plot_type]["fn"](df_data, config)
-                    log(f"Plot '{plot_type}' on '{db}': {len(traces)} trace(s)")
-                else:
-                    raise ValueError(f"Unknown plot type: {plot_type}")
-
-                layout = build_layout(config, layout_overrides)
-                self.send_json({"traces": traces, "layout": layout,
-                                "columns": df_data["columns"],
-                                "truncated": df_data.get("truncated", False)})
-            except Exception as e:
-                log(str(e), "error")
-                self.send_json({"error": str(e), "traceback": traceback.format_exc()}, 400)
-
-        elif path == "/api/reparse":
-            try:
-                db_name = payload.get("database")
-                if not db_name or db_name not in DB_REGISTRY:
-                    raise ValueError(f"Unknown database: {db_name}")
-                result = hook_reparse(db_name, DB_REGISTRY[db_name])
-                entry = log(result["message"], "info" if result["ok"] else "error")
-                # refresh schema
-                schema = {n: get_db_schema(n) for n in DB_REGISTRY}
-                self.send_json({"ok": result["ok"], "message": result["message"],
-                                "log_entry": entry, "databases": schema})
-            except Exception as e:
-                log(str(e), "error")
-                self.send_json({"error": str(e)}, 400)
-
-        elif path == "/api/fetch_remote":
-            try:
-                system = payload.get("system")
-                paths = payload.get("paths", [])
-                if not system: raise ValueError("No system specified.")
-                result = hook_fetch_remote(system, paths)
-                entry = log(result["message"], "info" if result["ok"] else "error")
-                # reload schema in case new DBs were added
-                schema = {n: get_db_schema(n) for n in DB_REGISTRY}
-                self.send_json({"ok": result["ok"], "message": result["message"],
-                                "loaded_dbs": result.get("loaded_dbs", []),
-                                "log_entry": entry, "databases": schema})
-            except Exception as e:
-                log(str(e), "error")
-                self.send_json({"error": str(e)}, 400)
-
-        elif path == "/api/reload_plugins":
-            try:
-                dirs = payload.get("dirs", [])
-                if dirs: load_plugins(dirs)
-                out = {}
-                for k, v in PLUGIN_PLOTS.items():
-                    out[k] = {x: v[x] for x in ("name","label","description","defaults")}
-                    out[k]["is_plugin"] = True
-                entry = log(f"Plugins reloaded: {list(PLUGIN_PLOTS.keys()) or 'none'}")
-                self.send_json({"reloaded": list(PLUGIN_PLOTS.keys()),
-                                "plot_types": out, "log_entry": entry})
-            except Exception as e:
-                log(str(e), "error")
-                self.send_json({"error": str(e)}, 400)
-
-        elif path == "/api/log":
-            try:
-                entry = log(payload.get("message",""), payload.get("level","info"))
-                self.send_json({"log_entry": entry})
-            except Exception as e:
-                self.send_json({"error": str(e)}, 400)
-
-        else:
-            self.send_json({"error": "Not found"}, 404)
-
-
-# ---------------------------------------------------------------------------
-# HTML application (embedded)
-# ---------------------------------------------------------------------------
-
-HTML_APP = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -589,7 +30,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 #log-panel{position:fixed;top:46px;right:0;bottom:0;width:0;background:var(--bg2);
            border-left:1px solid var(--border);display:flex;flex-direction:column;
            transition:width .2s ease;z-index:20;overflow:hidden}
-#log-panel.open{width:320px}
+#log-panel.open{width:340px}
 #log-header{display:flex;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);gap:8px;flex-shrink:0}
 #log-header span{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);flex:1}
 #log-body{flex:1;overflow-y:auto;padding:6px 0;font-family:var(--mono);font-size:10px}
@@ -599,6 +40,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 .log-entry.error .log-msg{color:var(--warn)}
 .log-entry.warn  .log-msg{color:var(--warn2)}
 .log-entry.info  .log-msg{color:var(--text2)}
+.log-entry.script .log-msg,.log-entry.transform .log-msg{color:var(--plugin)}
 #log-clear{font-size:10px;padding:2px 8px}
 
 /* ── Topbar ── */
@@ -625,7 +67,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 .workspace.active{display:flex}
 
 /* ── Builder panel ── */
-.builder{background:var(--bg2);border-bottom:1px solid var(--border);overflow-y:auto;max-height:50%;flex-shrink:0}
+.builder{background:var(--bg2);border-bottom:1px solid var(--border);overflow-y:auto;max-height:56%;flex-shrink:0}
 .builder-inner{display:flex;gap:0;flex-wrap:wrap}
 
 /* Builder columns */
@@ -659,12 +101,14 @@ textarea{resize:vertical}
 .col-pill:hover{border-color:var(--accent2);color:var(--accent2)}
 .col-pill.selected{background:rgba(88,166,255,.15);border-color:var(--accent2);color:var(--accent2)}
 
-/* Custom script */
+/* Custom script / transform / layout toggles */
 .script-toggle{display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--text2);
   font-size:10px;padding:4px 0;user-select:none}
 .script-toggle:hover{color:var(--accent)}
 .script-box{display:none}
 .script-box.open{display:block}
+.script-hint{font-size:9px;color:var(--text3);margin-bottom:4px;font-family:var(--mono)}
+.script-hint b{color:var(--accent)}
 
 /* Extra options */
 .extra-opts{display:flex;flex-wrap:wrap;gap:6px}
@@ -680,6 +124,16 @@ textarea{resize:vertical}
 .statusbar{padding:5px 14px;font-size:10px;background:var(--bg2);border-top:1px solid var(--border);
   font-family:var(--mono);display:flex;gap:14px;align-items:center;flex-shrink:0}
 .s-ok{color:var(--accent3)} .s-err{color:var(--warn)} .s-warn{color:var(--warn2)}
+
+/* Data preview drawer */
+.data-preview{display:none;max-height:220px;overflow:auto;border-top:1px solid var(--border);
+  background:var(--bg2);flex-shrink:0}
+.data-preview.open{display:block}
+table.data-table{border-collapse:collapse;font-family:var(--mono);font-size:10px;width:100%}
+table.data-table th{position:sticky;top:0;background:var(--bg4);color:var(--accent2);text-align:left;
+  padding:4px 8px;border-bottom:1px solid var(--border2);white-space:nowrap}
+table.data-table td{padding:3px 8px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--text2);white-space:nowrap}
+table.data-table tr:hover td{background:var(--bg3)}
 
 /* Buttons */
 .btn{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:var(--radius);
@@ -710,6 +164,7 @@ textarea{resize:vertical}
   cursor:pointer;display:flex;align-items:center;gap:4px}
 .db-name:hover{color:var(--accent)}
 .table-list{margin-left:10px}
+.table-list.flat{margin-left:0}
 .table-item{display:flex;align-items:center;gap:5px;padding:2px 4px;border-radius:4px;cursor:pointer;
   color:var(--text2);font-family:var(--mono);font-size:10px;transition:all .12s}
 .table-item:hover{background:var(--bg4);color:var(--text)}
@@ -771,7 +226,7 @@ textarea{resize:vertical}
     <button class="btn" id="btn-import-config" data-tip="Import a JSON config into the active tab">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M2 12v2h12v-2"/></svg>Import config
     </button>
-    <button class="btn" id="btn-export-all" data-tip="Export ALL tabs as a single JSON workspace file">
+    <button class="btn" id="btn-export-all" data-tip="Export ALL tabs as a single JSON workspace file (save as plots.json in the server's working dir to autoload it next time)">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="10" height="12" rx="1"/><path d="M5 2v12M12 6h2v8H5"/></svg>Export workspace
     </button>
     <button class="btn" id="btn-import-all" data-tip="Import a workspace JSON (replaces all tabs)">
@@ -800,7 +255,7 @@ textarea{resize:vertical}
   <!-- Schema tab -->
   <div id="sbtab-schema" class="sb-pane active">
     <div class="sb-section">
-      <div class="sb-section-hdr">Databases <span id="db-count" class="badge">0</span></div>
+      <div class="sb-section-hdr"><span id="schema-hdr-label">Databases</span> <span id="db-count" class="badge">0</span></div>
       <div class="sb-section-body" id="schema-tree">Loading…</div>
     </div>
   </div>
@@ -811,7 +266,7 @@ textarea{resize:vertical}
     <div class="sb-section">
       <div class="sb-section-hdr" data-tip="Re-read SQLite file(s) from disk and refresh schema">Re-parse data</div>
       <div class="sb-section-body">
-        <div style="margin-bottom:6px">
+        <div style="margin-bottom:6px" id="reparse-db-wrap">
           <label>Database</label>
           <select id="reparse-db-sel"></select>
         </div>
@@ -893,6 +348,8 @@ const G = {
   activeTab:  null,
   nextTabId:  1,
   logCount:   0,
+  singleDb:   false,
+  defaultDb:  '',
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -929,6 +386,10 @@ function addLogEntry(e) {
   }
 }
 
+function addLogEntries(entries) {
+  (entries || []).forEach(e => addLogEntry(e));
+}
+
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -957,14 +418,80 @@ async function fetchServerLogs() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Data preview table (shared renderer)
+// ═══════════════════════════════════════════════════════════════
+function renderDataTable(container, dfData, emptyMsg) {
+  if (!dfData || !dfData.columns || !dfData.columns.length) {
+    container.innerHTML = `<span style="color:var(--text3);font-size:10px;padding:8px;display:block">${emptyMsg || 'No data yet'}</span>`;
+    return;
+  }
+  let html = '<table class="data-table"><thead><tr>';
+  dfData.columns.forEach(c => html += `<th>${escHtml(c)}</th>`);
+  html += '</tr></thead><tbody>';
+  for (const row of dfData.rows) {
+    html += '<tr>' + row.map(v => `<td>${v===null||v===undefined ? '' : escHtml(v)}</td>`).join('') + '</tr>';
+  }
+  html += '</tbody></table>';
+  if (dfData.truncated) html += `<div style="font-size:9px;color:var(--text3);padding:4px 8px">Preview truncated — showing first ${dfData.rows.length} row(s)</div>`;
+  container.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Schema tree
 // ═══════════════════════════════════════════════════════════════
+function renderTableList(container, dbName, tables) {
+  for (const [tname, cols] of Object.entries(tables || {})) {
+    const ti = document.createElement('div');
+    ti.className = 'table-item';
+    ti.innerHTML = `<svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="14" height="14" rx="1"/><line x1="1" y1="5.5" x2="15" y2="5.5"/><line x1="6" y1="5.5" x2="6" y2="15"/></svg> ${tname} <span class="badge">${cols.length}</span>`;
+    let colsOpen = false;
+    const colsDiv = document.createElement('div');
+    colsDiv.className = 'table-cols';
+    colsDiv.style.display = 'none';
+    cols.forEach(c => {
+      const ci = document.createElement('div');
+      ci.className = 'col-item';
+      ci.innerHTML = `▸ ${c.name} <span class="col-type">${c.type}</span>`;
+      colsDiv.appendChild(ci);
+    });
+    ti.addEventListener('click', e => {
+      e.stopPropagation();
+      colsOpen = !colsOpen;
+      colsDiv.style.display = colsOpen ? 'block' : 'none';
+      const tab = activeTabObj();
+      if (tab) {
+        const sel = tabEl(tab.id, 'db-select');
+        if (sel) sel.value = dbName;
+        tab.state.database = dbName;
+        const sql = tabEl(tab.id, 'sql-input');
+        if (!sql.value.trim()) sql.value = `SELECT * FROM ${tname}`;
+      }
+    });
+    container.appendChild(ti);
+    container.appendChild(colsDiv);
+  }
+}
+
 function renderSchemaTree() {
   const el = document.getElementById('schema-tree');
+  const hdr = document.getElementById('schema-hdr-label');
   const dbs = G.databases;
-  document.getElementById('db-count').textContent = Object.keys(dbs).length;
-  if (!Object.keys(dbs).length) { el.innerHTML = '<span style="color:var(--text3)">No databases loaded</span>'; return; }
+  const names = Object.keys(dbs);
+  document.getElementById('db-count').textContent = names.length;
+  if (!names.length) { el.innerHTML = '<span style="color:var(--text3)">No databases loaded</span>'; return; }
   el.innerHTML = '';
+
+  if (G.singleDb) {
+    // Single database: skip the DB name row entirely, list tables directly.
+    hdr.textContent = 'Tables';
+    const flat = document.createElement('div');
+    flat.className = 'table-list flat';
+    renderTableList(flat, names[0], dbs[names[0]]);
+    el.appendChild(flat);
+    return;
+  }
+
+  hdr.textContent = 'Databases';
   for (const [dbName, tables] of Object.entries(dbs)) {
     const dbDiv = document.createElement('div');
     dbDiv.className = 'db-item';
@@ -975,35 +502,7 @@ function renderSchemaTree() {
     const tableList = document.createElement('div');
     tableList.className = 'table-list';
     tableList.style.display = 'none';
-    for (const [tname, cols] of Object.entries(tables || {})) {
-      const ti = document.createElement('div');
-      ti.className = 'table-item';
-      ti.innerHTML = `<svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="14" height="14" rx="1"/><line x1="1" y1="5.5" x2="15" y2="5.5"/><line x1="6" y1="5.5" x2="6" y2="15"/></svg> ${tname} <span class="badge">${cols.length}</span>`;
-      let colsOpen = false;
-      const colsDiv = document.createElement('div');
-      colsDiv.className = 'table-cols';
-      colsDiv.style.display = 'none';
-      cols.forEach(c => {
-        const ci = document.createElement('div');
-        ci.className = 'col-item';
-        ci.innerHTML = `▸ ${c.name} <span class="col-type">${c.type}</span>`;
-        colsDiv.appendChild(ci);
-      });
-      ti.addEventListener('click', e => {
-        e.stopPropagation();
-        colsOpen = !colsOpen;
-        colsDiv.style.display = colsOpen ? 'block' : 'none';
-        const tab = activeTabObj();
-        if (tab) {
-          tabEl(tab.id, 'db-select').value = dbName;
-          tab.state.database = dbName;
-          const sql = tabEl(tab.id, 'sql-input');
-          if (!sql.value.trim()) sql.value = `SELECT * FROM ${tname}`;
-        }
-      });
-      tableList.appendChild(ti);
-      tableList.appendChild(colsDiv);
-    }
+    renderTableList(tableList, dbName, tables);
     nameEl.addEventListener('click', () => { open = !open; tableList.style.display = open ? 'block' : 'none'; });
     dbDiv.appendChild(nameEl); dbDiv.appendChild(tableList);
     el.appendChild(dbDiv);
@@ -1101,11 +600,12 @@ function updateAxisControls(tabId, columns) {
 // ═══════════════════════════════════════════════════════════════
 function defaultTabState(base) {
   return Object.assign({
-    database: Object.keys(G.databases)[0] || '',
+    database: G.defaultDb || Object.keys(G.databases)[0] || '',
     sql: '', plotType: 'line', columns: [], yCols: [],
     x:'', group:'', z:'', extra:{},
     chartTitle:'', xLabel:'', yLabel:'', xScale:'linear', yScale:'linear',
     xTickFmt:'', yTickFmt:'', customScript:'',
+    transformScript:'', layoutScript:'',
   }, base || {});
 }
 
@@ -1149,12 +649,12 @@ function workspaceHTML(id) {
       <div style="margin-top:6px">
         <div class="script-toggle" id="script-toggle-${id}" data-tip="Define a custom plot() function in Python — overrides the plot type above">
           <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 2l4 6-4 6h-3l4-6-4-6h3zm-6 0l4 6-4 6H0l4-6L0 2h3.5z"/></svg>
-          Custom script
+          Custom plot script
           <svg id="script-arrow-${id}" width="9" height="9" viewBox="0 0 16 16" fill="currentColor" style="margin-left:auto;transition:transform .2s"><path d="M4 6l4 4 4-4"/></svg>
         </div>
         <div class="script-box" id="script-box-${id}">
-          <div style="font-size:9px;color:var(--text3);margin-bottom:4px;font-family:var(--mono)">def <span style="color:var(--accent)">plot</span>(df_data, config) → traces</div>
-          <textarea id="script-${id}" rows="6" placeholder="def plot(df_data, config):&#10;    # return list of Plotly trace dicts&#10;    ..."></textarea>
+          <div class="script-hint">def <b>plot</b>(df_data, config) → traces</div>
+          <textarea id="script-${id}" rows="5" placeholder="def plot(df_data, config):&#10;    # return list of Plotly trace dicts&#10;    ..."></textarea>
         </div>
       </div>
       <div class="extra-opts" id="extra-opts-${id}"></div>
@@ -1163,9 +663,28 @@ function workspaceHTML(id) {
     <!-- Col 2: SQL -->
     <div class="b-col" style="min-width:240px;flex:1.2">
       <div class="b-col-title">SQL query</div>
-      <select id="db-select-${id}" style="margin-bottom:5px">${dbOpts}</select>
-      <textarea id="sql-input-${id}" rows="5" spellcheck="false" placeholder="SELECT * FROM results" style="font-size:11px;flex:1"></textarea>
+      <div id="db-select-wrap-${id}" style="margin-bottom:5px">
+        <select id="db-select-${id}">${dbOpts}</select>
+      </div>
+      <textarea id="sql-input-${id}" rows="4" spellcheck="false" placeholder="SELECT * FROM results" style="font-size:11px;flex:1"></textarea>
       <button class="btn sm" id="run-query-btn-${id}" data-tip="Run SQL without rendering — populates column selectors">Load columns</button>
+
+      <div style="margin-top:8px">
+        <div class="script-toggle" id="transform-toggle-${id}" data-tip="Modify the query result with pandas before it's plotted">
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h5v5H2V2zm7 0h5v5H9V2zM2 9h5v5H2V9zm7 0h5v5H9V9z"/></svg>
+          Data transform (pandas)
+          <svg id="transform-arrow-${id}" width="9" height="9" viewBox="0 0 16 16" fill="currentColor" style="margin-left:auto;transition:transform .2s"><path d="M4 6l4 4 4-4"/></svg>
+        </div>
+        <div class="script-box" id="transform-box-${id}">
+          <div class="script-hint">data: <b>Dict[str, pandas.DataFrame]</b> — query result is data['result']; use <b>log(msg)</b> to print to the Logs panel</div>
+          <textarea id="transform-${id}" rows="6" placeholder="# every table in the database is available too, e.g. data['jobs']&#10;df = data['result']&#10;df['speedup'] = df['baseline_time'] / df['time']&#10;log(f'{len(df)} rows after transform')&#10;data['result'] = df"></textarea>
+          <div style="display:flex;gap:6px;margin-top:5px">
+            <button class="btn sm" id="test-transform-btn-${id}">Test transform</button>
+            <span id="transform-status-${id}" style="font-size:9px;color:var(--text3);align-self:center"></span>
+          </div>
+          <div class="data-preview" id="transform-preview-${id}" style="max-height:140px;margin-top:5px;border:1px solid var(--border);border-radius:var(--radius)"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Col 3: Axes -->
@@ -1182,7 +701,7 @@ function workspaceHTML(id) {
     </div>
 
     <!-- Col 4: Labels + scales -->
-    <div class="b-col" style="min-width:160px">
+    <div class="b-col" style="min-width:180px">
       <div class="b-col-title">Labels &amp; scales</div>
       <label>Chart title</label>
       <input type="text" id="chart-title-${id}" placeholder="My benchmark">
@@ -1192,18 +711,30 @@ function workspaceHTML(id) {
       <input type="text" id="y-label-${id}" placeholder="(auto from column)">
       <label style="margin-top:5px" data-tip="linear, log, date, category">X scale</label>
       <select id="x-scale-${id}">
-        <option value="linear">linear</option><option value="log">log</option>
+        <option value="linear">linear</option><option value="log">log10</option><option value="log2">log2</option>
         <option value="date">date</option><option value="category">category</option>
       </select>
       <label style="margin-top:5px" data-tip="linear, log, date, category">Y scale</label>
       <select id="y-scale-${id}">
-        <option value="linear">linear</option><option value="log">log</option>
+        <option value="linear">linear</option><option value="log">log10</option><option value="log2">log2</option>
         <option value="date">date</option><option value="category">category</option>
       </select>
       <label style="margin-top:5px" data-tip="Plotly d3 tick format string, e.g. .2f or %Y-%m">X tick format</label>
       <input type="text" id="x-tickfmt-${id}" placeholder=".2f">
       <label style="margin-top:5px">Y tick format</label>
       <input type="text" id="y-tickfmt-${id}" placeholder=".2f">
+
+      <div style="margin-top:8px">
+        <div class="script-toggle" id="layout-toggle-${id}" data-tip="Small Python snippet to fine-tune the Plotly layout dict directly">
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.8 3.6L14 5.2l-3 2.9.7 4.1L8 10.3l-3.7 1.9.7-4.1-3-2.9 4.2-.6z"/></svg>
+          Layout script
+          <svg id="layout-arrow-${id}" width="9" height="9" viewBox="0 0 16 16" fill="currentColor" style="margin-left:auto;transition:transform .2s"><path d="M4 6l4 4 4-4"/></svg>
+        </div>
+        <div class="script-box" id="layout-box-${id}">
+          <div class="script-hint">mutate <b>layout</b> in place; <b>config</b> is read-only; <b>log(msg)</b> available</div>
+          <textarea id="layout-script-${id}" rows="4" placeholder="layout['xaxis']['tickangle'] = 45&#10;layout['yaxis']['range'] = [0, 100]"></textarea>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1216,8 +747,10 @@ function workspaceHTML(id) {
       <div>Write a SQL query, configure axes, then click <strong>Run</strong></div>
     </div>
   </div>
+  <div class="data-preview" id="preview-${id}"></div>
   <div class="statusbar">
     <span id="status-${id}" class="s-ok">Ready</span>
+    <button class="btn sm" id="preview-toggle-${id}" data-tip="Show the exact rows behind the current plot">Data ▾</button>
     <span id="status-rows-${id}" style="margin-left:auto;color:var(--text3)"></span>
   </div>
 </div>`;
@@ -1243,15 +776,50 @@ function wireWorkspace(id) {
   f(`x-tickfmt-${id}`, s.xTickFmt);
   f(`y-tickfmt-${id}`, s.yTickFmt);
   f(`script-${id}`, s.customScript);
+  f(`transform-${id}`, s.transformScript);
+  f(`layout-script-${id}`, s.layoutScript);
+
+  // Single-database mode: hide the picker, everything targets the one DB.
+  const dbWrap = document.getElementById(`db-select-wrap-${id}`);
+  if (dbWrap) dbWrap.style.display = G.singleDb ? 'none' : 'block';
+  if (G.singleDb && G.defaultDb) {
+    const sel = tabEl(id, 'db-select');
+    if (sel) sel.value = G.defaultDb;
+    tab.state.database = G.defaultDb;
+  }
 
   if (s.columns && s.columns.length) updateAxisControls(id, s.columns);
 
-  // Custom script toggle
+  // Custom plot script toggle
   document.getElementById(`script-toggle-${id}`).addEventListener('click', () => {
     const box = document.getElementById(`script-box-${id}`);
     const arrow = document.getElementById(`script-arrow-${id}`);
     const open = box.classList.toggle('open');
     arrow.style.transform = open ? 'rotate(180deg)' : '';
+  });
+
+  // Data transform toggle
+  document.getElementById(`transform-toggle-${id}`).addEventListener('click', () => {
+    const box = document.getElementById(`transform-box-${id}`);
+    const arrow = document.getElementById(`transform-arrow-${id}`);
+    const open = box.classList.toggle('open');
+    arrow.style.transform = open ? 'rotate(180deg)' : '';
+  });
+  document.getElementById(`test-transform-btn-${id}`).addEventListener('click', () => testTransform(id));
+
+  // Layout script toggle
+  document.getElementById(`layout-toggle-${id}`).addEventListener('click', () => {
+    const box = document.getElementById(`layout-box-${id}`);
+    const arrow = document.getElementById(`layout-arrow-${id}`);
+    const open = box.classList.toggle('open');
+    arrow.style.transform = open ? 'rotate(180deg)' : '';
+  });
+
+  // Data preview drawer toggle
+  document.getElementById(`preview-toggle-${id}`).addEventListener('click', () => {
+    const pv = document.getElementById(`preview-${id}`);
+    const open = pv.classList.toggle('open');
+    document.getElementById(`preview-toggle-${id}`).textContent = open ? 'Data ▴' : 'Data ▾';
   });
 
   // SQL blur → load columns
@@ -1305,8 +873,13 @@ document.getElementById('btn-add-tab').addEventListener('click', () => {
 // ═══════════════════════════════════════════════════════════════
 // Run query (column loading)
 // ═══════════════════════════════════════════════════════════════
+function currentDb(tabId) {
+  if (G.singleDb) return G.defaultDb;
+  return tabEl(tabId, 'db-select')?.value;
+}
+
 async function loadColumns(tabId) {
-  const db  = tabEl(tabId, 'db-select').value;
+  const db  = currentDb(tabId);
   const sql = tabEl(tabId, 'sql-input').value.trim();
   if (!db || !sql) return;
   try {
@@ -1322,6 +895,31 @@ async function loadColumns(tabId) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Data transform — test run
+// ═══════════════════════════════════════════════════════════════
+async function testTransform(tabId) {
+  const db = currentDb(tabId);
+  const sql = tabEl(tabId, 'sql-input').value.trim();
+  const script = tabEl(tabId, 'transform-${id}'.replace('${id}', tabId))?.value ?? tabEl(tabId, 'transform').value;
+  const statusEl = document.getElementById(`transform-status-${tabId}`);
+  const previewEl = document.getElementById(`transform-preview-${tabId}`);
+  if (!db) { statusEl.textContent = 'No database selected'; return; }
+  statusEl.textContent = 'Running…';
+  previewEl.classList.add('open');
+  try {
+    const res = await api('POST', '/api/transform_test', {database: db, sql, transform_script: tabEl(tabId,'transform').value});
+    addLogEntries(res.log_entries);
+    if (!res.ok) { statusEl.textContent = res.error || 'Failed'; renderDataTable(previewEl, null, 'Transform failed'); return; }
+    statusEl.textContent = `OK — ${res.preview.rows.length} row(s)`;
+    renderDataTable(previewEl, res.preview);
+    clientLog(`Transform tested on tab "${G.tabs.find(t=>t.id===tabId)?.label}"`);
+  } catch(e) {
+    statusEl.textContent = e.message;
+    clientLog(e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Run plot
 // ═══════════════════════════════════════════════════════════════
 async function runPlot() {
@@ -1329,7 +927,7 @@ async function runPlot() {
   const tab = activeTabObj();
   if (!tab) return;
 
-  const db  = tabEl(tabId, 'db-select').value;
+  const db  = currentDb(tabId);
   const sql = tabEl(tabId, 'sql-input').value.trim();
   if (!db || !sql) { setStatus(tabId,'Set a database and SQL query first','err'); return; }
 
@@ -1356,6 +954,8 @@ async function runPlot() {
     ...extra,
   };
   const customScript = tabEl(tabId,'script').value;
+  const transformScript = tabEl(tabId,'transform').value;
+  const layoutScript = tabEl(tabId,'layout-script').value;
 
   setStatus(tabId,'Running…','');
   document.getElementById('btn-run').disabled = true;
@@ -1364,8 +964,11 @@ async function runPlot() {
     const res = await api('POST','/api/plot',{
       database:db, sql, plot_type:tab.state.plotType,
       config, custom_script:customScript,
+      transform_script: transformScript,
+      layout_script: layoutScript,
     });
     document.getElementById('btn-run').disabled = false;
+    addLogEntries(res.log_entries);
     if (res.error) { setStatus(tabId, res.error, 'err'); clientLog(res.error,'error'); return; }
 
     if (res.columns?.length) updateAxisControls(tabId, res.columns);
@@ -1379,6 +982,9 @@ async function runPlot() {
     const hint = res.truncated ? ' (truncated to 10k rows)' : '';
     setStatus(tabId, `OK — ${res.traces.length} trace(s), ${res.columns?.length||0} column(s)${hint}`, 'ok');
     clientLog(`Plot rendered: "${tab.label}" — ${res.traces.length} trace(s)${hint}`);
+
+    // Keep the "Data" drawer in sync with whatever was actually plotted.
+    renderDataTable(document.getElementById(`preview-${tabId}`), res.preview);
   } catch(e) {
     document.getElementById('btn-run').disabled = false;
     setStatus(tabId, e.message, 'err');
@@ -1407,7 +1013,7 @@ function getTabConfig(tabId) {
   }
   return {
     version: 2, label: tab.label,
-    database:    tabEl(tabId,'db-select')?.value    || '',
+    database:    currentDb(tabId) || '',
     sql:         tabEl(tabId,'sql-input')?.value    || '',
     plotType:    tab.state.plotType,
     chartTitle:  tabEl(tabId,'chart-title')?.value  || '',
@@ -1423,6 +1029,8 @@ function getTabConfig(tabId) {
     yTickFmt:    tabEl(tabId,'y-tickfmt')?.value    || '',
     extra,
     customScript:tabEl(tabId,'script')?.value       || '',
+    transformScript: tabEl(tabId,'transform')?.value || '',
+    layoutScript:    tabEl(tabId,'layout-script')?.value || '',
     columns:     tab.state.columns || [],
   };
 }
@@ -1446,10 +1054,15 @@ function applyTabConfig(tabId, cfg) {
   f('x-tickfmt',  cfg.xTickFmt);
   f('y-tickfmt',  cfg.yTickFmt);
   f('script',     cfg.customScript);
+  f('transform',  cfg.transformScript);
+  f('layout-script', cfg.layoutScript);
 
+  tab.state.database = G.singleDb ? G.defaultDb : (cfg.database || tab.state.database);
   tab.state.plotType = cfg.plotType || 'line';
   tab.state.yCols    = cfg.y || [];
   tab.state.extra    = cfg.extra || {};
+  tab.state.transformScript = cfg.transformScript || '';
+  tab.state.layoutScript    = cfg.layoutScript || '';
 
   renderPlotChips(tabId);
   renderExtraOpts(tabId);
@@ -1486,7 +1099,7 @@ document.getElementById('import-file-input').addEventListener('change', e => {
 document.getElementById('btn-export-all').addEventListener('click', () => {
   const ws = { version:2, tabs: G.tabs.map(t => getTabConfig(t.id)) };
   download(JSON.stringify(ws, null, 2), `workspace-${Date.now()}.json`);
-  clientLog(`Workspace exported: ${G.tabs.length} tab(s)`);
+  clientLog(`Workspace exported: ${G.tabs.length} tab(s). Save it as plots.json in the server's working directory to auto-load it next launch.`);
 });
 
 document.getElementById('btn-import-all').addEventListener('click', () => {
@@ -1494,19 +1107,23 @@ document.getElementById('btn-import-all').addEventListener('click', () => {
 });
 document.getElementById('import-ws-file-input').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
-  readJson(f, ws => {
-    if (!ws?.tabs?.length) { alert('Invalid workspace file.'); return; }
-    // Close all existing tabs
-    [...G.tabs].forEach(t => closeTab(t.id));
-    G.tabs = [];
-    ws.tabs.forEach(cfg => {
-      const newId = createTab(cfg.label || `Plot ${G.nextTabId}`, {});
-      applyTabConfig(newId, cfg);
-    });
-    clientLog(`Workspace imported: ${ws.tabs.length} tab(s)`);
-  });
+  readJson(f, ws => applyWorkspace(ws, 'imported'));
   e.target.value = '';
 });
+
+function applyWorkspace(ws, sourceLabel) {
+  if (!ws?.tabs?.length) { alert('Invalid workspace file.'); return; }
+  // Close all existing tabs
+  [...G.tabs].forEach(t => closeTab(t.id));
+  G.tabs = [];
+  document.querySelectorAll('.plot-tab').forEach(el => el.remove());
+  document.querySelectorAll('.workspace').forEach(el => el.remove());
+  ws.tabs.forEach(cfg => {
+    const newId = createTab(cfg.label || `Plot ${G.nextTabId}`, {});
+    applyTabConfig(newId, cfg);
+  });
+  clientLog(`Workspace ${sourceLabel}: ${ws.tabs.length} tab(s)`);
+}
 
 // ═══════════════════════════════════════════════════════════════
 // Save PNG
@@ -1525,18 +1142,26 @@ document.getElementById('btn-export-png').addEventListener('click', () => {
 // Actions sidebar — re-parse
 // ═══════════════════════════════════════════════════════════════
 function populateReparseSel() {
+  const wrap = document.getElementById('reparse-db-wrap');
   const sel = document.getElementById('reparse-db-sel');
   sel.innerHTML = Object.keys(G.databases).map(n => `<option value="${n}">${n}</option>`).join('');
+  if (G.singleDb) { wrap.style.display = 'none'; sel.value = G.defaultDb; }
+  else { wrap.style.display = 'block'; }
 }
 
 document.getElementById('btn-reparse').addEventListener('click', async () => {
-  const db = document.getElementById('reparse-db-sel').value;
+  const db = G.singleDb ? G.defaultDb : document.getElementById('reparse-db-sel').value;
   if (!db) return;
   clientLog(`Re-parsing database "${db}"…`);
   document.getElementById('reparse-result').textContent = 'Running…';
   const res = await api('POST', '/api/reparse', {database: db});
   document.getElementById('reparse-result').textContent = res.message || res.error;
-  if (res.databases) { G.databases = res.databases; renderSchemaTree(); populateReparseSel(); }
+  if (res.databases) {
+    G.databases = res.databases;
+    G.singleDb = !!res.single_db;
+    G.defaultDb = res.default_database || '';
+    renderSchemaTree(); populateReparseSel();
+  }
   if (res.log_entry) addLogEntry(res.log_entry);
 });
 
@@ -1568,7 +1193,12 @@ async function runFetch() {
   document.getElementById('fetch-result').textContent = 'Running…';
   const res = await api('POST', '/api/fetch_remote', {system: sys, paths: checked});
   document.getElementById('fetch-result').textContent = res.message || res.error;
-  if (res.databases) { G.databases = res.databases; renderSchemaTree(); populateReparseSel(); populateAllDbSelects(); }
+  if (res.databases) {
+    G.databases = res.databases;
+    G.singleDb = !!res.single_db;
+    G.defaultDb = res.default_database || '';
+    renderSchemaTree(); populateReparseSel(); populateAllDbSelects();
+  }
   if (res.log_entry) addLogEntry(res.log_entry);
 }
 
@@ -1577,6 +1207,8 @@ function populateAllDbSelects() {
   G.tabs.forEach(tab => {
     const sel = tabEl(tab.id, 'db-select');
     if (sel) { const prev = sel.value; sel.innerHTML = opts; if (prev) sel.value = prev; }
+    const dbWrap = document.getElementById(`db-select-wrap-${tab.id}`);
+    if (dbWrap) dbWrap.style.display = G.singleDb ? 'none' : 'block';
   });
 }
 
@@ -1630,12 +1262,15 @@ function readJson(file, cb) {
 // Boot
 // ═══════════════════════════════════════════════════════════════
 async function init() {
-  const [dbRes, ptRes, rsRes] = await Promise.all([
+  const [dbRes, ptRes, rsRes, wsRes] = await Promise.all([
     api('GET', '/api/databases'),
     api('GET', '/api/plot_types'),
     api('GET', '/api/remote_systems'),
+    api('GET', '/api/initial_workspace'),
   ]);
   G.databases     = dbRes.databases    || {};
+  G.singleDb      = !!dbRes.single_db;
+  G.defaultDb     = dbRes.default_database || '';
   G.plotTypes     = ptRes.plot_types   || {};
   G.remoteSystems = rsRes.systems      || {};
 
@@ -1643,8 +1278,13 @@ async function init() {
   populateReparseSel();
   populateFetchSystems();
 
-  // Create the first tab
-  createTab('Plot 1');
+  // Auto-load ./plots.json (if the server found one at startup), otherwise
+  // start with a single blank tab.
+  if (wsRes.workspace?.tabs?.length) {
+    applyWorkspace(wsRes.workspace, 'auto-loaded from plots.json');
+  } else {
+    createTab('Plot 1');
+  }
 
   await fetchServerLogs();
   clientLog('Application ready');
@@ -1653,57 +1293,4 @@ async function init() {
 init();
 </script>
 </body>
-</html>"""
-
-
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
-
-def launch_visualize_web_server(parser: Path, presets: Path, port: int = 8765, plugins: List[Path] = []):
-  # Plugin API (any .py file in the plugins dir):
-  # PLOT_NAME        = "my_plot"          # unique key
-  # PLOT_LABEL       = "My Custom Plot"   # dilay name
-  # PLOT_DESCRIPTION = "Does something"   # tooltip
-  # PLOT_DEFAULTS    = {"param": 42}      # extra config fields
-
-  # def plot(df_data, config):
-  #     # df_data: {"columns": [...], "rows": [[...], ...]}
-  #     # config: {"x": ..., "y": [...], "group": ..., "param": 42, ...}
-  #     # return: list of Plotly trace dicts
-  #     ...
-
-    db_path = get_project_root() / "data.sqlite"
-    parse_jobs_and_generate_sqlite_db(parser=parser, output_path=db_path)
-    databases = [db_path]
-
-    if not databases:
-        console.print(f"[bold red]At least one SQLite database file is required.[/bold red]")
-        raise typer.Exit(1)
-
-    load_databases(databases)
-
-    if not DB_REGISTRY:
-        console.print("[bold red]No valid databases loaded. Exiting.[/bold red]")
-        raise typer.exit(1)
-
-    if plugins:
-        load_plugins(plugins)
-
-    HOST = "127.0.0.1"
-    server = HTTPServer((HOST, port), Handler)
-    url = f"http://{HOST}:{port}"
-    print("\n  Plot Builder")
-    print("  ─────────────────────────")
-    print(f"  URL     : {url}")
-    print(f"  DBs     : {', '.join(DB_REGISTRY.keys())}")
-    print(f"  Plots   : {', '.join(BUILTIN_PLOTS.keys())}")
-    if PLUGIN_PLOTS:
-        print(f"  Plugins : {', '.join(PLUGIN_PLOTS.keys())}")
-    print("\n  Press Ctrl+C to stop\n")
-
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\n[stopped]")
-        server.server_close()
+</html>
