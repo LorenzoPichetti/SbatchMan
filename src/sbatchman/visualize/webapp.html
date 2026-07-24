@@ -19,14 +19,12 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;overflow:hidden}
 
-/* ── Top-level layout: sidebar | centre | log-panel ── */
 #app{display:grid;grid-template-columns:260px 1fr;grid-template-rows:46px 1fr;height:100vh}
 #topbar{grid-column:1/-1;background:var(--bg2);border-bottom:1px solid var(--border);
         display:flex;align-items:center;padding:0 14px;gap:12px;z-index:10}
 #sidebar{background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column}
 #centre{display:flex;flex-direction:column;overflow:hidden;position:relative}
 
-/* ── Log panel (right, collapsible) ── */
 #log-panel{position:fixed;top:46px;right:0;bottom:0;width:0;background:var(--bg2);
            border-left:1px solid var(--border);display:flex;flex-direction:column;
            transition:width .2s ease;z-index:20;overflow:hidden}
@@ -43,13 +41,13 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 .log-entry.script .log-msg,.log-entry.transform .log-msg{color:var(--plugin)}
 #log-clear{font-size:10px;padding:2px 8px}
 
-/* ── Topbar ── */
 .logo{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent);letter-spacing:-.02em;white-space:nowrap}
 .logo span{color:var(--text2);font-weight:400}
 .topbar-mid{flex:1;display:flex;align-items:center;gap:6px;overflow-x:auto;padding:0 8px}
-.topbar-right{display:flex;gap:6px;flex-shrink:0}
+.topbar-right{display:flex;gap:6px;flex-shrink:0;align-items:center}
+.docs-link{color:var(--text2);font-size:11px;text-decoration:none;padding:4px 9px;border-radius:var(--radius);border:1px solid var(--border2)}
+.docs-link:hover{color:var(--accent);border-color:var(--accent)}
 
-/* ── Plot tabs ── */
 #plot-tabs-bar{display:flex;align-items:center;background:var(--bg2);border-bottom:1px solid var(--border);
                padding:0 8px;gap:0;min-height:36px;overflow-x:auto}
 .plot-tab{display:flex;align-items:center;gap:6px;padding:6px 14px;border-bottom:2px solid transparent;
@@ -61,21 +59,31 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 #btn-add-tab{padding:4px 10px;font-size:18px;color:var(--text3);cursor:pointer;border:none;background:none;line-height:1}
 #btn-add-tab:hover{color:var(--accent)}
 
-/* ── Plot workspace (builder + plot) ── */
 #workspaces{flex:1;overflow:hidden;position:relative}
 .workspace{display:none;flex-direction:column;height:100%;overflow:hidden}
 .workspace.active{display:flex}
 
-/* ── Builder panel ── */
-.builder{background:var(--bg2);border-bottom:1px solid var(--border);overflow-y:auto;max-height:56%;flex-shrink:0}
-.builder-inner{display:flex;gap:0;flex-wrap:wrap}
+/* Figure toolbar (single/grid mode switch) */
+.figure-toolbar{display:flex;align-items:center;gap:14px;padding:6px 14px;background:var(--bg3);
+  border-bottom:1px solid var(--border);flex-shrink:0;font-size:11px}
+.mode-toggle{display:flex;align-items:center;gap:4px;cursor:pointer;color:var(--text2)}
+.mode-toggle input{width:auto;cursor:pointer}
+.mode-toggle.active-label{color:var(--accent);font-weight:600}
+#grid-controls-wrap{display:none;align-items:center;gap:6px}
+#grid-controls-wrap input[type=number]{width:44px;padding:3px 5px}
+.panel-tabs{display:none;flex-wrap:wrap;gap:4px;padding:6px 14px;background:var(--bg3);border-bottom:1px solid var(--border);flex-shrink:0}
+.panel-chip{padding:3px 10px;border-radius:10px;border:1px solid var(--border);font-size:10px;color:var(--text2);cursor:pointer}
+.panel-chip:hover{color:var(--text)}
+.panel-chip.active{border-color:var(--accent2);color:var(--accent2);background:rgba(88,166,255,.1)}
 
-/* Builder columns */
+.builder{background:var(--bg2);border-bottom:1px solid var(--border);overflow-y:auto;max-height:56%;flex-shrink:0}
+.builder-inner{display:none;gap:0;flex-wrap:wrap}
+.builder-inner.active{display:flex}
+
 .b-col{padding:10px 14px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:7px;min-width:180px}
 .b-col:last-child{border-right:none;flex:1}
 .b-col-title{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:2px}
 
-/* Plot chips */
 .plot-type-grid{display:flex;flex-wrap:wrap;gap:4px}
 .plot-chip{padding:3px 9px;border-radius:12px;border:1px solid var(--border);background:transparent;
            color:var(--text2);font-size:10px;cursor:pointer;transition:all .12s;font-family:var(--sans)}
@@ -84,7 +92,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 .plot-chip.plugin{border-style:dashed;color:var(--plugin);border-color:var(--plugin)}
 .plot-chip.plugin.active{background:rgba(188,140,255,.12)}
 
-/* Form elements */
 label{font-size:10px;color:var(--text2);display:block;margin-bottom:3px}
 input,select,textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);
   color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 7px;transition:border-color .15s}
@@ -92,7 +99,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 select option{background:var(--bg3)}
 textarea{resize:vertical}
 
-/* Y-col multi-select pills */
 .multi-col-list{display:flex;flex-wrap:wrap;gap:3px;min-height:28px;max-height:72px;overflow-y:auto;
   padding:4px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius)}
 .col-pill{display:inline-flex;align-items:center;gap:2px;padding:2px 7px;border-radius:10px;
@@ -101,41 +107,42 @@ textarea{resize:vertical}
 .col-pill:hover{border-color:var(--accent2);color:var(--accent2)}
 .col-pill.selected{background:rgba(88,166,255,.15);border-color:var(--accent2);color:var(--accent2)}
 
-/* Custom script / transform / layout toggles */
 .script-toggle{display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--text2);
   font-size:10px;padding:4px 0;user-select:none}
 .script-toggle:hover{color:var(--accent)}
 .script-box{display:none}
 .script-box.open{display:block}
-.script-hint{font-size:9px;color:var(--text3);margin-bottom:4px;font-family:var(--mono)}
+.script-hint{font-size:9px;color:var(--text3);margin-bottom:4px;font-family:var(--mono);line-height:1.5}
 .script-hint b{color:var(--accent)}
+.script-hint code{color:var(--accent2)}
+.script-examples{font-size:9px;color:var(--text3);margin-top:4px;font-family:var(--mono);
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:6px 8px;line-height:1.6}
+.script-examples b{color:var(--text2);display:block;margin-bottom:2px;font-family:var(--sans);font-size:9px;text-transform:uppercase;letter-spacing:.06em}
 
-/* Extra options */
 .extra-opts{display:flex;flex-wrap:wrap;gap:6px}
 .extra-opts>div{flex:1;min-width:90px}
 
-/* Plot area */
 .plot-area{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}
-.plotly-wrap{flex:1;min-height:0;position:relative}
+.plotly-wrap{flex:1;min-height:0;position:relative;background:#fff}
 .plotly-div{width:100%;height:100%}
 .plot-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  flex-direction:column;gap:10px;color:var(--text3);font-size:12px;pointer-events:none}
+  flex-direction:column;gap:10px;color:var(--text3);font-size:12px;pointer-events:none;background:var(--bg)}
 .overlay-icon{font-size:36px;opacity:.25}
 .statusbar{padding:5px 14px;font-size:10px;background:var(--bg2);border-top:1px solid var(--border);
   font-family:var(--mono);display:flex;gap:14px;align-items:center;flex-shrink:0}
 .s-ok{color:var(--accent3)} .s-err{color:var(--warn)} .s-warn{color:var(--warn2)}
 
-/* Data preview drawer */
 .data-preview{display:none;max-height:220px;overflow:auto;border-top:1px solid var(--border);
   background:var(--bg2);flex-shrink:0}
 .data-preview.open{display:block}
+.preview-section-label{font-size:9px;color:var(--text3);padding:5px 10px;background:var(--bg3);
+  text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0}
 table.data-table{border-collapse:collapse;font-family:var(--mono);font-size:10px;width:100%}
 table.data-table th{position:sticky;top:0;background:var(--bg4);color:var(--accent2);text-align:left;
   padding:4px 8px;border-bottom:1px solid var(--border2);white-space:nowrap}
 table.data-table td{padding:3px 8px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--text2);white-space:nowrap}
 table.data-table tr:hover td{background:var(--bg3)}
 
-/* Buttons */
 .btn{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:var(--radius);
   border:1px solid var(--border2);background:transparent;color:var(--text);font-size:11px;
   font-family:var(--sans);cursor:pointer;transition:all .15s;white-space:nowrap}
@@ -145,7 +152,6 @@ table.data-table tr:hover td{background:var(--bg3)}
 .btn.sm{padding:3px 8px;font-size:10px}
 .btn:disabled{opacity:.35;pointer-events:none}
 
-/* Sidebar */
 .sb-tabs{display:flex;border-bottom:1px solid var(--border)}
 .sb-tab{flex:1;padding:7px;text-align:center;font-size:10px;cursor:pointer;color:var(--text2);
   border-bottom:2px solid transparent;transition:all .12s}
@@ -158,7 +164,6 @@ table.data-table tr:hover td{background:var(--bg3)}
   letter-spacing:.08em;color:var(--text3);display:flex;align-items:center;justify-content:space-between}
 .sb-section-body{padding:0 12px 10px}
 
-/* Schema tree */
 .db-item{margin-bottom:4px}
 .db-name{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--accent2);padding:3px 0;
   cursor:pointer;display:flex;align-items:center;gap:4px}
@@ -173,7 +178,6 @@ table.data-table tr:hover td{background:var(--bg3)}
 .col-type{color:var(--warn2);font-size:8px}
 .badge{font-size:8px;padding:1px 4px;border-radius:3px;background:var(--bg4);color:var(--text3);font-family:var(--mono)}
 
-/* Actions panel */
 .action-btn{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:var(--radius);
   border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:10px;
   cursor:pointer;transition:all .12s;width:100%;text-align:left;margin-bottom:5px;font-family:var(--sans)}
@@ -188,19 +192,16 @@ table.data-table tr:hover td{background:var(--bg3)}
 .fetch-path-item input{width:auto;flex-shrink:0;height:12px;width:12px;padding:0;cursor:pointer}
 #fetch-run-btn{margin-top:6px;width:100%}
 
-/* Scrollbar */
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
 
-/* Tooltip */
 [data-tip]{position:relative}
 [data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;
   transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);padding:4px 9px;
   border-radius:var(--radius);font-size:10px;white-space:nowrap;z-index:200;pointer-events:none;
   color:var(--text);font-family:var(--sans);box-shadow:0 4px 12px rgba(0,0,0,.4)}
 
-/* Log toggle button */
 #btn-log-toggle{position:relative}
 .log-badge{position:absolute;top:-4px;right:-4px;background:var(--warn);color:#000;
   border-radius:8px;font-size:8px;padding:1px 4px;font-weight:700;min-width:14px;text-align:center}
@@ -212,12 +213,11 @@ table.data-table tr:hover td{background:var(--bg3)}
 <body>
 <div id="app">
 
-<!-- ═══ TOPBAR ═══ -->
 <div id="topbar">
-  <div class="logo">hpc<span>bench</span>.plot</div>
+  <div class="logo"><span>SbatchMan</span>.plot</div>
 
   <div class="topbar-mid">
-    <button class="btn primary" id="btn-run" data-tip="Render the active plot (Ctrl+Enter)">
+    <button class="btn primary" id="btn-run" data-tip="Render the active plot / figure (Ctrl+Enter)">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M3 2l10 6-10 6V2z"/></svg>Run
     </button>
     <button class="btn" id="btn-export-config" data-tip="Export active tab config as JSON">
@@ -226,18 +226,19 @@ table.data-table tr:hover td{background:var(--bg3)}
     <button class="btn" id="btn-import-config" data-tip="Import a JSON config into the active tab">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M2 12v2h12v-2"/></svg>Import config
     </button>
-    <button class="btn" id="btn-export-all" data-tip="Export ALL tabs as a single JSON workspace file (save as plots.json in the server's working dir to autoload it next time)">
+    <button class="btn" id="btn-export-all" data-tip="Export ALL tabs as one workspace JSON (save it as plots.json in the server's working directory to auto-load it next launch)">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="10" height="12" rx="1"/><path d="M5 2v12M12 6h2v8H5"/></svg>Export workspace
     </button>
     <button class="btn" id="btn-import-all" data-tip="Import a workspace JSON (replaces all tabs)">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="10" height="12" rx="1"/><path d="M5 2v12M14 6h-2V2"/></svg>Import workspace
     </button>
-    <button class="btn" id="btn-export-png" data-tip="Save active plot as PNG (1600×900)">
+    <button class="btn" id="btn-export-png" data-tip="Save active figure as PNG (1600×900)">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 10l3-3 3 3 2-2 4 4"/></svg>Save PNG
     </button>
   </div>
 
   <div class="topbar-right">
+    <a class="docs-link" href="/docs" target="_blank" rel="noopener">Docs</a>
     <button class="btn" id="btn-log-toggle" data-tip="Toggle log panel">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1"/><path d="M5 6h6M5 9h4"/></svg>
       Logs<span class="log-badge" id="log-badge" style="display:none">0</span>
@@ -245,14 +246,12 @@ table.data-table tr:hover td{background:var(--bg3)}
   </div>
 </div>
 
-<!-- ═══ SIDEBAR ═══ -->
 <div id="sidebar">
   <div class="sb-tabs">
     <div class="sb-tab active" data-sbtab="schema">Schema</div>
     <div class="sb-tab" data-sbtab="actions">Actions</div>
   </div>
 
-  <!-- Schema tab -->
   <div id="sbtab-schema" class="sb-pane active">
     <div class="sb-section">
       <div class="sb-section-hdr"><span id="schema-hdr-label">Databases</span> <span id="db-count" class="badge">0</span></div>
@@ -260,11 +259,9 @@ table.data-table tr:hover td{background:var(--bg3)}
     </div>
   </div>
 
-  <!-- Actions tab -->
   <div id="sbtab-actions" class="sb-pane">
-    <!-- Re-parse -->
     <div class="sb-section">
-      <div class="sb-section-hdr" data-tip="Re-read SQLite file(s) from disk and refresh schema">Re-parse data</div>
+      <div class="sb-section-hdr" data-tip="Re-run the parser and refresh schema — new columns/tables now show up without restarting the server">Re-parse data</div>
       <div class="sb-section-body">
         <div style="margin-bottom:6px" id="reparse-db-wrap">
           <label>Database</label>
@@ -278,7 +275,6 @@ table.data-table tr:hover td{background:var(--bg3)}
       </div>
     </div>
 
-    <!-- Remote fetch -->
     <div class="sb-section">
       <div class="sb-section-hdr" data-tip="Fetch remote SQLite files — configure systems in REMOTE_SYSTEMS dict in the Python backend">Fetch from remote</div>
       <div class="sb-section-body">
@@ -296,7 +292,6 @@ table.data-table tr:hover td{background:var(--bg3)}
       </div>
     </div>
 
-    <!-- Plugins -->
     <div class="sb-section">
       <div class="sb-section-hdr" data-tip="Python plugin files that define custom plot types">Plugins</div>
       <div class="sb-section-body">
@@ -310,19 +305,13 @@ table.data-table tr:hover td{background:var(--bg3)}
   </div>
 </div>
 
-<!-- ═══ CENTRE ═══ -->
 <div id="centre">
-  <!-- Plot tabs bar -->
   <div id="plot-tabs-bar">
-    <!-- tabs injected by JS -->
     <button id="btn-add-tab" data-tip="Add a new plot tab (clones the active one)">＋</button>
   </div>
-
-  <!-- Workspaces -->
   <div id="workspaces"></div>
 </div>
 
-<!-- ═══ LOG PANEL ═══ -->
 <div id="log-panel">
   <div id="log-header">
     <span>Logs</span>
@@ -332,7 +321,6 @@ table.data-table tr:hover td{background:var(--bg3)}
   <div id="log-body"></div>
 </div>
 
-<!-- Hidden file inputs -->
 <input type="file" id="import-file-input"    accept=".json" style="display:none">
 <input type="file" id="import-ws-file-input" accept=".json" style="display:none">
 
@@ -341,12 +329,14 @@ table.data-table tr:hover td{background:var(--bg3)}
 // Global state
 // ═══════════════════════════════════════════════════════════════
 const G = {
-  databases:  {},   // name -> {tableName: [{name,type}]}
-  plotTypes:  {},   // key -> descriptor
-  remoteSystems: {}, // system -> [paths]
-  tabs:       [],   // [{id, label, state}]
+  databases:  {},
+  plotTypes:  {},
+  remoteSystems: {},
+  tabs:       [],     // top-level tabs: [{id, label, state}]
+  panelState: {},     // panelId -> state (same shape as tab.state), for grid-mode sub-panels
   activeTab:  null,
   nextTabId:  1,
+  nextPanelSeq: {},   // tabId -> next panel sequence number
   logCount:   0,
   singleDb:   false,
   defaultDb:  '',
@@ -385,36 +375,45 @@ function addLogEntry(e) {
     badge.style.display = 'block';
   }
 }
-
-function addLogEntries(entries) {
-  (entries || []).forEach(e => addLogEntry(e));
-}
-
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+function addLogEntries(entries) { (entries || []).forEach(e => addLogEntry(e)); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 document.getElementById('btn-log-toggle').addEventListener('click', () => {
   const p = document.getElementById('log-panel');
   p.classList.toggle('open');
-  if (p.classList.contains('open')) {
-    G.logCount = 0;
-    document.getElementById('log-badge').style.display = 'none';
-  }
+  if (p.classList.contains('open')) { G.logCount = 0; document.getElementById('log-badge').style.display = 'none'; }
 });
-document.getElementById('log-close').addEventListener('click', () => {
-  document.getElementById('log-panel').classList.remove('open');
-});
+document.getElementById('log-close').addEventListener('click', () => document.getElementById('log-panel').classList.remove('open'));
 document.getElementById('log-clear').addEventListener('click', () => {
   document.getElementById('log-body').innerHTML = '';
   G.logCount = 0;
   document.getElementById('log-badge').style.display = 'none';
 });
-
-// Poll server logs on init then stop
 async function fetchServerLogs() {
   const res = await api('GET', '/api/logs');
   (res.logs || []).forEach(e => addLogEntry(e));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Generic node-state access (a "node" is either a top-level tab or a
+// grid sub-panel — both share the exact same state shape)
+// ═══════════════════════════════════════════════════════════════
+function getState(id) {
+  const tab = G.tabs.find(t => t.id === id);
+  if (tab) return tab.state;
+  return G.panelState[id];
+}
+function tabEl(id, suffix) { return document.getElementById(`${suffix}-${id}`); }
+function currentDb(id) { return G.singleDb ? G.defaultDb : (tabEl(id, 'db-select')?.value); }
+
+function defaultNodeState(base) {
+  return Object.assign({
+    database: G.defaultDb || Object.keys(G.databases)[0] || '',
+    sql: '', plotType: 'line', columns: [], yCols: [], groupCols: [],
+    x:'', markerBy:'', dashBy:'', z:'', extra:{},
+    chartTitle:'', xLabel:'', yLabel:'', xScale:'linear', yScale:'linear',
+    xTickFmt:'', yTickFmt:'', customScript:'', transformScript:'', layoutScript:'',
+  }, base || {});
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -434,6 +433,18 @@ function renderDataTable(container, dfData, emptyMsg) {
   html += '</tbody></table>';
   if (dfData.truncated) html += `<div style="font-size:9px;color:var(--text3);padding:4px 8px">Preview truncated — showing first ${dfData.rows.length} row(s)</div>`;
   container.innerHTML = html;
+}
+function renderMultiPreview(container, labeledTables) {
+  container.innerHTML = '';
+  labeledTables.forEach(({label, df}) => {
+    const lbl = document.createElement('div');
+    lbl.className = 'preview-section-label';
+    lbl.textContent = label;
+    container.appendChild(lbl);
+    const box = document.createElement('div');
+    renderDataTable(box, df);
+    container.appendChild(box);
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -458,13 +469,14 @@ function renderTableList(container, dbName, tables) {
       e.stopPropagation();
       colsOpen = !colsOpen;
       colsDiv.style.display = colsOpen ? 'block' : 'none';
-      const tab = activeTabObj();
-      if (tab) {
-        const sel = tabEl(tab.id, 'db-select');
+      const id = activeBuilderId();
+      if (id) {
+        const sel = tabEl(id, 'db-select');
         if (sel) sel.value = dbName;
-        tab.state.database = dbName;
-        const sql = tabEl(tab.id, 'sql-input');
-        if (!sql.value.trim()) sql.value = `SELECT * FROM ${tname}`;
+        const st = getState(id);
+        if (st) st.database = dbName;
+        const sql = tabEl(id, 'sql-input');
+        if (sql && !sql.value.trim()) sql.value = `SELECT * FROM ${tname}`;
       }
     });
     container.appendChild(ti);
@@ -482,7 +494,6 @@ function renderSchemaTree() {
   el.innerHTML = '';
 
   if (G.singleDb) {
-    // Single database: skip the DB name row entirely, list tables directly.
     hdr.textContent = 'Tables';
     const flat = document.createElement('div');
     flat.className = 'table-list flat';
@@ -510,42 +521,53 @@ function renderSchemaTree() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Plot type chips (per workspace)
+// "Which builder is currently visible" — used by the schema tree click
+// handler above to know which x/sql fields to fill in.
 // ═══════════════════════════════════════════════════════════════
-function renderPlotChips(tabId) {
-  const wrap = document.getElementById(`chips-${tabId}`);
+function activeBuilderId() {
+  const tab = activeTabObj();
+  if (!tab) return null;
+  if (tab.state.mode === 'grid') return tab.state.grid?.activePanel || null;
+  return tab.id;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Plot type chips / extra options (generic over any node id)
+// ═══════════════════════════════════════════════════════════════
+function renderPlotChips(id) {
+  const wrap = document.getElementById(`chips-${id}`);
   if (!wrap) return;
   wrap.innerHTML = '';
-  const tab = G.tabs.find(t => t.id === tabId);
-  if (!tab) return;
+  const st = getState(id);
+  if (!st) return;
   for (const [key, pt] of Object.entries(G.plotTypes)) {
     const ch = document.createElement('div');
-    ch.className = 'plot-chip' + (pt.is_plugin ? ' plugin' : '') + (key === tab.state.plotType ? ' active' : '');
+    ch.className = 'plot-chip' + (pt.is_plugin ? ' plugin' : '') + (key === st.plotType ? ' active' : '');
     ch.textContent = pt.label;
     ch.title = pt.description;
     ch.dataset.type = key;
     ch.addEventListener('click', () => {
-      tab.state.plotType = key;
+      st.plotType = key;
       wrap.querySelectorAll('.plot-chip').forEach(c => c.classList.toggle('active', c.dataset.type === key));
-      renderExtraOpts(tabId);
+      renderExtraOpts(id);
     });
     wrap.appendChild(ch);
   }
 }
 
-function renderExtraOpts(tabId) {
-  const tab = G.tabs.find(t => t.id === tabId);
-  const area = document.getElementById(`extra-opts-${tabId}`);
-  if (!tab || !area) return;
+function renderExtraOpts(id) {
+  const st = getState(id);
+  const area = document.getElementById(`extra-opts-${id}`);
+  if (!st || !area) return;
   area.innerHTML = '';
-  const pt = G.plotTypes[tab.state.plotType];
+  const pt = G.plotTypes[st.plotType];
   if (!pt) return;
   for (const [key, val] of Object.entries(pt.defaults || {})) {
     const wrap = document.createElement('div');
     const lbl = document.createElement('label'); lbl.textContent = key;
     const inp = document.createElement('input');
-    inp.id = `extra-${tabId}-${key}`;
-    inp.value = tab.state.extra?.[key] ?? val;
+    inp.id = `extra-${id}-${key}`;
+    inp.value = st.extra?.[key] ?? val;
     inp.type = typeof val === 'number' ? 'number' : 'text';
     wrap.appendChild(lbl); wrap.appendChild(inp);
     area.appendChild(wrap);
@@ -553,96 +575,67 @@ function renderExtraOpts(tabId) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Axis / column controls (per tab)
+// Axis / column controls (generic over any node id)
 // ═══════════════════════════════════════════════════════════════
-function updateAxisControls(tabId, columns) {
-  const tab = G.tabs.find(t => t.id === tabId);
-  if (!tab) return;
-  tab.state.columns = columns;
-  tab.state.yCols = (tab.state.yCols || []).filter(c => columns.includes(c));
+function updateAxisControls(id, columns) {
+  const st = getState(id);
+  if (!st) return;
+  st.columns = columns;
+  st.yCols = (st.yCols || []).filter(c => columns.includes(c));
+  st.groupCols = (st.groupCols || []).filter(c => columns.includes(c));
 
-  const xSel   = tabEl(tabId, 'x-col');
-  const grpSel = tabEl(tabId, 'group-col');
-  const zSel   = tabEl(tabId, 'z-col');
-  const pills  = document.getElementById(`y-pills-${tabId}`);
-  if (!xSel || !grpSel || !pills) return;
+  const xSel   = tabEl(id, 'x-col');
+  const zSel   = tabEl(id, 'z-col');
+  const markerSel = tabEl(id, 'marker-by');
+  const dashSel   = tabEl(id, 'dash-by');
+  const yPills  = document.getElementById(`y-pills-${id}`);
+  const grpPills = document.getElementById(`group-pills-${id}`);
+  if (!xSel || !yPills) return;
 
-  const prevX = xSel.value, prevGrp = grpSel.value, prevZ = zSel?.value;
+  const prevX = xSel.value, prevZ = zSel?.value, prevMarker = markerSel?.value, prevDash = dashSel?.value;
   const mkOpt = (v, sel) => { const o = document.createElement('option'); o.value=v; o.textContent=v; if(v===sel)o.selected=true; return o; };
 
-  xSel.innerHTML   = '<option value="">— x column —</option>';
-  grpSel.innerHTML = '<option value="">— none —</option>';
+  xSel.innerHTML = '<option value="">— x column —</option>';
   if (zSel) zSel.innerHTML = '<option value="">— none —</option>';
-  pills.innerHTML  = '';
+  if (markerSel) markerSel.innerHTML = '<option value="">— none —</option>';
+  if (dashSel) dashSel.innerHTML = '<option value="">— none —</option>';
+  yPills.innerHTML = '';
+  if (grpPills) grpPills.innerHTML = '';
 
   for (const col of columns) {
-    xSel.appendChild(mkOpt(col, prevX || tab.state.x));
-    grpSel.appendChild(mkOpt(col, prevGrp || tab.state.group));
-    if (zSel) zSel.appendChild(mkOpt(col, prevZ || tab.state.z));
-    const pill = document.createElement('div');
-    pill.className = 'col-pill' + (tab.state.yCols.includes(col) ? ' selected' : '');
-    pill.textContent = col; pill.dataset.col = col;
-    pill.addEventListener('click', () => {
-      if (tab.state.yCols.includes(col)) {
-        tab.state.yCols = tab.state.yCols.filter(c => c !== col);
-        pill.classList.remove('selected');
-      } else {
-        tab.state.yCols.push(col);
-        pill.classList.add('selected');
-      }
+    xSel.appendChild(mkOpt(col, prevX || st.x));
+    if (zSel) zSel.appendChild(mkOpt(col, prevZ || st.z));
+    if (markerSel) markerSel.appendChild(mkOpt(col, prevMarker || st.markerBy));
+    if (dashSel) dashSel.appendChild(mkOpt(col, prevDash || st.dashBy));
+
+    const yPill = document.createElement('div');
+    yPill.className = 'col-pill' + (st.yCols.includes(col) ? ' selected' : '');
+    yPill.textContent = col; yPill.dataset.col = col;
+    yPill.addEventListener('click', () => {
+      if (st.yCols.includes(col)) { st.yCols = st.yCols.filter(c => c !== col); yPill.classList.remove('selected'); }
+      else { st.yCols.push(col); yPill.classList.add('selected'); }
     });
-    pills.appendChild(pill);
+    yPills.appendChild(yPill);
+
+    if (grpPills) {
+      const gPill = document.createElement('div');
+      gPill.className = 'col-pill' + (st.groupCols.includes(col) ? ' selected' : '');
+      gPill.textContent = col; gPill.dataset.col = col;
+      gPill.addEventListener('click', () => {
+        if (st.groupCols.includes(col)) { st.groupCols = st.groupCols.filter(c => c !== col); gPill.classList.remove('selected'); }
+        else { st.groupCols.push(col); gPill.classList.add('selected'); }
+      });
+      grpPills.appendChild(gPill);
+    }
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Tab management
+// Builder markup (shared by tabs in "single" mode and by grid panels)
 // ═══════════════════════════════════════════════════════════════
-function defaultTabState(base) {
-  return Object.assign({
-    database: G.defaultDb || Object.keys(G.databases)[0] || '',
-    sql: '', plotType: 'line', columns: [], yCols: [],
-    x:'', group:'', z:'', extra:{},
-    chartTitle:'', xLabel:'', yLabel:'', xScale:'linear', yScale:'linear',
-    xTickFmt:'', yTickFmt:'', customScript:'',
-    transformScript:'', layoutScript:'',
-  }, base || {});
-}
-
-function createTab(label, stateOverride) {
-  const id = G.nextTabId++;
-  const state = defaultTabState(stateOverride);
-  const tab = {id, label: label || `Plot ${id}`, state};
-  G.tabs.push(tab);
-
-  // Create tab button
-  const bar = document.getElementById('plot-tabs-bar');
-  const btn = document.createElement('div');
-  btn.className = 'plot-tab';
-  btn.id = `tabbtn-${id}`;
-  btn.innerHTML = `<span class="tab-label" ondblclick="renameTab(${id})">${escHtml(tab.label)}</span><span class="plot-tab-close" onclick="closeTab(${id},event)">×</span>`;
-  btn.addEventListener('click', () => activateTab(id));
-  bar.insertBefore(btn, document.getElementById('btn-add-tab'));
-
-  // Create workspace
-  const ws = document.createElement('div');
-  ws.className = 'workspace';
-  ws.id = `ws-${id}`;
-  ws.innerHTML = workspaceHTML(id);
-  document.getElementById('workspaces').appendChild(ws);
-
-  // Wire up events in this workspace
-  wireWorkspace(id);
-  activateTab(id);
-  return id;
-}
-
-function workspaceHTML(id) {
+function builderColumnsHTML(id) {
   const dbOpts = Object.keys(G.databases).map(n => `<option value="${n}">${n}</option>`).join('');
   return `
-<div class="builder">
-  <div class="builder-inner">
-    <!-- Col 1: Plot type + custom script -->
     <div class="b-col" style="min-width:200px;max-width:240px">
       <div class="b-col-title" data-tip="Choose how data is rendered">Plot type</div>
       <div class="plot-type-grid" id="chips-${id}"></div>
@@ -653,21 +646,19 @@ function workspaceHTML(id) {
           <svg id="script-arrow-${id}" width="9" height="9" viewBox="0 0 16 16" fill="currentColor" style="margin-left:auto;transition:transform .2s"><path d="M4 6l4 4 4-4"/></svg>
         </div>
         <div class="script-box" id="script-box-${id}">
-          <div class="script-hint">def <b>plot</b>(df_data, config) → traces</div>
+          <div class="script-hint">def <b>plot</b>(df_data, config) → list of Plotly trace dicts. Overrides the plot-type chips above.</div>
           <textarea id="script-${id}" rows="5" placeholder="def plot(df_data, config):&#10;    # return list of Plotly trace dicts&#10;    ..."></textarea>
         </div>
       </div>
       <div class="extra-opts" id="extra-opts-${id}"></div>
     </div>
 
-    <!-- Col 2: SQL -->
     <div class="b-col" style="min-width:240px;flex:1.2">
       <div class="b-col-title">SQL query</div>
       <div id="db-select-wrap-${id}" style="margin-bottom:5px">
         <select id="db-select-${id}">${dbOpts}</select>
       </div>
       <textarea id="sql-input-${id}" rows="4" spellcheck="false" placeholder="SELECT * FROM results" style="font-size:11px;flex:1"></textarea>
-      <button class="btn sm" id="run-query-btn-${id}" data-tip="Run SQL without rendering — populates column selectors">Load columns</button>
 
       <div style="margin-top:8px">
         <div class="script-toggle" id="transform-toggle-${id}" data-tip="Modify the query result with pandas before it's plotted">
@@ -676,34 +667,37 @@ function workspaceHTML(id) {
           <svg id="transform-arrow-${id}" width="9" height="9" viewBox="0 0 16 16" fill="currentColor" style="margin-left:auto;transition:transform .2s"><path d="M4 6l4 4 4-4"/></svg>
         </div>
         <div class="script-box" id="transform-box-${id}">
-          <div class="script-hint">data: <b>Dict[str, pandas.DataFrame]</b> — query result is data['result']; use <b>log(msg)</b> to print to the Logs panel</div>
-          <textarea id="transform-${id}" rows="6" placeholder="# every table in the database is available too, e.g. data['jobs']&#10;df = data['result']&#10;df['speedup'] = df['baseline_time'] / df['time']&#10;log(f'{len(df)} rows after transform')&#10;data['result'] = df"></textarea>
-          <div style="display:flex;gap:6px;margin-top:5px">
-            <button class="btn sm" id="test-transform-btn-${id}">Test transform</button>
-            <span id="transform-status-${id}" style="font-size:9px;color:var(--text3);align-self:center"></span>
-          </div>
-          <div class="data-preview" id="transform-preview-${id}" style="max-height:140px;margin-top:5px;border:1px solid var(--border);border-radius:var(--radius)"></div>
+          <div class="script-hint">Runs after the SQL query. <b>data</b> is a <code>Dict[str, pandas.DataFrame]</code> — the query result is <code>data['result']</code>, and every other table in the database is available too (e.g. <code>data['jobs']</code>) for joins/lookups. Leave the DataFrame you want plotted in <code>data['result']</code>. Call <b>log(msg)</b> to print to the Logs panel while you iterate.</div>
+          <textarea id="transform-${id}" rows="5" placeholder="df = data['result']&#10;df['speedup'] = df['baseline_time'] / df['time']&#10;log(f'{len(df)} rows after transform')&#10;data['result'] = df"></textarea>
         </div>
       </div>
+
+      <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+        <button class="btn sm" id="run-show-${id}" data-tip="Run the SQL query + transform and show the resulting table below">Run &amp; show</button>
+        <span id="preview-status-${id}" style="font-size:9px;color:var(--text3)"></span>
+      </div>
+      <div class="data-preview" id="inline-preview-${id}" style="max-height:160px;margin-top:5px;border:1px solid var(--border);border-radius:var(--radius)"></div>
     </div>
 
-    <!-- Col 3: Axes -->
     <div class="b-col" style="min-width:180px">
       <div class="b-col-title">Axes</div>
       <label data-tip="Column mapped to the X axis">X column</label>
       <select id="x-col-${id}"><option value="">— x column —</option></select>
       <label style="margin-top:5px" data-tip="One or more columns mapped to Y — click to toggle">Y column(s)</label>
       <div class="multi-col-list" id="y-pills-${id}"></div>
-      <label style="margin-top:5px" data-tip="Split data into separate traces by this column's values">Group / color by</label>
-      <select id="group-col-${id}"><option value="">— none —</option></select>
+      <label style="margin-top:5px" data-tip="Group / colour by one or more columns — combinations become separate traces (e.g. pick both 'algorithm' and 'nodes' to get one line per algorithm×nodes combo)">Group by (colour) — multi-column</label>
+      <div class="multi-col-list" id="group-pills-${id}"></div>
+      <label style="margin-top:5px" data-tip="Assign a distinct marker shape to each value of this column (line/scatter charts)">Marker by</label>
+      <select id="marker-by-${id}"><option value="">— none —</option></select>
+      <label style="margin-top:5px" data-tip="Assign a distinct linestyle (solid/dash/dot/…) to each value of this column (line charts)">Linestyle by</label>
+      <select id="dash-by-${id}"><option value="">— none —</option></select>
       <label style="margin-top:5px" data-tip="Z column for heatmaps">Z column (heatmap)</label>
       <select id="z-col-${id}"><option value="">— none —</option></select>
     </div>
 
-    <!-- Col 4: Labels + scales -->
     <div class="b-col" style="min-width:180px">
       <div class="b-col-title">Labels &amp; scales</div>
-      <label>Chart title</label>
+      <label>Chart / subplot title</label>
       <input type="text" id="chart-title-${id}" placeholder="My benchmark">
       <label style="margin-top:5px">X axis label</label>
       <input type="text" id="x-label-${id}" placeholder="(auto from column)">
@@ -725,18 +719,165 @@ function workspaceHTML(id) {
       <input type="text" id="y-tickfmt-${id}" placeholder=".2f">
 
       <div style="margin-top:8px">
-        <div class="script-toggle" id="layout-toggle-${id}" data-tip="Small Python snippet to fine-tune the Plotly layout dict directly">
+        <div class="script-toggle" id="layout-toggle-${id}" data-tip="A short Python snippet to fine-tune this plot's appearance beyond the fields above">
           <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.8 3.6L14 5.2l-3 2.9.7 4.1L8 10.3l-3.7 1.9.7-4.1-3-2.9 4.2-.6z"/></svg>
           Layout script
           <svg id="layout-arrow-${id}" width="9" height="9" viewBox="0 0 16 16" fill="currentColor" style="margin-left:auto;transition:transform .2s"><path d="M4 6l4 4 4-4"/></svg>
         </div>
         <div class="script-box" id="layout-box-${id}">
-          <div class="script-hint">mutate <b>layout</b> in place; <b>config</b> is read-only; <b>log(msg)</b> available</div>
-          <textarea id="layout-script-${id}" rows="4" placeholder="layout['xaxis']['tickangle'] = 45&#10;layout['yaxis']['range'] = [0, 100]"></textarea>
+          <div class="script-hint">
+            <b>What this is:</b> everything above (title, labels, scales, tick format) covers the common cases. This box is for anything else Plotly supports — it's a few lines of Python that edit the chart's <code>layout</code> dictionary directly before the chart is drawn.<br><br>
+            <b>How to use it:</b> the variable <code>layout</code> is already built from your settings above; just change the part you need, e.g. <code>layout['xaxis']['tickangle'] = 45</code>. You don't need to rewrite the whole thing — only touch what you want different. <code>config</code> holds your current axis/label settings (read-only) if you need to refer to them, and <code>log(msg)</code> prints to the Logs panel so you can check what's happening.<br><br>
+            No Python experience? You likely won't need this box — try the fields above first.
+          </div>
+          <textarea id="layout-script-${id}" rows="4" placeholder="layout['xaxis']['tickangle'] = 45&#10;layout['yaxis']['range'] = [0, 100]&#10;layout['showlegend'] = False"></textarea>
+          <div class="script-examples">
+            <b>Common recipes</b>
+            • Rotate x tick labels: <code>layout['xaxis']['tickangle'] = -45</code><br>
+            • Fix the y-axis range: <code>layout['yaxis']['range'] = [0, 10]</code><br>
+            • Hide the legend: <code>layout['showlegend'] = False</code><br>
+            • Move the legend: <code>layout['legend'] = {'orientation':'h','y':-0.2}</code><br>
+            • Add a reference line: <code>layout.setdefault('shapes', []).append({'type':'line','x0':0,'x1':1,'xref':'paper','y0':1,'y1':1,'line':{'dash':'dot'}})</code>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Wire up a single builder's controls (shared by tabs and panels)
+// ═══════════════════════════════════════════════════════════════
+function wireBuilderColumns(id) {
+  const st = getState(id);
+  if (!st) return;
+
+  renderPlotChips(id);
+  renderExtraOpts(id);
+
+  const f = (sid, val) => { const el = document.getElementById(sid); if (el && val !== undefined) el.value = val; };
+  f(`db-select-${id}`, st.database);
+  f(`sql-input-${id}`, st.sql);
+  f(`chart-title-${id}`, st.chartTitle);
+  f(`x-label-${id}`, st.xLabel);
+  f(`y-label-${id}`, st.yLabel);
+  f(`x-scale-${id}`, st.xScale);
+  f(`y-scale-${id}`, st.yScale);
+  f(`x-tickfmt-${id}`, st.xTickFmt);
+  f(`y-tickfmt-${id}`, st.yTickFmt);
+  f(`script-${id}`, st.customScript);
+  f(`transform-${id}`, st.transformScript);
+  f(`layout-script-${id}`, st.layoutScript);
+
+  const dbWrap = document.getElementById(`db-select-wrap-${id}`);
+  if (dbWrap) dbWrap.style.display = G.singleDb ? 'none' : 'block';
+  if (G.singleDb && G.defaultDb) {
+    const sel = tabEl(id, 'db-select');
+    if (sel) sel.value = G.defaultDb;
+    st.database = G.defaultDb;
+  }
+
+  if (st.columns && st.columns.length) updateAxisControls(id, st.columns);
+  setTimeout(() => { f(`marker-by-${id}`, st.markerBy); f(`dash-by-${id}`, st.dashBy); }, 0);
+
+  const bindToggle = (toggleId, boxId, arrowId) => {
+    const t = document.getElementById(toggleId);
+    if (!t) return;
+    t.addEventListener('click', () => {
+      const box = document.getElementById(boxId);
+      const arrow = document.getElementById(arrowId);
+      const open = box.classList.toggle('open');
+      if (arrow) arrow.style.transform = open ? 'rotate(180deg)' : '';
+    });
+  };
+  bindToggle(`script-toggle-${id}`, `script-box-${id}`, `script-arrow-${id}`);
+  bindToggle(`transform-toggle-${id}`, `transform-box-${id}`, `transform-arrow-${id}`);
+  bindToggle(`layout-toggle-${id}`, `layout-box-${id}`, `layout-arrow-${id}`);
+
+  const runShowBtn = document.getElementById(`run-show-${id}`);
+  if (runShowBtn) runShowBtn.addEventListener('click', () => runShow(id));
+  const sqlBox = document.getElementById(`sql-input-${id}`);
+  if (sqlBox) sqlBox.addEventListener('blur', () => { if (sqlBox.value.trim()) runShow(id); });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Run & show (SQL + transform preview) — the single entry point that
+// replaces the old separate "load columns" / "test transform" buttons
+// ═══════════════════════════════════════════════════════════════
+async function runShow(id) {
+  const db = currentDb(id);
+  const sql = tabEl(id, 'sql-input')?.value.trim();
+  const transformScript = tabEl(id, 'transform')?.value || '';
+  const statusEl = document.getElementById(`preview-status-${id}`);
+  const previewEl = document.getElementById(`inline-preview-${id}`);
+  if (!db || !sql) { if (statusEl) statusEl.textContent = 'Set a database and SQL query first'; return; }
+  if (statusEl) statusEl.textContent = 'Running…';
+  if (previewEl) previewEl.classList.add('open');
+  try {
+    const res = await api('POST', '/api/preview', {database: db, sql, transform_script: transformScript});
+    addLogEntries(res.log_entries);
+    if (!res.ok) {
+      if (statusEl) statusEl.textContent = res.error || 'Failed';
+      if (previewEl) renderDataTable(previewEl, null, 'Query/transform failed — see Logs');
+      return;
+    }
+    updateAxisControls(id, res.columns);
+    if (statusEl) statusEl.textContent = `OK — ${res.preview.rows.length} row(s), ${res.columns.length} column(s)`;
+    if (previewEl) renderDataTable(previewEl, res.preview);
+    clientLog(`Run & show: ${res.preview.rows.length} row(s)`);
+  } catch (e) {
+    if (statusEl) statusEl.textContent = e.message;
+    clientLog(e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Tab management
+// ═══════════════════════════════════════════════════════════════
+function createTab(label, stateOverride) {
+  const id = G.nextTabId++;
+  const state = defaultNodeState(stateOverride);
+  if (!state.mode) state.mode = 'single';
+  const tab = {id, label: label || `Plot ${id}`, state};
+  G.tabs.push(tab);
+  G.nextPanelSeq[id] = 1;
+
+  const bar = document.getElementById('plot-tabs-bar');
+  const btn = document.createElement('div');
+  btn.className = 'plot-tab';
+  btn.id = `tabbtn-${id}`;
+  btn.innerHTML = `<span class="tab-label" ondblclick="renameTab(${id})">${escHtml(tab.label)}</span><span class="plot-tab-close" onclick="closeTab(${id},event)">×</span>`;
+  btn.addEventListener('click', () => activateTab(id));
+  bar.insertBefore(btn, document.getElementById('btn-add-tab'));
+
+  const ws = document.createElement('div');
+  ws.className = 'workspace';
+  ws.id = `ws-${id}`;
+  ws.innerHTML = workspaceHTML(id);
+  document.getElementById('workspaces').appendChild(ws);
+
+  wireWorkspace(id);
+  activateTab(id);
+  return id;
+}
+
+function workspaceHTML(id) {
+  return `
+<div class="figure-toolbar">
+  <label class="mode-toggle" id="mode-label-single-${id}">
+    <input type="radio" name="mode-${id}" value="single" checked> Single plot
+  </label>
+  <label class="mode-toggle" id="mode-label-grid-${id}">
+    <input type="radio" name="mode-${id}" value="grid"> Subplot grid
+  </label>
+  <span id="grid-controls-wrap-${id}">
+     rows <input type="number" id="grid-rows-${id}" min="1" max="6" value="1">
+     cols <input type="number" id="grid-cols-${id}" min="1" max="6" value="1">
+     <button class="btn sm" id="grid-apply-${id}">Apply grid</button>
+  </span>
+</div>
+<div class="panel-tabs" id="panel-tabs-${id}"></div>
+<div class="builder" id="builder-wrap-${id}">
+  <div class="builder-inner active" id="builder-inner-${id}">${builderColumnsHTML(id)}</div>
 </div>
 
 <div class="plot-area">
@@ -750,88 +891,28 @@ function workspaceHTML(id) {
   <div class="data-preview" id="preview-${id}"></div>
   <div class="statusbar">
     <span id="status-${id}" class="s-ok">Ready</span>
-    <button class="btn sm" id="preview-toggle-${id}" data-tip="Show the exact rows behind the current plot">Data ▾</button>
+    <button class="btn sm" id="preview-toggle-${id}" data-tip="Show the exact rows behind the current figure">Data ▾</button>
     <span id="status-rows-${id}" style="margin-left:auto;color:var(--text3)"></span>
   </div>
 </div>`;
 }
 
 function wireWorkspace(id) {
-  const tab = G.tabs.find(t => t.id === id);
-  if (!tab) return;
+  wireBuilderColumns(id);
 
-  renderPlotChips(id);
-  renderExtraOpts(id);
-
-  // Restore state into form fields
-  const s = tab.state;
-  const f = (sid, val) => { const el = document.getElementById(sid); if(el && val!==undefined) el.value = val; };
-  f(`db-select-${id}`, s.database);
-  f(`sql-input-${id}`, s.sql);
-  f(`chart-title-${id}`, s.chartTitle);
-  f(`x-label-${id}`, s.xLabel);
-  f(`y-label-${id}`, s.yLabel);
-  f(`x-scale-${id}`, s.xScale);
-  f(`y-scale-${id}`, s.yScale);
-  f(`x-tickfmt-${id}`, s.xTickFmt);
-  f(`y-tickfmt-${id}`, s.yTickFmt);
-  f(`script-${id}`, s.customScript);
-  f(`transform-${id}`, s.transformScript);
-  f(`layout-script-${id}`, s.layoutScript);
-
-  // Single-database mode: hide the picker, everything targets the one DB.
-  const dbWrap = document.getElementById(`db-select-wrap-${id}`);
-  if (dbWrap) dbWrap.style.display = G.singleDb ? 'none' : 'block';
-  if (G.singleDb && G.defaultDb) {
-    const sel = tabEl(id, 'db-select');
-    if (sel) sel.value = G.defaultDb;
-    tab.state.database = G.defaultDb;
-  }
-
-  if (s.columns && s.columns.length) updateAxisControls(id, s.columns);
-
-  // Custom plot script toggle
-  document.getElementById(`script-toggle-${id}`).addEventListener('click', () => {
-    const box = document.getElementById(`script-box-${id}`);
-    const arrow = document.getElementById(`script-arrow-${id}`);
-    const open = box.classList.toggle('open');
-    arrow.style.transform = open ? 'rotate(180deg)' : '';
-  });
-
-  // Data transform toggle
-  document.getElementById(`transform-toggle-${id}`).addEventListener('click', () => {
-    const box = document.getElementById(`transform-box-${id}`);
-    const arrow = document.getElementById(`transform-arrow-${id}`);
-    const open = box.classList.toggle('open');
-    arrow.style.transform = open ? 'rotate(180deg)' : '';
-  });
-  document.getElementById(`test-transform-btn-${id}`).addEventListener('click', () => testTransform(id));
-
-  // Layout script toggle
-  document.getElementById(`layout-toggle-${id}`).addEventListener('click', () => {
-    const box = document.getElementById(`layout-box-${id}`);
-    const arrow = document.getElementById(`layout-arrow-${id}`);
-    const open = box.classList.toggle('open');
-    arrow.style.transform = open ? 'rotate(180deg)' : '';
-  });
-
-  // Data preview drawer toggle
   document.getElementById(`preview-toggle-${id}`).addEventListener('click', () => {
     const pv = document.getElementById(`preview-${id}`);
     const open = pv.classList.toggle('open');
     document.getElementById(`preview-toggle-${id}`).textContent = open ? 'Data ▴' : 'Data ▾';
   });
 
-  // SQL blur → load columns
-  document.getElementById(`sql-input-${id}`).addEventListener('blur', () => {
-    if (document.getElementById(`sql-input-${id}`).value.trim()) loadColumns(id);
-  });
-  document.getElementById(`run-query-btn-${id}`).addEventListener('click', () => loadColumns(id));
+  // Single / grid mode toggle
+  const radios = document.getElementsByName(`mode-${id}`);
+  radios.forEach(r => r.addEventListener('change', () => setFigureMode(id, r.value)));
+  document.getElementById(`grid-apply-${id}`).addEventListener('click', () => applyGrid(id));
 }
 
-function tabEl(id, suffix) {
-  return document.getElementById(`${suffix}-${id}`);
-}
+function tabEl2(id, suffix) { return document.getElementById(`${suffix}-${id}`); }
 
 function activateTab(id) {
   G.activeTab = id;
@@ -841,7 +922,7 @@ function activateTab(id) {
 
 function closeTab(id, ev) {
   ev?.stopPropagation();
-  if (G.tabs.length <= 1) return; // keep at least one tab
+  if (G.tabs.length <= 1) return;
   G.tabs = G.tabs.filter(t => t.id !== id);
   document.getElementById(`tabbtn-${id}`)?.remove();
   document.getElementById(`ws-${id}`)?.remove();
@@ -859,133 +940,195 @@ function renameTab(id) {
   }
 }
 
-function activeTabObj() {
-  return G.tabs.find(t => t.id === G.activeTab);
-}
+function activeTabObj() { return G.tabs.find(t => t.id === G.activeTab); }
 
 document.getElementById('btn-add-tab').addEventListener('click', () => {
   const src = activeTabObj();
   const baseState = src ? JSON.parse(JSON.stringify(src.state)) : {};
+  baseState.mode = 'single'; baseState.grid = undefined;
   const newId = createTab(`Plot ${G.nextTabId}`, baseState);
   clientLog(`New tab created (cloned from "${src?.label}")`);
 });
 
 // ═══════════════════════════════════════════════════════════════
-// Run query (column loading)
+// Subplot grid mode
 // ═══════════════════════════════════════════════════════════════
-function currentDb(tabId) {
-  if (G.singleDb) return G.defaultDb;
-  return tabEl(tabId, 'db-select')?.value;
+function setFigureMode(tabId, mode) {
+  const tab = G.tabs.find(t => t.id === tabId);
+  if (!tab) return;
+  tab.state.mode = mode;
+  document.getElementById(`grid-controls-wrap-${tabId}`).style.display = mode === 'grid' ? 'inline-flex' : 'none';
+  document.getElementById(`panel-tabs-${tabId}`).style.display = mode === 'grid' ? 'flex' : 'none';
+  if (mode === 'grid') {
+    if (!tab.state.grid) tab.state.grid = {rows: 1, cols: 1, panelIds: [], activePanel: null};
+    document.getElementById(`grid-rows-${tabId}`).value = tab.state.grid.rows;
+    document.getElementById(`grid-cols-${tabId}`).value = tab.state.grid.cols;
+    if (!tab.state.grid.panelIds.length) applyGrid(tabId);
+    else showBuilderFor(tabId, tab.state.grid.activePanel || tab.state.grid.panelIds[0]);
+  } else {
+    showBuilderFor(tabId, tabId);
+  }
 }
 
-async function loadColumns(tabId) {
-  const db  = currentDb(tabId);
-  const sql = tabEl(tabId, 'sql-input').value.trim();
-  if (!db || !sql) return;
+function showBuilderFor(tabId, nodeId) {
+  document.querySelectorAll(`#builder-wrap-${tabId} .builder-inner`).forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`builder-inner-${nodeId}`);
+  if (el) el.classList.add('active');
+  const tab = G.tabs.find(t => t.id === tabId);
+  if (tab && tab.state.grid) tab.state.grid.activePanel = nodeId;
+  document.querySelectorAll(`#panel-tabs-${tabId} .panel-chip`).forEach(c => c.classList.toggle('active', c.dataset.node === String(nodeId)));
+}
+
+function applyGrid(tabId) {
+  const tab = G.tabs.find(t => t.id === tabId);
+  if (!tab) return;
+  const rows = Math.max(1, parseInt(document.getElementById(`grid-rows-${tabId}`).value) || 1);
+  const cols = Math.max(1, parseInt(document.getElementById(`grid-cols-${tabId}`).value) || 1);
+  const needed = rows * cols;
+  if (!tab.state.grid) tab.state.grid = {rows, cols, panelIds: [], activePanel: null};
+  tab.state.grid.rows = rows; tab.state.grid.cols = cols;
+
+  let ids = tab.state.grid.panelIds;
+  // Add panels if we need more
+  while (ids.length < needed) {
+    const seq = G.nextPanelSeq[tabId]++;
+    const pid = `${tabId}_p${seq}`;
+    G.panelState[pid] = defaultNodeState({database: tab.state.database});
+    const wrap = document.getElementById(`builder-wrap-${tabId}`);
+    const div = document.createElement('div');
+    div.className = 'builder-inner';
+    div.id = `builder-inner-${pid}`;
+    div.innerHTML = builderColumnsHTML(pid);
+    wrap.appendChild(div);
+    wireBuilderColumns(pid);
+    ids.push(pid);
+  }
+  // Remove panels if we need fewer
+  while (ids.length > needed) {
+    const pid = ids.pop();
+    document.getElementById(`builder-inner-${pid}`)?.remove();
+    delete G.panelState[pid];
+  }
+
+  renderPanelTabs(tabId);
+  showBuilderFor(tabId, ids[0]);
+  clientLog(`Grid set to ${rows}×${cols} (${needed} panel(s)) for tab "${tab.label}"`);
+}
+
+function renderPanelTabs(tabId) {
+  const wrap = document.getElementById(`panel-tabs-${tabId}`);
+  const tab = G.tabs.find(t => t.id === tabId);
+  wrap.innerHTML = '';
+  (tab.state.grid.panelIds || []).forEach((pid, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'panel-chip';
+    chip.textContent = `Panel ${i + 1}`;
+    chip.dataset.node = pid;
+    chip.addEventListener('click', () => showBuilderFor(tabId, pid));
+    wrap.appendChild(chip);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Gather a plot payload (single node) — shared by single-plot Run and
+// each panel of a grid figure
+// ═══════════════════════════════════════════════════════════════
+function gatherPlotPayload(id) {
+  const st = getState(id);
+  const pt = G.plotTypes[st.plotType] || {};
+  const extra = {};
+  for (const key of Object.keys(pt.defaults || {})) {
+    const inp = document.getElementById(`extra-${id}-${key}`);
+    if (inp) extra[key] = isNaN(inp.value) ? inp.value : Number(inp.value);
+  }
+  const config = {
+    title:       tabEl(id,'chart-title')?.value || '',
+    x:           tabEl(id,'x-col')?.value || '',
+    y:           st.yCols,
+    group:       st.groupCols,
+    marker_by:   tabEl(id,'marker-by')?.value || '',
+    dash_by:     tabEl(id,'dash-by')?.value || '',
+    z:           tabEl(id,'z-col')?.value || '',
+    x_label:     tabEl(id,'x-label')?.value || '',
+    y_label:     tabEl(id,'y-label')?.value || '',
+    x_scale:     tabEl(id,'x-scale')?.value || 'linear',
+    y_scale:     tabEl(id,'y-scale')?.value || 'linear',
+    x_tickformat:tabEl(id,'x-tickfmt')?.value || '',
+    y_tickformat:tabEl(id,'y-tickfmt')?.value || '',
+    ...extra,
+  };
+  return {
+    database: currentDb(id),
+    sql: tabEl(id,'sql-input')?.value.trim() || '',
+    plot_type: st.plotType,
+    config,
+    custom_script: tabEl(id,'script')?.value || '',
+    transform_script: tabEl(id,'transform')?.value || '',
+    layout_script: tabEl(id,'layout-script')?.value || '',
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Run (single plot or subplot grid)
+// ═══════════════════════════════════════════════════════════════
+async function runPlot() {
+  const tab = activeTabObj();
+  if (!tab) return;
+  if (tab.state.mode === 'grid') return runGridPlot(tab.id);
+
+  const tabId = tab.id;
+  const payload = gatherPlotPayload(tabId);
+  if (!payload.database || !payload.sql) { setStatus(tabId,'Set a database and SQL query first','err'); return; }
+
+  setStatus(tabId,'Running…','');
+  document.getElementById('btn-run').disabled = true;
   try {
-    const res = await api('POST', '/api/query', {database:db, sql, limit:50});
-    if (res.error) throw new Error(res.error);
-    updateAxisControls(tabId, res.columns);
-    setStatus(tabId, `Columns loaded (${res.columns.length})`, 'warn');
-    clientLog(`Columns loaded for tab "${G.tabs.find(t=>t.id===tabId)?.label}": ${res.columns.join(', ')}`);
+    const res = await api('POST','/api/plot', payload);
+    document.getElementById('btn-run').disabled = false;
+    addLogEntries(res.log_entries);
+    if (res.error) { setStatus(tabId, res.error, 'err'); clientLog(res.error,'error'); return; }
+    if (res.columns?.length) updateAxisControls(tabId, res.columns);
+
+    document.getElementById(`overlay-${tabId}`).style.display = 'none';
+    Plotly.react(`plot-${tabId}`, res.traces, res.layout, {responsive:true, displaylogo:false, modeBarButtonsToRemove:['sendDataToCloud']});
+    tab.state.plotted = true;
+    const hint = res.truncated ? ' (truncated to 10k rows)' : '';
+    setStatus(tabId, `OK — ${res.traces.length} trace(s), ${res.columns?.length||0} column(s)${hint}`, 'ok');
+    clientLog(`Plot rendered: "${tab.label}" — ${res.traces.length} trace(s)${hint}`);
+    renderDataTable(document.getElementById(`preview-${tabId}`), res.preview);
   } catch(e) {
+    document.getElementById('btn-run').disabled = false;
     setStatus(tabId, e.message, 'err');
     clientLog(e.message, 'error');
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Data transform — test run
-// ═══════════════════════════════════════════════════════════════
-async function testTransform(tabId) {
-  const db = currentDb(tabId);
-  const sql = tabEl(tabId, 'sql-input').value.trim();
-  const script = tabEl(tabId, 'transform-${id}'.replace('${id}', tabId))?.value ?? tabEl(tabId, 'transform').value;
-  const statusEl = document.getElementById(`transform-status-${tabId}`);
-  const previewEl = document.getElementById(`transform-preview-${tabId}`);
-  if (!db) { statusEl.textContent = 'No database selected'; return; }
-  statusEl.textContent = 'Running…';
-  previewEl.classList.add('open');
-  try {
-    const res = await api('POST', '/api/transform_test', {database: db, sql, transform_script: tabEl(tabId,'transform').value});
-    addLogEntries(res.log_entries);
-    if (!res.ok) { statusEl.textContent = res.error || 'Failed'; renderDataTable(previewEl, null, 'Transform failed'); return; }
-    statusEl.textContent = `OK — ${res.preview.rows.length} row(s)`;
-    renderDataTable(previewEl, res.preview);
-    clientLog(`Transform tested on tab "${G.tabs.find(t=>t.id===tabId)?.label}"`);
-  } catch(e) {
-    statusEl.textContent = e.message;
-    clientLog(e.message, 'error');
-  }
-}
+async function runGridPlot(tabId) {
+  const tab = G.tabs.find(t => t.id === tabId);
+  const grid = tab.state.grid;
+  if (!grid || !grid.panelIds.length) { setStatus(tabId,'Configure the grid first','err'); return; }
 
-// ═══════════════════════════════════════════════════════════════
-// Run plot
-// ═══════════════════════════════════════════════════════════════
-async function runPlot() {
-  const tabId = G.activeTab;
-  const tab = activeTabObj();
-  if (!tab) return;
-
-  const db  = currentDb(tabId);
-  const sql = tabEl(tabId, 'sql-input').value.trim();
-  if (!db || !sql) { setStatus(tabId,'Set a database and SQL query first','err'); return; }
-
-  // Collect extra opts
-  const pt = G.plotTypes[tab.state.plotType] || {};
-  const extra = {};
-  for (const key of Object.keys(pt.defaults || {})) {
-    const inp = document.getElementById(`extra-${tabId}-${key}`);
-    if (inp) extra[key] = isNaN(inp.value) ? inp.value : Number(inp.value);
-  }
-
-  const config = {
-    title:       tabEl(tabId,'chart-title').value,
-    x:           tabEl(tabId,'x-col').value,
-    y:           tab.state.yCols,
-    group:       tabEl(tabId,'group-col').value,
-    z:           tabEl(tabId,'z-col').value,
-    x_label:     tabEl(tabId,'x-label').value,
-    y_label:     tabEl(tabId,'y-label').value,
-    x_scale:     tabEl(tabId,'x-scale').value,
-    y_scale:     tabEl(tabId,'y-scale').value,
-    x_tickformat:tabEl(tabId,'x-tickfmt').value,
-    y_tickformat:tabEl(tabId,'y-tickfmt').value,
-    ...extra,
-  };
-  const customScript = tabEl(tabId,'script').value;
-  const transformScript = tabEl(tabId,'transform').value;
-  const layoutScript = tabEl(tabId,'layout-script').value;
+  const panels = grid.panelIds.map(pid => gatherPlotPayload(pid));
+  const missing = panels.findIndex(p => !p.database || !p.sql);
+  if (missing !== -1) { setStatus(tabId, `Panel ${missing+1}: set a database and SQL query`, 'err'); return; }
 
   setStatus(tabId,'Running…','');
   document.getElementById('btn-run').disabled = true;
-
   try {
-    const res = await api('POST','/api/plot',{
-      database:db, sql, plot_type:tab.state.plotType,
-      config, custom_script:customScript,
-      transform_script: transformScript,
-      layout_script: layoutScript,
-    });
+    const res = await api('POST', '/api/plot_grid', {rows: grid.rows, cols: grid.cols, panels});
     document.getElementById('btn-run').disabled = false;
     addLogEntries(res.log_entries);
-    if (res.error) { setStatus(tabId, res.error, 'err'); clientLog(res.error,'error'); return; }
-
-    if (res.columns?.length) updateAxisControls(tabId, res.columns);
+    if (res.error) { setStatus(tabId, res.error, 'err'); clientLog(res.error, 'error'); return; }
 
     document.getElementById(`overlay-${tabId}`).style.display = 'none';
-    Plotly.react(`plot-${tabId}`, res.traces, res.layout, {
-      responsive:true, displaylogo:false,
-      modeBarButtonsToRemove:['sendDataToCloud'],
-    });
+    Plotly.react(`plot-${tabId}`, res.traces, res.layout, {responsive:true, displaylogo:false, modeBarButtonsToRemove:['sendDataToCloud']});
     tab.state.plotted = true;
-    const hint = res.truncated ? ' (truncated to 10k rows)' : '';
-    setStatus(tabId, `OK — ${res.traces.length} trace(s), ${res.columns?.length||0} column(s)${hint}`, 'ok');
-    clientLog(`Plot rendered: "${tab.label}" — ${res.traces.length} trace(s)${hint}`);
+    setStatus(tabId, `OK — ${panels.length} panel(s), ${res.traces.length} trace(s) total`, 'ok');
+    clientLog(`Grid figure rendered: "${tab.label}" — ${panels.length} panel(s)`);
 
-    // Keep the "Data" drawer in sync with whatever was actually plotted.
-    renderDataTable(document.getElementById(`preview-${tabId}`), res.preview);
-  } catch(e) {
+    const labeled = (res.previews || []).map((df, i) => ({label: `Panel ${i+1}`, df}));
+    renderMultiPreview(document.getElementById(`preview-${tabId}`), labeled);
+  } catch (e) {
     document.getElementById('btn-run').disabled = false;
     setStatus(tabId, e.message, 'err');
     clientLog(e.message, 'error');
@@ -1000,79 +1143,141 @@ function setStatus(tabId, msg, level) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Config import / export (single tab)
+// Config import / export — schema v3, only meaningful fields kept
 // ═══════════════════════════════════════════════════════════════
+function isEmptyVal(v) {
+  return v === '' || v === null || v === undefined ||
+    (Array.isArray(v) && v.length === 0) ||
+    (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);
+}
+function pruneConfig(obj, alwaysKeep) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (alwaysKeep.includes(k)) { out[k] = v; continue; }
+    if (isEmptyVal(v)) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+function getNodeConfig(id) {
+  const st = getState(id);
+  if (!st) return null;
+  const pt = G.plotTypes[st.plotType] || {};
+  const extra = {};
+  for (const [key, defVal] of Object.entries(pt.defaults || {})) {
+    const inp = document.getElementById(`extra-${id}-${key}`);
+    if (!inp) continue;
+    const val = isNaN(inp.value) ? inp.value : Number(inp.value);
+    if (String(val) !== String(defVal)) extra[key] = val; // only non-default values
+  }
+  const raw = {
+    database:    currentDb(id) || '',
+    sql:         tabEl(id,'sql-input')?.value || '',
+    plotType:    st.plotType,
+    chartTitle:  tabEl(id,'chart-title')?.value || '',
+    x:           tabEl(id,'x-col')?.value || '',
+    y:           st.yCols,
+    group:       st.groupCols,
+    markerBy:    tabEl(id,'marker-by')?.value || '',
+    dashBy:      tabEl(id,'dash-by')?.value || '',
+    z:           tabEl(id,'z-col')?.value || '',
+    xLabel:      tabEl(id,'x-label')?.value || '',
+    yLabel:      tabEl(id,'y-label')?.value || '',
+    xScale:      (tabEl(id,'x-scale')?.value || 'linear') === 'linear' ? '' : tabEl(id,'x-scale').value,
+    yScale:      (tabEl(id,'y-scale')?.value || 'linear') === 'linear' ? '' : tabEl(id,'y-scale').value,
+    xTickFmt:    tabEl(id,'x-tickfmt')?.value || '',
+    yTickFmt:    tabEl(id,'y-tickfmt')?.value || '',
+    extra,
+    customScript:    tabEl(id,'script')?.value || '',
+    transformScript: tabEl(id,'transform')?.value || '',
+    layoutScript:    tabEl(id,'layout-script')?.value || '',
+  };
+  return pruneConfig(raw, ['database','sql','plotType']);
+}
+
+function applyNodeConfig(id, cfg) {
+  const st = getState(id);
+  if (!st || !cfg) return;
+  const f = (sid, val) => { const el = tabEl(id, sid); if (el && val !== undefined) el.value = val; };
+  f('db-select',  cfg.database);
+  f('sql-input',  cfg.sql);
+  f('chart-title',cfg.chartTitle || '');
+  f('x-label',    cfg.xLabel || '');
+  f('y-label',    cfg.yLabel || '');
+  f('x-scale',    cfg.xScale || 'linear');
+  f('y-scale',    cfg.yScale || 'linear');
+  f('x-tickfmt',  cfg.xTickFmt || '');
+  f('y-tickfmt',  cfg.yTickFmt || '');
+  f('script',     cfg.customScript || '');
+  f('transform',  cfg.transformScript || '');
+  f('layout-script', cfg.layoutScript || '');
+
+  st.database = cfg.database || st.database;
+  st.plotType = cfg.plotType || 'line';
+  st.yCols    = cfg.y || [];
+  st.groupCols= cfg.group || [];
+  st.extra    = cfg.extra || {};
+  st.customScript = cfg.customScript || '';
+  st.transformScript = cfg.transformScript || '';
+  st.layoutScript = cfg.layoutScript || '';
+
+  renderPlotChips(id);
+  renderExtraOpts(id);
+  for (const [key, val] of Object.entries(cfg.extra || {})) {
+    const inp = document.getElementById(`extra-${id}-${key}`);
+    if (inp) inp.value = val;
+  }
+  setTimeout(() => { f('marker-by', cfg.markerBy || ''); f('dash-by', cfg.dashBy || ''); }, 0);
+
+  // Columns aren't persisted (derived data) — re-run the query automatically
+  // if we have SQL, so the axis dropdowns populate themselves.
+  if (cfg.sql && cfg.sql.trim()) {
+    setTimeout(() => runShow(id).then(() => {
+      setTimeout(() => { f('x-col', cfg.x || ''); }, 0);
+    }), 0);
+  }
+}
+
 function getTabConfig(tabId) {
   const tab = G.tabs.find(t => t.id === tabId);
   if (!tab) return null;
-  const pt = G.plotTypes[tab.state.plotType] || {};
-  const extra = {};
-  for (const key of Object.keys(pt.defaults || {})) {
-    const inp = document.getElementById(`extra-${tabId}-${key}`);
-    if (inp) extra[key] = isNaN(inp.value) ? inp.value : Number(inp.value);
+  const cfg = { version: 3, label: tab.label, mode: tab.state.mode || 'single' };
+  if (tab.state.mode === 'grid' && tab.state.grid) {
+    cfg.grid = {
+      rows: tab.state.grid.rows, cols: tab.state.grid.cols,
+      panels: tab.state.grid.panelIds.map(pid => getNodeConfig(pid)),
+    };
+  } else {
+    Object.assign(cfg, getNodeConfig(tabId));
   }
-  return {
-    version: 2, label: tab.label,
-    database:    currentDb(tabId) || '',
-    sql:         tabEl(tabId,'sql-input')?.value    || '',
-    plotType:    tab.state.plotType,
-    chartTitle:  tabEl(tabId,'chart-title')?.value  || '',
-    x:           tabEl(tabId,'x-col')?.value        || '',
-    y:           tab.state.yCols,
-    group:       tabEl(tabId,'group-col')?.value    || '',
-    z:           tabEl(tabId,'z-col')?.value        || '',
-    xLabel:      tabEl(tabId,'x-label')?.value      || '',
-    yLabel:      tabEl(tabId,'y-label')?.value      || '',
-    xScale:      tabEl(tabId,'x-scale')?.value      || 'linear',
-    yScale:      tabEl(tabId,'y-scale')?.value      || 'linear',
-    xTickFmt:    tabEl(tabId,'x-tickfmt')?.value    || '',
-    yTickFmt:    tabEl(tabId,'y-tickfmt')?.value    || '',
-    extra,
-    customScript:tabEl(tabId,'script')?.value       || '',
-    transformScript: tabEl(tabId,'transform')?.value || '',
-    layoutScript:    tabEl(tabId,'layout-script')?.value || '',
-    columns:     tab.state.columns || [],
-  };
+  return cfg;
 }
 
 function applyTabConfig(tabId, cfg) {
-  if (!cfg || cfg.version < 2) { alert('Invalid or incompatible config (expected version 2).'); return; }
+  if (!cfg || cfg.version < 2) { alert('Invalid or incompatible config (expected version 2 or later).'); return; }
   const tab = G.tabs.find(t => t.id === tabId);
   if (!tab) return;
   tab.label = cfg.label || tab.label;
   const lbl = document.querySelector(`#tabbtn-${tabId} .tab-label`);
   if (lbl) lbl.textContent = tab.label;
 
-  const f = (sid, val) => { const el = tabEl(tabId, sid); if(el && val!==undefined) el.value = val; };
-  f('db-select',  cfg.database);
-  f('sql-input',  cfg.sql);
-  f('chart-title',cfg.chartTitle);
-  f('x-label',    cfg.xLabel);
-  f('y-label',    cfg.yLabel);
-  f('x-scale',    cfg.xScale);
-  f('y-scale',    cfg.yScale);
-  f('x-tickfmt',  cfg.xTickFmt);
-  f('y-tickfmt',  cfg.yTickFmt);
-  f('script',     cfg.customScript);
-  f('transform',  cfg.transformScript);
-  f('layout-script', cfg.layoutScript);
-
-  tab.state.database = G.singleDb ? G.defaultDb : (cfg.database || tab.state.database);
-  tab.state.plotType = cfg.plotType || 'line';
-  tab.state.yCols    = cfg.y || [];
-  tab.state.extra    = cfg.extra || {};
-  tab.state.transformScript = cfg.transformScript || '';
-  tab.state.layoutScript    = cfg.layoutScript || '';
-
-  renderPlotChips(tabId);
-  renderExtraOpts(tabId);
-  for (const [key, val] of Object.entries(cfg.extra || {})) {
-    const inp = document.getElementById(`extra-${tabId}-${key}`);
-    if (inp) inp.value = val;
+  if (cfg.grid) {
+    const radios = document.getElementsByName(`mode-${tabId}`);
+    radios.forEach(r => { r.checked = (r.value === 'grid'); });
+    setFigureMode(tabId, 'grid');
+    document.getElementById(`grid-rows-${tabId}`).value = cfg.grid.rows;
+    document.getElementById(`grid-cols-${tabId}`).value = cfg.grid.cols;
+    applyGrid(tabId);
+    tab.state.grid.panelIds.forEach((pid, i) => {
+      if (cfg.grid.panels[i]) applyNodeConfig(pid, cfg.grid.panels[i]);
+    });
+  } else {
+    const radios = document.getElementsByName(`mode-${tabId}`);
+    radios.forEach(r => { r.checked = (r.value === 'single'); });
+    setFigureMode(tabId, 'single');
+    applyNodeConfig(tabId, cfg);
   }
-  if (cfg.columns?.length) updateAxisControls(tabId, cfg.columns);
-  setTimeout(() => { f('x-col', cfg.x); f('group-col', cfg.group); f('z-col', cfg.z); }, 0);
-
   setStatus(tabId,'Config loaded — click Run to render','warn');
   clientLog(`Config imported into tab "${tab.label}"`);
 }
@@ -1083,28 +1288,19 @@ document.getElementById('btn-export-config').addEventListener('click', () => {
   download(JSON.stringify(cfg, null, 2), `plot-config-${cfg.label.replace(/\s+/g,'-')}.json`);
   clientLog(`Config exported for tab "${cfg.label}"`);
 });
-
-document.getElementById('btn-import-config').addEventListener('click', () => {
-  document.getElementById('import-file-input').click();
-});
+document.getElementById('btn-import-config').addEventListener('click', () => document.getElementById('import-file-input').click());
 document.getElementById('import-file-input').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
   readJson(f, cfg => applyTabConfig(G.activeTab, cfg));
   e.target.value = '';
 });
 
-// ═══════════════════════════════════════════════════════════════
-// Workspace (all tabs) import / export
-// ═══════════════════════════════════════════════════════════════
 document.getElementById('btn-export-all').addEventListener('click', () => {
-  const ws = { version:2, tabs: G.tabs.map(t => getTabConfig(t.id)) };
+  const ws = { version: 3, tabs: G.tabs.map(t => getTabConfig(t.id)) };
   download(JSON.stringify(ws, null, 2), `workspace-${Date.now()}.json`);
   clientLog(`Workspace exported: ${G.tabs.length} tab(s). Save it as plots.json in the server's working directory to auto-load it next launch.`);
 });
-
-document.getElementById('btn-import-all').addEventListener('click', () => {
-  document.getElementById('import-ws-file-input').click();
-});
+document.getElementById('btn-import-all').addEventListener('click', () => document.getElementById('import-ws-file-input').click());
 document.getElementById('import-ws-file-input').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
   readJson(f, ws => applyWorkspace(ws, 'imported'));
@@ -1113,7 +1309,6 @@ document.getElementById('import-ws-file-input').addEventListener('change', e => 
 
 function applyWorkspace(ws, sourceLabel) {
   if (!ws?.tabs?.length) { alert('Invalid workspace file.'); return; }
-  // Close all existing tabs
   [...G.tabs].forEach(t => closeTab(t.id));
   G.tabs = [];
   document.querySelectorAll('.plot-tab').forEach(el => el.remove());
@@ -1125,16 +1320,10 @@ function applyWorkspace(ws, sourceLabel) {
   clientLog(`Workspace ${sourceLabel}: ${ws.tabs.length} tab(s)`);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Save PNG
-// ═══════════════════════════════════════════════════════════════
 document.getElementById('btn-export-png').addEventListener('click', () => {
   const tab = activeTabObj();
   if (!tab?.state?.plotted) { clientLog('No plot rendered yet','warn'); return; }
-  Plotly.downloadImage(`plot-${G.activeTab}`, {
-    format:'png', width:1600, height:900,
-    filename:`hpc-plot-${tab.label.replace(/\s+/g,'-')}`
-  });
+  Plotly.downloadImage(`plot-${G.activeTab}`, {format:'png', width:1600, height:900, filename:`hpc-plot-${tab.label.replace(/\s+/g,'-')}`});
   clientLog(`PNG saved for tab "${tab.label}"`);
 });
 
@@ -1160,7 +1349,18 @@ document.getElementById('btn-reparse').addEventListener('click', async () => {
     G.databases = res.databases;
     G.singleDb = !!res.single_db;
     G.defaultDb = res.default_database || '';
-    renderSchemaTree(); populateReparseSel();
+    renderSchemaTree(); populateReparseSel(); populateAllDbSelects();
+    // Refresh every open tab/panel bound to this DB so newly added columns
+    // actually show up (this used to require a server restart).
+    const affectedIds = [
+      ...G.tabs.filter(t => t.state.database === db).map(t => t.id),
+      ...Object.keys(G.panelState).filter(pid => G.panelState[pid].database === db),
+    ];
+    for (const id of affectedIds) {
+      const sqlVal = tabEl(id, 'sql-input')?.value.trim();
+      if (sqlVal) await runShow(id);
+    }
+    if (affectedIds.length) clientLog(`Refreshed columns for ${affectedIds.length} open panel(s) bound to "${db}"`);
   }
   if (res.log_entry) addLogEntry(res.log_entry);
 });
@@ -1173,7 +1373,6 @@ function populateFetchSystems() {
   sel.innerHTML = '<option value="">— select system —</option>' +
     Object.keys(G.remoteSystems).map(s => `<option value="${s}">${s}</option>`).join('');
 }
-
 function onFetchSystemChange() {
   const sys = document.getElementById('fetch-system-sel').value;
   const paths = G.remoteSystems[sys] || [];
@@ -1183,7 +1382,6 @@ function onFetchSystemChange() {
     `<label class="fetch-path-item"><input type="checkbox" value="${escHtml(p)}"> <span>${escHtml(p)}</span></label>`
   ).join('');
 }
-
 async function runFetch() {
   const sys = document.getElementById('fetch-system-sel').value;
   if (!sys) { clientLog('Select a remote system first', 'warn'); return; }
@@ -1201,13 +1399,13 @@ async function runFetch() {
   }
   if (res.log_entry) addLogEntry(res.log_entry);
 }
-
 function populateAllDbSelects() {
   const opts = Object.keys(G.databases).map(n => `<option value="${n}">${n}</option>`).join('');
-  G.tabs.forEach(tab => {
-    const sel = tabEl(tab.id, 'db-select');
+  const allIds = [...G.tabs.map(t => t.id), ...Object.keys(G.panelState)];
+  allIds.forEach(id => {
+    const sel = tabEl(id, 'db-select');
     if (sel) { const prev = sel.value; sel.innerHTML = opts; if (prev) sel.value = prev; }
-    const dbWrap = document.getElementById(`db-select-wrap-${tab.id}`);
+    const dbWrap = document.getElementById(`db-select-wrap-${id}`);
     if (dbWrap) dbWrap.style.display = G.singleDb ? 'none' : 'block';
   });
 }
@@ -1220,9 +1418,9 @@ document.getElementById('btn-reload-plugins').addEventListener('click', async ()
   const res = await api('POST', '/api/reload_plugins', {dirs:[]});
   if (res.error) { clientLog(res.error,'error'); return; }
   Object.assign(G.plotTypes, res.plot_types || {});
-  G.tabs.forEach(t => { renderPlotChips(t.id); renderExtraOpts(t.id); });
-  document.getElementById('plugin-list').textContent = res.reloaded.length
-    ? res.reloaded.join(', ') : 'No plugins found';
+  const allIds = [...G.tabs.map(t => t.id), ...Object.keys(G.panelState)];
+  allIds.forEach(id => { renderPlotChips(id); renderExtraOpts(id); });
+  document.getElementById('plugin-list').textContent = res.reloaded.length ? res.reloaded.join(', ') : 'No plugins found';
   if (res.log_entry) addLogEntry(res.log_entry);
 });
 
@@ -1239,9 +1437,7 @@ document.querySelectorAll('.sb-tab').forEach(t => t.addEventListener('click', ()
 // Topbar run + keyboard
 // ═══════════════════════════════════════════════════════════════
 document.getElementById('btn-run').addEventListener('click', runPlot);
-document.addEventListener('keydown', e => {
-  if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); runPlot(); }
-});
+document.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); runPlot(); } });
 
 // ═══════════════════════════════════════════════════════════════
 // Utility
@@ -1251,7 +1447,6 @@ function download(text, filename) {
   a.href = URL.createObjectURL(new Blob([text], {type:'application/json'}));
   a.download = filename; a.click(); URL.revokeObjectURL(a.href);
 }
-
 function readJson(file, cb) {
   const r = new FileReader();
   r.onload = ev => { try { cb(JSON.parse(ev.target.result)); } catch(e) { alert('Could not parse JSON: '+e.message); } };
@@ -1278,8 +1473,6 @@ async function init() {
   populateReparseSel();
   populateFetchSystems();
 
-  // Auto-load ./plots.json (if the server found one at startup), otherwise
-  // start with a single blank tab.
   if (wsRes.workspace?.tabs?.length) {
     applyWorkspace(wsRes.workspace, 'auto-loaded from plots.json');
   } else {

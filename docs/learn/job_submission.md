@@ -107,7 +107,7 @@ Variables can be defined in three ways:
     ```yaml
     variables:
       ncpus:
-        default: [1] # optional default value
+        default: [1] # optional default value. Can be also specified inside the `per_cluster` block 
         per_cluster:
           cluster1: [1, 2, 4]
           cluster2: [1, 2, 4, 8, 16]
@@ -117,14 +117,56 @@ Variables can be defined in three ways:
     ```yaml
     variables:
       type_size:
-        default: [4] # optional default value
         map:
+          default: [4] # optional default value. Can be also specified outside the `map` block 
           float:  [4]
           double: [8]
           uint32: [4]
           int32:  [4]
     ```
     The substitution wildcard uses the following syntax: `{<map_variable>[<variable_to_be_used_as_key>]}` (e.g., `{type_size[data_type]}`). You can specify multiple values in the values array.
+6. **Nested `per_cluster` and `map`:**
+    Both `per_cluster` and `map` selectors can be nested arbitrarily. The variable is resolved recursively until a list of values is obtained. For example, a `map` can contain `per_cluster` values:
+    ```yaml
+    variables:
+      mpi_module:
+        map:
+          openmpi:
+            per_cluster:
+              default: ['OpenMPI/5.0.2']
+
+          mpich:
+            per_cluster:
+              default: ['MPICH/4.2.1']
+
+          intelmpi:
+            per_cluster:
+              default:   ['intel-oneapi-mpi/latest']
+              cluster_a: ['intel-oneapi-mpi/2023.2']
+              cluster_b: ['intel-oneapi-mpi/2024.1']
+    ```
+    The map key is first selected using the normal map syntax (e.g., `{mpi_module[mpi_impl]}`), after which the `per_cluster` selector automatically chooses the value corresponding to the current cluster.  
+    Likewise, a `per_cluster` selector can contain a `map`:
+    ```yaml
+    variables:
+      simd_flags:
+        per_cluster:
+          cluster_a:
+            map:
+              gcc:   ['-mavx512f']
+              clang: ['-mavx512f']
+
+          cluster_a:
+            map:
+              gcc:   ['-march=rv64gcv']
+              clang: ['-march=rv64gcv']
+
+          default:
+            map:
+              gcc:   ['']
+              clang: ['']
+    ```
+
 
 !!! warning "Important Note"
     DO NOT use an absolute path in the definition of job tags.  

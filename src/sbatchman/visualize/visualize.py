@@ -8,9 +8,9 @@ Plugin API — any .py in a plugins dir:
     PLOT_DEFAULTS    = {"param": 42}
     def plot(df_data, config): ...  -> list[dict]  (Plotly traces)
 
-The HTML/JS front-end lives in webapp.html, next to this file, and is loaded
-from disk on every request (so it can be tweaked without restarting the
-server).
+The front-end (HTML/CSS/JS) lives in webapp.html and docs.html, next to this
+file, and is loaded from disk on every request (so it can be tweaked without
+restarting the server).
 
 If a file named `plots.json` exists in the current working directory when
 the server starts, it is loaded and offered to the front-end as the initial
@@ -30,7 +30,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from rich.console import Console
 
 from sbatchman.config.project_config import get_project_root
@@ -44,10 +44,17 @@ console = Console(width=shutil.get_terminal_size().columns)
 
 MODULE_DIR = Path(__file__).resolve().parent
 HTML_PATH = MODULE_DIR / "webapp.html"
+DOCS_PATH = MODULE_DIR / "docs.html"
 
 # ---------------------------------------------------------------------------
-# Hook functions — customise these to integrate with your infrastructure
+# Re-parse bookkeeping — lets hook_reparse() actually regenerate a database
+# instead of just re-reading whatever is already on disk.
 # ---------------------------------------------------------------------------
+
+# db_name -> {"parser": Path, "output_path": Path}   (populated for any DB
+# that was produced by parse_jobs_and_generate_sqlite_db at startup)
+REPARSE_SOURCES: dict = {}
+
 
 def hook_reparse(db_name: str, db_path: str) -> dict:
     """
@@ -63,8 +70,13 @@ def hook_reparse(db_name: str, db_path: str) -> dict:
             "ok"      (bool)   – whether the operation succeeded
             "message" (str)    – human-readable status shown in the UI log
     """
-    # --- DEFAULT: just verify the file is readable and return row counts ---
+    src = REPARSE_SOURCES.get(db_name)
     try:
+        if src:
+            # Actually regenerate the SQLite file from the job logs, so
+            # columns/tables added by the parser since the server started
+            # actually show up (previously this only re-read the stale file).
+            parse_jobs_and_generate_sqlite_db(parser=src["parser"], output_path=src["output_path"])
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -84,16 +96,6 @@ def hook_fetch_remote(system: str, paths: list[str]) -> dict:
     """
     Called when the user requests a remote fetch for selected paths.
     Replace this with your own scp / rsync / API / S3 / etc. logic.
-
-    Args:
-        system:  The system key (e.g. "cluster-a", "hpc-login-01").
-        paths:   List of remote path strings the user selected.
-
-    Returns:
-        dict with keys:
-            "ok"          (bool)        – overall success
-            "message"     (str)         – summary shown in UI log
-            "loaded_dbs"  (list[str])   – names of any new DBs registered
     """
     loaded = []
     messages = []
@@ -101,7 +103,6 @@ def hook_fetch_remote(system: str, paths: list[str]) -> dict:
     try:
       fetch_remotes([system], paths)
       messages.append(f"Fetched {paths} from {system}!")
-      # log(f"Fetched {paths} from {system}!")
       loaded.extend([f'{p} @ {system}' for p in paths])
     except Exception as e:
       log(f'Error during fetch: {e}', level='error')
@@ -123,8 +124,39 @@ def get_remotes():
   for cluster in remotes_config.get('clusters', []):
     for dir in cluster.get('fetch_dirs'):
       remotes[cluster['name']].append(dir['alias'])
-    
   return remotes
+
+REMOTE_SYSTEMS = {
+    "cluster-a": [
+        "/scratch/benchmarks/2024/run_001.db",
+        "/scratch/benchmarks/2024/run_002.db",
+        "/scratch/benchmarks/2025/mpi_scaling.db",
+    ],
+    "hpc-login-01": [
+        "/home/user/results/omp_bench.db",
+        "/home/user/results/gpu_roofline.db",
+    ],
+    "cloud-runner": [
+        "/data/ci/nightly/latest.db",
+        "/data/ci/weekly/summary.db",
+    ],
+}
+
+
+# ---------------------------------------------------------------------------
+# Visual style — scientific-paper-grade defaults (matplotlib/seaborn-like)
+# ---------------------------------------------------------------------------
+
+# matplotlib "tab10" colour cycle
+COLORWAY = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+            "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+
+DASH_SEQUENCE = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"]
+MARKER_SEQUENCE = ["circle", "square", "diamond", "cross", "x",
+                    "triangle-up", "triangle-down", "star", "pentagon", "hexagon"]
+
+AXIS_FONT = {"color": "#222222", "family": "Georgia, 'Times New Roman', serif", "size": 13}
+
 
 # ---------------------------------------------------------------------------
 # Built-in plot types
@@ -148,70 +180,128 @@ def _col_idx(columns):
     return {c: i for i, c in enumerate(columns)}
 
 
-def _split_groups(rows, col_idx, group_col):
+def _norm_cols(g) -> List[str]:
+    """Normalise a group-by spec (None / str / list) into a list of column names."""
+    if not g:
+        return []
+    if isinstance(g, str):
+        return [g]
+    return [c for c in g if c]
+
+
+def _split_groups(rows, col_idx, group_cols: List[str]):
+    """Split rows into groups keyed by a tuple of one or more column values."""
     groups: dict = {}
     for row in rows:
-        g = row[col_idx[group_col]]
-        groups.setdefault(g, []).append(row)
+        key = tuple(row[col_idx[c]] for c in group_cols)
+        groups.setdefault(key, []).append(row)
     return groups
 
 
-@register_plot("line", "Line Chart", "X vs Y with optional grouping", {"mode": "lines+markers"})
+def _group_label(key: Tuple) -> str:
+    return " | ".join(str(v) for v in key)
+
+
+def _style_map(rows, col_idx, col: Optional[str], sequence: List[str]) -> dict:
+    """Assigns each distinct value of `col` a symbol/dash from `sequence`, in
+    stable sorted order, so the same value always maps to the same style."""
+    if not col or col not in col_idx:
+        return {}
+    values = sorted(set(r[col_idx[col]] for r in rows), key=lambda v: str(v))
+    return {v: sequence[i % len(sequence)] for i, v in enumerate(values)}
+
+
+@register_plot("line", "Line Chart", "X vs Y with multi-column grouping, marker & linestyle mapping", {"mode": "lines+markers"})
 def plot_line(df, cfg):
     ci = _col_idx(df["columns"]); rows = df["rows"]
-    x, ys, grp = cfg.get("x"), cfg.get("y", []), cfg.get("group")
+    x, ys = cfg.get("x"), cfg.get("y", [])
     if isinstance(ys, str): ys = [ys]
     if not x or not ys: raise ValueError("Line chart requires x and at least one y.")
+
+    group_cols = _norm_cols(cfg.get("group"))
+    marker_by = cfg.get("marker_by") or None
+    dash_by = cfg.get("dash_by") or None
+
+    marker_map = _style_map(rows, ci, marker_by, MARKER_SEQUENCE)
+    dash_map = _style_map(rows, ci, dash_by, DASH_SEQUENCE)
+
+    # linestyle is a trace-level property, so a column mapped to linestyle is
+    # folded into the split so each distinct value gets its own trace.
+    split_cols = list(group_cols)
+    if dash_by and dash_by not in split_cols:
+        split_cols.append(dash_by)
+
+    def make_trace(gr, label, y):
+        trace = {"type": "scatter", "mode": cfg.get("mode", "lines+markers"),
+                  "name": f"{label} — {y}" if (label and len(ys) > 1) else (label or y),
+                  "x": [r[ci[x]] for r in gr], "y": [r[ci[y]] for r in gr]}
+        if dash_by:
+            dash_val = gr[0][ci[dash_by]]
+            trace["line"] = {"dash": dash_map.get(dash_val, "solid")}
+        if marker_by:
+            trace["marker"] = {"symbol": [marker_map.get(r[ci[marker_by]], "circle") for r in gr]}
+        return trace
+
     traces = []
-    if grp and grp in ci:
-        for g, gr in sorted(_split_groups(rows, ci, grp).items()):
+    if split_cols:
+        for key, gr in sorted(_split_groups(rows, ci, split_cols).items(), key=lambda kv: [str(v) for v in kv[0]]):
+            label = _group_label(key)
             for y in ys:
-                traces.append({"type":"scatter","mode":cfg.get("mode","lines+markers"),
-                    "name":f"{g} — {y}" if len(ys)>1 else str(g),
-                    "x":[r[ci[x]] for r in gr],"y":[r[ci[y]] for r in gr]})
+                traces.append(make_trace(gr, label, y))
     else:
         for y in ys:
-            traces.append({"type":"scatter","mode":cfg.get("mode","lines+markers"),
-                "name":y,"x":[r[ci[x]] for r in rows],"y":[r[ci[y]] for r in rows]})
+            traces.append(make_trace(rows, None, y))
     return traces
 
 
-@register_plot("bar", "Bar Chart", "Categorical comparisons", {"barmode": "group"})
+@register_plot("bar", "Bar Chart", "Categorical comparisons with multi-column grouping", {"barmode": "group"})
 def plot_bar(df, cfg):
     ci = _col_idx(df["columns"]); rows = df["rows"]
-    x, ys, grp = cfg.get("x"), cfg.get("y", []), cfg.get("group")
+    x, ys = cfg.get("x"), cfg.get("y", [])
     if isinstance(ys, str): ys = [ys]
     if not x or not ys: raise ValueError("Bar chart requires x and at least one y.")
+    group_cols = _norm_cols(cfg.get("group"))
     traces = []
-    if grp and grp in ci:
-        for g, gr in sorted(_split_groups(rows, ci, grp).items()):
+    if group_cols:
+        for key, gr in sorted(_split_groups(rows, ci, group_cols).items(), key=lambda kv: [str(v) for v in kv[0]]):
+            label = _group_label(key)
             for y in ys:
-                traces.append({"type":"bar","name":f"{g} — {y}" if len(ys)>1 else str(g),
-                    "x":[r[ci[x]] for r in gr],"y":[r[ci[y]] for r in gr]})
+                traces.append({"type": "bar", "name": f"{label} — {y}" if len(ys) > 1 else label,
+                    "x": [r[ci[x]] for r in gr], "y": [r[ci[y]] for r in gr]})
     else:
         for y in ys:
-            traces.append({"type":"bar","name":y,
-                "x":[r[ci[x]] for r in rows],"y":[r[ci[y]] for r in rows]})
+            traces.append({"type": "bar", "name": y,
+                "x": [r[ci[x]] for r in rows], "y": [r[ci[y]] for r in rows]})
     return traces
 
 
-@register_plot("scatter", "Scatter Plot", "X vs Y correlation", {})
+@register_plot("scatter", "Scatter Plot", "X vs Y correlation with grouping and marker mapping", {})
 def plot_scatter(df, cfg):
     ci = _col_idx(df["columns"]); rows = df["rows"]
-    x, ys, grp = cfg.get("x"), cfg.get("y", []), cfg.get("group")
+    x, ys = cfg.get("x"), cfg.get("y", [])
     if isinstance(ys, str): ys = [ys]
     if not x or not ys: raise ValueError("Scatter requires x and at least one y.")
+    group_cols = _norm_cols(cfg.get("group"))
+    marker_by = cfg.get("marker_by") or None
+    marker_map = _style_map(rows, ci, marker_by, MARKER_SEQUENCE)
+
+    def make_trace(gr, label, y):
+        trace = {"type": "scatter", "mode": "markers",
+                  "name": f"{label} — {y}" if (label and len(ys) > 1) else (label or y),
+                  "x": [r[ci[x]] for r in gr], "y": [r[ci[y]] for r in gr]}
+        if marker_by:
+            trace["marker"] = {"symbol": [marker_map.get(r[ci[marker_by]], "circle") for r in gr]}
+        return trace
+
     traces = []
-    if grp and grp in ci:
-        for g, gr in sorted(_split_groups(rows, ci, grp).items()):
+    if group_cols:
+        for key, gr in sorted(_split_groups(rows, ci, group_cols).items(), key=lambda kv: [str(v) for v in kv[0]]):
+            label = _group_label(key)
             for y in ys:
-                traces.append({"type":"scatter","mode":"markers",
-                    "name":f"{g} — {y}" if len(ys)>1 else str(g),
-                    "x":[r[ci[x]] for r in gr],"y":[r[ci[y]] for r in gr]})
+                traces.append(make_trace(gr, label, y))
     else:
         for y in ys:
-            traces.append({"type":"scatter","mode":"markers","name":y,
-                "x":[r[ci[x]] for r in rows],"y":[r[ci[y]] for r in rows]})
+            traces.append(make_trace(rows, None, y))
     return traces
 
 
@@ -332,9 +422,7 @@ def is_single_db() -> bool:
 
 
 def only_db_name() -> Optional[str]:
-    if is_single_db():
-        return next(iter(DB_REGISTRY))
-    return None
+    return next(iter(DB_REGISTRY)) if is_single_db() else None
 
 
 def get_db_schema(db_name):
@@ -351,7 +439,7 @@ def get_db_schema(db_name):
     return tables
 
 
-def get_all_tables(db_name: str) -> List[str]:
+def get_all_table_names(db_name: str) -> List[str]:
     path = DB_REGISTRY.get(db_name)
     if not path: raise ValueError(f"Unknown database: {db_name}")
     conn = sqlite3.connect(path)
@@ -363,13 +451,12 @@ def get_all_tables(db_name: str) -> List[str]:
 
 
 def get_all_tables_as_dataframes(db_name: str) -> Dict[str, "pd.DataFrame"]:
-    """Load every table of a database into a dict of pandas DataFrames."""
     path = DB_REGISTRY.get(db_name)
     if not path: raise ValueError(f"Unknown database: {db_name}")
     conn = sqlite3.connect(path)
     dfs = {}
     try:
-        for t in get_all_tables(db_name):
+        for t in get_all_table_names(db_name):
             dfs[t] = pd.read_sql_query(f"SELECT * FROM {t}", conn)
     finally:
         conn.close()
@@ -401,7 +488,6 @@ def dataframe_to_df_data(df: "pd.DataFrame", limit=10000) -> dict:
     truncated = len(df) > limit
     if truncated:
         df = df.head(limit)
-    # Replace NaN/NaT with None so it survives JSON serialisation.
     safe = df.astype(object).where(pd.notnull(df), None)
     return {
         "columns": [str(c) for c in df.columns],
@@ -421,12 +507,9 @@ def run_custom_plot_script(source, df_data, config):
 def run_transform_script(source: str, data: Dict[str, "pd.DataFrame"], log_fn):
     """
     Runs a user-supplied Python snippet that can inspect/modify `data`, a
-    dict[str, pandas.DataFrame]. The query result (if any) lives under the
-    key "result". Whatever ends up under data["result"] after the script
-    runs becomes the data that gets plotted (or previewed).
-
-    `log_fn(msg)` is exposed to the script as `log(...)`, writing into the
-    server log panel — handy for debugging the transform interactively.
+    dict[str, pandas.DataFrame]. The SQL query result lives under the key
+    "result"; whatever ends up in data["result"] after the script runs is
+    what gets shown/plotted. `log_fn(msg)` is exposed as `log(...)`.
     """
     ns = {"data": data, "pd": pd, "log": log_fn}
     exec(compile(source, "<transform_script>", "exec"), ns)
@@ -434,45 +517,155 @@ def run_transform_script(source: str, data: Dict[str, "pd.DataFrame"], log_fn):
 
 
 def run_layout_script(source: str, layout: dict, config: dict, log_fn):
-    """
-    Runs a user-supplied Python snippet that can tweak the Plotly `layout`
-    dict in place (tick formats, fonts, annotations, axis ranges, ...)
-    after the built-in layout has already been assembled. `config` (the
-    same config dict sent to the plot function) is available read-only,
-    and `log(...)` writes to the server log panel.
-    """
     ns = {"layout": layout, "config": config, "log": log_fn}
     exec(compile(source, "<layout_script>", "exec"), ns)
     return ns.get("layout", layout)
 
 
-def build_layout(config, layout_overrides):
+def _parse_tickvals(spec):
+    """Accepts a comma-separated string (from the UI) or a list of numbers
+    and returns a list of floats, or None if nothing usable was given."""
+    if not spec:
+        return None
+    if isinstance(spec, (list, tuple)):
+        vals = spec
+    else:
+        vals = str(spec).split(",")
+    out = []
+    for v in vals:
+        v = str(v).strip()
+        if v == "":
+            continue
+        try:
+            out.append(float(v))
+        except ValueError:
+            return None
+    return out or None
+
+
+def _format_tick_number(v: float) -> str:
+    return str(int(v)) if float(v).is_integer() else str(v)
+
+
+def _apply_custom_ticks(axis: dict, spec):
+    vals = _parse_tickvals(spec)
+    if not vals:
+        return
+    axis["tickmode"] = "array"
+    axis["tickvals"] = vals
+    axis["ticktext"] = [_format_tick_number(v) for v in vals]
+
+
+def build_layout(config, layout_overrides=None):
+    """Scientific-paper-grade default styling (white background, serif font,
+    matplotlib tab10 colour cycle, mirrored axis lines, light gridlines) —
+    deliberately close to a default matplotlib/seaborn figure rather than a
+    dashboard theme.
+
+    `config["x_tickvals"]` / `config["y_tickvals"]` accept a comma-separated
+    list of numbers (e.g. "1,2,4,8,16") to pin ticks to specific values —
+    handy for a log-scaled axis that should only show powers of two, for
+    instance: set x_scale to "log" and x_tickvals to "1,2,4,8,16,32".
+    """
+    layout_overrides = layout_overrides or {}
     y_label = config.get("y", [])
     if isinstance(y_label, list): y_label = ", ".join(y_label)
+    axis_common = {
+        "showgrid": True, "gridcolor": "#e6e6e6", "gridwidth": 1,
+        "zeroline": False, "showline": True, "linecolor": "#333333",
+        "linewidth": 1, "mirror": True, "ticks": "outside", "tickcolor": "#333333",
+        "automargin": True, "ticklen": 5,
+    }
+    xaxis = {**axis_common,
+        "title": {"text": config.get("x_label") or config.get("x", ""), "standoff": 12},
+        "type": config.get("x_scale", "linear"),
+        "tickformat": config.get("x_tickformat", ""),
+    }
+    yaxis = {**axis_common,
+        "title": {"text": config.get("y_label") or y_label, "standoff": 12},
+        "type": config.get("y_scale", "linear"),
+        "tickformat": config.get("y_tickformat", ""),
+    }
+    _apply_custom_ticks(xaxis, config.get("x_tickvals"))
+    _apply_custom_ticks(yaxis, config.get("y_tickvals"))
+
     layout = {
-        "title": {"text": config.get("title", ""), "font": {"size": 16}},
-        "xaxis": {
-            "title": {"text": config.get("x_label") or config.get("x", "")},
-            "type": config.get("x_scale", "linear"),
-            "showgrid": True, "gridcolor": "#21262d",
-            "tickformat": config.get("x_tickformat", ""),
-        },
-        "yaxis": {
-            "title": {"text": config.get("y_label") or y_label},
-            "type": config.get("y_scale", "linear"),
-            "showgrid": True, "gridcolor": "#21262d",
-            "tickformat": config.get("y_tickformat", ""),
-        },
+        "title": {"text": config.get("title", ""), "font": {"size": 16, **AXIS_FONT}, "pad": {"t": 8, "b": 8}, "x": 0.02, "xanchor": "left"},
+        "xaxis": xaxis,
+        "yaxis": yaxis,
         "barmode": config.get("barmode", "group"),
-        "template": "plotly_dark",
-        "paper_bgcolor": "#0d1117",
-        "plot_bgcolor": "#0d1117",
-        "font": {"color": "#e6edf3", "family": "JetBrains Mono, monospace"},
-        "legend": {"bgcolor": "rgba(0,0,0,0)", "bordercolor": "#30363d", "borderwidth": 1},
-        "margin": {"l": 60, "r": 20, "t": 50, "b": 50},
+        "paper_bgcolor": "#ffffff",
+        "plot_bgcolor": "#ffffff",
+        "font": dict(AXIS_FONT),
+        "colorway": COLORWAY,
+        "legend": {"bgcolor": "rgba(255,255,255,0.85)", "bordercolor": "#cccccc", "borderwidth": 1},
+        # Generous, auto-expanding margins so long tick labels (e.g. large
+        # sample counts) never get clipped; automargin on each axis will
+        # grow these further if needed.
+        "margin": {"l": 80, "r": 30, "t": 64, "b": 70, "pad": 4},
     }
     layout.update(layout_overrides)
     return layout
+
+
+def compute_grid_domains(rows: int, cols: int, xgap=0.10, ygap=0.16):
+    """Evenly spaced (x-domain, y-domain) pairs for a `rows` x `cols` grid of
+    subplots, filled left-to-right, top-to-bottom, with a gap between cells."""
+    col_width = (1 - xgap * (cols - 1)) / cols
+    row_height = (1 - ygap * (rows - 1)) / rows
+    domains = []
+    for r in range(rows):
+        for c in range(cols):
+            x0 = c * (col_width + xgap)
+            x1 = x0 + col_width
+            y1 = 1 - r * (row_height + ygap)
+            y0 = y1 - row_height
+            domains.append(((round(x0, 4), round(x1, 4)), (round(y0, 4), round(y1, 4))))
+    return domains
+
+
+# ---------------------------------------------------------------------------
+# Shared "query -> transform -> plot" pipeline
+# ---------------------------------------------------------------------------
+
+def run_pipeline(database: str, sql: str, transform_script: str = ""):
+    """SQL query, optionally followed by a pandas transform script. Returns
+    (df_data, log_entries)."""
+    df_data = run_query(database, sql)
+    log_entries = []
+    if transform_script and transform_script.strip():
+        data = get_all_tables_as_dataframes(database)
+        data["result"] = df_data_to_dataframe(df_data)
+        script_log, entries = make_script_logger("transform")
+        data = run_transform_script(transform_script, data, script_log)
+        log_entries.extend(entries)
+        result_df = data.get("result")
+        if result_df is None:
+            raise ValueError("The transform script must leave a DataFrame in data['result'].")
+        df_data = dataframe_to_df_data(result_df)
+    return df_data, log_entries
+
+
+def compute_traces(df_data: dict, plot_type: str, custom_script: str, config: dict):
+    if custom_script and custom_script.strip():
+        log(f"Custom script plot")
+        return run_custom_plot_script(custom_script, df_data, config)
+    if plot_type in PLUGIN_PLOTS:
+        log(f"Plugin plot '{plot_type}'")
+        return PLUGIN_PLOTS[plot_type]["fn"](df_data, config)
+    if plot_type in BUILTIN_PLOTS:
+        traces = BUILTIN_PLOTS[plot_type]["fn"](df_data, config)
+        log(f"Plot '{plot_type}': {len(traces)} trace(s)")
+        return traces
+    raise ValueError(f"Unknown plot type: {plot_type}")
+
+
+def preview_of(df_data: dict, limit=500):
+    return {
+        "columns": df_data["columns"],
+        "rows": df_data["rows"][:limit],
+        "truncated": df_data.get("truncated", False) or len(df_data["rows"]) > limit,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -490,7 +683,6 @@ def log(msg, level="info"):
 
 
 def make_script_logger(prefix: str):
-    """Builds a `log(msg)` callable for user scripts that tags entries."""
     entries = []
     def _log(msg, level="script"):
         entry = log(f"[{prefix}] {msg}", level)
@@ -526,7 +718,7 @@ def load_initial_workspace():
 # ---------------------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
-    def log_message(self, fmt, *args): pass  # suppress default stdout log
+    def log_message(self, fmt, *args): pass
 
     def send_json(self, data, status=200):
         body = json.dumps(data).encode()
@@ -555,6 +747,12 @@ class Handler(BaseHTTPRequestHandler):
                 html = HTML_PATH.read_text(encoding="utf-8")
             except Exception as e:
                 self.send_json({"error": f"Could not load {HTML_PATH}: {e}"}, 500); return
+            self.send_html(html)
+        elif path in ("/docs", "/docs.html"):
+            try:
+                html = DOCS_PATH.read_text(encoding="utf-8")
+            except Exception as e:
+                self.send_json({"error": f"Could not load {DOCS_PATH}: {e}"}, 500); return
             self.send_html(html)
         elif path == "/api/databases":
             schema = {n: get_db_schema(n) for n in DB_REGISTRY}
@@ -589,35 +787,17 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             self.send_json({"error": "Invalid JSON"}, 400); return
 
-        if path == "/api/query":
-            try:
-                result = run_query(payload["database"], payload["sql"],
-                                   int(payload.get("limit", 10000)))
-                log(f"Query on '{payload['database']}': {len(result['rows'])} rows")
-                self.send_json(result)
-            except Exception as e:
-                log(str(e), "error")
-                self.send_json({"error": str(e)}, 400)
-
-        elif path == "/api/transform_test":
-            # Lets the user dry-run their pandas transform script and see a
-            # preview + any log() output, without rendering a plot.
+        if path == "/api/preview":
+            # Runs SQL + (optional) pandas transform and returns the
+            # resulting table — this powers the single "Run & Show" button.
             try:
                 db = payload["database"]
-                sql = payload.get("sql", "")
-                script = payload.get("transform_script", "")
-                data = get_all_tables_as_dataframes(db)
-                if sql.strip():
-                    df_data = run_query(db, sql)
-                    data["result"] = df_data_to_dataframe(df_data)
-                script_log, entries = make_script_logger("transform")
-                if script.strip():
-                    data = run_transform_script(script, data, script_log)
-                result_df = data.get("result")
-                if result_df is None:
-                    raise ValueError("The transform script must leave a DataFrame in data['result'].")
-                preview = dataframe_to_df_data(result_df, limit=500)
-                self.send_json({"ok": True, "preview": preview, "log_entries": entries})
+                sql = payload["sql"]
+                transform_script = payload.get("transform_script", "")
+                df_data, log_entries = run_pipeline(db, sql, transform_script)
+                log(f"Preview on '{db}': {len(df_data['rows'])} row(s)")
+                self.send_json({"ok": True, "preview": preview_of(df_data),
+                                 "columns": df_data["columns"], "log_entries": log_entries})
             except Exception as e:
                 entry = log(str(e), "error")
                 self.send_json({"ok": False, "error": str(e),
@@ -633,32 +813,8 @@ class Handler(BaseHTTPRequestHandler):
                 layout_script = payload.get("layout_script", "")
                 layout_overrides = payload.get("layout", {})
 
-                df_data = run_query(db, sql)
-                log_entries = []
-
-                if transform_script.strip():
-                    data = get_all_tables_as_dataframes(db)
-                    data["result"] = df_data_to_dataframe(df_data)
-                    script_log, entries = make_script_logger("transform")
-                    data = run_transform_script(transform_script, data, script_log)
-                    log_entries.extend(entries)
-                    result_df = data.get("result")
-                    if result_df is None:
-                        raise ValueError("The transform script must leave a DataFrame in data['result'].")
-                    df_data = dataframe_to_df_data(result_df)
-
-                if custom_script.strip():
-                    traces = run_custom_plot_script(custom_script, df_data, config)
-                    log(f"Custom script plot on '{db}'")
-                elif plot_type in PLUGIN_PLOTS:
-                    traces = PLUGIN_PLOTS[plot_type]["fn"](df_data, config)
-                    log(f"Plugin plot '{plot_type}' on '{db}'")
-                elif plot_type in BUILTIN_PLOTS:
-                    traces = BUILTIN_PLOTS[plot_type]["fn"](df_data, config)
-                    log(f"Plot '{plot_type}' on '{db}': {len(traces)} trace(s)")
-                else:
-                    raise ValueError(f"Unknown plot type: {plot_type}")
-
+                df_data, log_entries = run_pipeline(db, sql, transform_script)
+                traces = compute_traces(df_data, plot_type, custom_script, config)
                 layout = build_layout(config, layout_overrides)
 
                 if layout_script.strip():
@@ -666,17 +822,82 @@ class Handler(BaseHTTPRequestHandler):
                     layout = run_layout_script(layout_script, layout, config, script_log)
                     log_entries.extend(entries)
 
-                preview = {
-                    "columns": df_data["columns"],
-                    "rows": df_data["rows"][:500],
-                    "truncated": df_data.get("truncated", False) or len(df_data["rows"]) > 500,
-                }
-
                 self.send_json({"traces": traces, "layout": layout,
                                 "columns": df_data["columns"],
                                 "truncated": df_data.get("truncated", False),
-                                "preview": preview,
+                                "preview": preview_of(df_data),
                                 "log_entries": log_entries})
+            except Exception as e:
+                log(str(e), "error")
+                self.send_json({"error": str(e), "traceback": traceback.format_exc()}, 400)
+
+        elif path == "/api/plot_grid":
+            # One figure made of several independently-configured subplots.
+            try:
+                rows = int(payload.get("rows", 1))
+                cols = int(payload.get("cols", 1))
+                panels = payload.get("panels", [])
+                if rows < 1 or cols < 1:
+                    raise ValueError("Grid rows/cols must be >= 1.")
+                domains = compute_grid_domains(rows, cols)
+
+                all_traces = []
+                layout = {
+                    "paper_bgcolor": "#ffffff", "plot_bgcolor": "#ffffff",
+                    "font": dict(AXIS_FONT), "colorway": COLORWAY,
+                    "margin": {"l": 20, "r": 20, "t": 30, "b": 20},
+                    "annotations": [],
+                }
+                previews = []
+                log_entries = []
+
+                for i, panel in enumerate(panels):
+                    if i >= len(domains):
+                        break  # more panels than grid cells — ignore extras
+                    suffix = "" if i == 0 else str(i + 1)
+                    db, sql = panel["database"], panel["sql"]
+                    plot_type = panel.get("plot_type", "line")
+                    config = panel.get("config", {})
+                    custom_script = panel.get("custom_script", "")
+                    transform_script = panel.get("transform_script", "")
+                    layout_script = panel.get("layout_script", "")
+
+                    df_data, entries = run_pipeline(db, sql, transform_script)
+                    log_entries.extend(entries)
+                    traces = compute_traces(df_data, plot_type, custom_script, config)
+                    for t in traces:
+                        t["xaxis"] = f"x{suffix}"
+                        t["yaxis"] = f"y{suffix}"
+                    all_traces.extend(traces)
+
+                    panel_layout = build_layout(config, {})
+                    (x0, x1), (y0, y1) = domains[i]
+                    xaxis = dict(panel_layout["xaxis"]); xaxis["domain"] = [x0, x1]
+                    yaxis = dict(panel_layout["yaxis"]); yaxis["domain"] = [y0, y1]
+                    layout[f"xaxis{suffix}"] = xaxis
+                    layout[f"yaxis{suffix}"] = yaxis
+
+                    if layout_script.strip():
+                        script_log, lentries = make_script_logger(f"layout(panel {i+1})")
+                        sub_layout = {"xaxis": xaxis, "yaxis": yaxis}
+                        sub_layout = run_layout_script(layout_script, sub_layout, config, script_log)
+                        log_entries.extend(lentries)
+                        layout[f"xaxis{suffix}"] = sub_layout.get("xaxis", xaxis)
+                        layout[f"yaxis{suffix}"] = sub_layout.get("yaxis", yaxis)
+
+                    title = config.get("title")
+                    if title:
+                        layout["annotations"].append({
+                            "text": title, "x": (x0 + x1) / 2, "y": y1 + 0.02,
+                            "xref": "paper", "yref": "paper", "showarrow": False,
+                            "xanchor": "center", "yanchor": "bottom",
+                            "font": {"size": 13, **AXIS_FONT},
+                        })
+
+                    previews.append(preview_of(df_data, limit=200))
+
+                self.send_json({"traces": all_traces, "layout": layout,
+                                 "previews": previews, "log_entries": log_entries})
             except Exception as e:
                 log(str(e), "error")
                 self.send_json({"error": str(e), "traceback": traceback.format_exc()}, 400)
@@ -688,7 +909,6 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError(f"Unknown database: {db_name}")
                 result = hook_reparse(db_name, DB_REGISTRY[db_name])
                 entry = log(result["message"], "info" if result["ok"] else "error")
-                # refresh schema
                 schema = {n: get_db_schema(n) for n in DB_REGISTRY}
                 self.send_json({"ok": result["ok"], "message": result["message"],
                                 "log_entry": entry, "databases": schema,
@@ -704,7 +924,6 @@ class Handler(BaseHTTPRequestHandler):
                 if not system: raise ValueError("No system specified.")
                 result = hook_fetch_remote(system, paths)
                 entry = log(result["message"], "info" if result["ok"] else "error")
-                # reload schema in case new DBs were added
                 schema = {n: get_db_schema(n) for n in DB_REGISTRY}
                 self.send_json({"ok": result["ok"], "message": result["message"],
                                 "loaded_dbs": result.get("loaded_dbs", []),
@@ -747,13 +966,13 @@ class Handler(BaseHTTPRequestHandler):
 def launch_visualize_web_server(parser: Path, presets: Path, port: int = 8765, plugins: List[Path] = []):
   # Plugin API (any .py file in the plugins dir):
   # PLOT_NAME        = "my_plot"          # unique key
-  # PLOT_LABEL       = "My Custom Plot"   # dilay name
+  # PLOT_LABEL       = "My Custom Plot"   # display name
   # PLOT_DESCRIPTION = "Does something"   # tooltip
   # PLOT_DEFAULTS    = {"param": 42}      # extra config fields
 
   # def plot(df_data, config):
   #     # df_data: {"columns": [...], "rows": [[...], ...]}
-  #     # config: {"x": ..., "y": [...], "group": ..., "param": 42, ...}
+  #     # config: {"x": ..., "y": [...], "group": [...], "param": 42, ...}
   #     # return: list of Plotly trace dicts
   #     ...
 
@@ -771,6 +990,12 @@ def launch_visualize_web_server(parser: Path, presets: Path, port: int = 8765, p
         console.print("[bold red]No valid databases loaded. Exiting.[/bold red]")
         raise typer.exit(1)
 
+    # Remember how this database was produced so "Re-parse" in the UI can
+    # actually regenerate it from the job logs, not just re-read stale data.
+    db_name = Path(db_path).stem
+    if db_name in DB_REGISTRY:
+        REPARSE_SOURCES[db_name] = {"parser": parser, "output_path": db_path}
+
     if plugins:
         load_plugins(plugins)
 
@@ -786,6 +1011,7 @@ def launch_visualize_web_server(parser: Path, presets: Path, port: int = 8765, p
     print("\n  Plot Builder")
     print("  ─────────────────────────")
     print(f"  URL     : {url}")
+    print(f"  Docs    : {url}/docs")
     print(f"  DBs     : {', '.join(DB_REGISTRY.keys())}")
     print(f"  Plots   : {', '.join(BUILTIN_PLOTS.keys())}")
     if PLUGIN_PLOTS:

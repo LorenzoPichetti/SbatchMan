@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from copy import deepcopy
 
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.exceptions import ClusterNameNotFoundError, SyntaxError
@@ -11,14 +12,26 @@ def load_variable_values(var_value, key):
   # This may be a `per_cluster`, `map`, or mixed variable
   elif isinstance(var_value, dict):
     if 'per_cluster' in var_value and isinstance(var_value['per_cluster'], dict):
-      val = var_value['per_cluster'].get(get_cluster_name()) or var_value.get('default')
-      if not val: 
+      per_cluster = var_value['per_cluster']
+
+      if get_cluster_name() in per_cluster:
+          val = per_cluster[get_cluster_name()]
+      elif 'default' in per_cluster:
+          val = per_cluster['default']
+      elif 'default' in var_value:
+          val = var_value['default']
+      else:
         raise ClusterNameNotFoundError(f'Cluster "{get_cluster_name()}" not found in {var_value} and no "default" value specified.')
+
       return load_variable_values(val, key)
+    
     elif 'map' in var_value and isinstance(var_value['map'], dict):
       # Store the map structure for later use in substitution
       # Return a special marker that _substitute will recognize
-      return {'__map__': var_value['map'], '__default__': var_value.get('default')}
+      return {
+        '__map__': deepcopy(var_value['map']),
+        '__default__': deepcopy(var_value.get('default')),
+      }
     else:
       raise SyntaxError(f"Invalid variable value {var_value}. In case the variable value is a dictionary, you must specify a 'per_cluster' dictionary, a 'map' dictionary, or both (+ optional default value).")
   # If var_value is a string and a file, read lines
@@ -50,42 +63,51 @@ def map_info_to_vars(map_info):
 
 
 def resolve_map_variable(map_var_dict, key_value):
-  """
-  Resolve a map variable to its value list given a key.
-  
-  Args:
-    map_var_dict: A dict with '__map__' and '__default__' keys
-    key_value: The key to look up in the map
-    
-  Returns:
-    A list of values from the map, or the default list
-  """
-  if not isinstance(map_var_dict, dict) or '__map__' not in map_var_dict:
-    return []
-  
-  map_dict = {str(k): v for k, v in map_var_dict['__map__'].items()}
-  key_str = str(key_value)
-  
-  if key_str in map_dict:
-    result = map_dict[key_str]
-    # Ensure result is a list
-    if isinstance(result, list):
-      return result
+    """
+    Resolve a map variable recursively.
+
+    Supports:
+      map -> value
+      map -> per_cluster -> value
+      map -> per_cluster -> map -> value
+    """
+
+    if not isinstance(map_var_dict, dict) or '__map__' not in map_var_dict:
+        return []
+
+    map_dict = {
+        str(k): v
+        for k, v in map_var_dict['__map__'].items()
+    }
+
+    key_str = str(key_value)
+
+    if key_str in map_dict:
+        selected = map_dict[key_str]
+    elif "default" in map_dict:
+        selected = map_dict["default"]
+    elif map_var_dict.get("__default__") is not None:
+        selected = map_var_dict["__default__"]
     else:
-      return [result]
-  
-  # Fall back to default
-  if '__default__' in map_var_dict and map_var_dict['__default__'] is not None:
-    default = map_var_dict['__default__']
-    if isinstance(default, list):
-      return default
-    else:
-      return [default]
-  
-  # Key not found and no default
-  raise KeyError(
-    f"Map variable lookup failed: key '{key_str}' not found in map and no default value specified."
-  )
+        raise KeyError(
+            f"Map variable lookup failed: key '{key_str}' not found "
+            "and no default value specified."
+        )
+
+    # Resolve nested per_cluster/map structures
+    resolved = load_variable_values(
+        selected,
+        f"<map:{key_str}>"
+    )
+
+    # If the selected value is another map, keep resolving
+    if isinstance(resolved, dict) and "__map__" in resolved:
+        return resolve_map_variable(
+            resolved,
+            key_value
+        )
+
+    return resolved
 
 
 def substitute(template, variables):
@@ -116,10 +138,37 @@ def substitute(template, variables):
 
     # Handle {map_var[key_var]}
     if key_var_name:
-      value = variables.get(var_name)
+      map_value = variables.get(var_name)
+      key_value = variables.get(key_var_name)
 
-      if value is not None:
-        return str(value)
+      # Unwrap tuples (e.g. from file/dir-based variables) to use as a lookup key
+      if isinstance(key_value, tuple):
+        key_value = key_value[0]
+
+      if isinstance(map_value, dict) and '__map__' in map_value:
+        if key_value is None:
+          # key variable not resolved yet, leave for a later pass
+          return full_match
+        try:
+          resolved = resolve_map_variable(map_value, key_value)
+        except KeyError:
+          return full_match
+
+        if isinstance(resolved, tuple):
+          return str(resolved[0])
+        if isinstance(resolved, list):
+          if len(resolved) == 1:
+            return str(resolved[0])
+          # A map should resolve to a single scalar per job; if this happens,
+          # the YAML's map entry itself needs to be a scalar/1-item list.
+          return full_match
+        if resolved is not None:
+          return str(resolved)
+        return full_match
+
+      elif map_value is not None:
+        # var_name wasn't actually a map — just substitute it directly
+        return str(map_value)
 
       return full_match
 
