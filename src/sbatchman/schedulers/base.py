@@ -51,9 +51,11 @@ class BaseConfig(ABC):
     ]
     
     modules = []
-    if self.modules and len(self.modules) > 0:
-      modules.append('\n# Load System Modules')
-      modules.append(f'module load {" ".join(self.modules)}')
+    if self.modules:
+      self.modules = [m for m in self.modules if len(m) > 0]
+      if len(self.modules) > 0:
+        modules.append('\n# Load System Modules')
+        modules.append(f'module load {" ".join(self.modules)}')
 
     global_sbm_env = [
       '\n# Global SbatchMan env variables',
