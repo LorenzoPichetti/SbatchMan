@@ -122,7 +122,7 @@ def get_remotes():
   remotes_config = load_config()
   remotes = defaultdict(list)
   for cluster in remotes_config.get('clusters', []):
-    for dir in cluster.get('fetch_dirs'):
+    for dir in cluster.get('fetch_dirs', []):
       remotes[cluster['name']].append(dir['alias'])
   return remotes
 

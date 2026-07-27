@@ -214,7 +214,7 @@ table.data-table tr:hover td{background:var(--bg3)}
 <div id="app">
 
 <div id="topbar">
-  <div class="logo"><span>SbatchMan</span>.plot</div>
+  <div class="logo">hpc<span>bench</span>.plot</div>
 
   <div class="topbar-mid">
     <button class="btn primary" id="btn-run" data-tip="Render the active plot / figure (Ctrl+Enter)">
@@ -377,6 +377,11 @@ function addLogEntry(e) {
 }
 function addLogEntries(entries) { (entries || []).forEach(e => addLogEntry(e)); }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function toArray(v) {
+  if (Array.isArray(v)) return v;
+  if (v === null || v === undefined || v === '') return [];
+  return [v]; // tolerate older configs that stored a single string instead of an array
+}
 
 document.getElementById('btn-log-toggle').addEventListener('click', () => {
   const p = document.getElementById('log-panel');
@@ -581,8 +586,8 @@ function updateAxisControls(id, columns) {
   const st = getState(id);
   if (!st) return;
   st.columns = columns;
-  st.yCols = (st.yCols || []).filter(c => columns.includes(c));
-  st.groupCols = (st.groupCols || []).filter(c => columns.includes(c));
+  st.yCols = toArray(st.yCols).filter(c => columns.includes(c));
+  st.groupCols = toArray(st.groupCols).filter(c => columns.includes(c));
 
   const xSel   = tabEl(id, 'x-col');
   const zSel   = tabEl(id, 'z-col');
@@ -705,12 +710,12 @@ function builderColumnsHTML(id) {
       <input type="text" id="y-label-${id}" placeholder="(auto from column)">
       <label style="margin-top:5px" data-tip="linear, log, date, category">X scale</label>
       <select id="x-scale-${id}">
-        <option value="linear">linear</option><option value="log">log10</option><option value="log2">log2</option>
+        <option value="linear">linear</option><option value="log">log</option>
         <option value="date">date</option><option value="category">category</option>
       </select>
       <label style="margin-top:5px" data-tip="linear, log, date, category">Y scale</label>
       <select id="y-scale-${id}">
-        <option value="linear">linear</option><option value="log">log10</option><option value="log2">log2</option>
+        <option value="linear">linear</option><option value="log">log</option>
         <option value="date">date</option><option value="category">category</option>
       </select>
       <label style="margin-top:5px" data-tip="Plotly d3 tick format string, e.g. .2f or %Y-%m">X tick format</label>
@@ -897,6 +902,19 @@ function workspaceHTML(id) {
 </div>`;
 }
 
+// Plotly draws to the container's pixel size at render time and does NOT
+// automatically notice a pure-CSS resize of that container (e.g. the data
+// drawer opening/closing, or a hidden tab becoming visible again) — without
+// an explicit resize call the chart keeps its old size and visually
+// overlaps whatever now shares the shrunk container. `resizePlot` fixes
+// that up after any such layout change.
+function resizePlot(id) {
+  const el = document.getElementById(`plot-${id}`);
+  if (el && el.data) {
+    requestAnimationFrame(() => { try { Plotly.Plots.resize(el); } catch (e) {} });
+  }
+}
+
 function wireWorkspace(id) {
   wireBuilderColumns(id);
 
@@ -904,6 +922,7 @@ function wireWorkspace(id) {
     const pv = document.getElementById(`preview-${id}`);
     const open = pv.classList.toggle('open');
     document.getElementById(`preview-toggle-${id}`).textContent = open ? 'Data ▴' : 'Data ▾';
+    resizePlot(id);
   });
 
   // Single / grid mode toggle
@@ -918,7 +937,10 @@ function activateTab(id) {
   G.activeTab = id;
   document.querySelectorAll('.plot-tab').forEach(b => b.classList.toggle('active', b.id === `tabbtn-${id}`));
   document.querySelectorAll('.workspace').forEach(w => w.classList.toggle('active', w.id === `ws-${id}`));
+  resizePlot(id);
 }
+
+window.addEventListener('resize', () => { if (G.activeTab) resizePlot(G.activeTab); });
 
 function closeTab(id, ev) {
   ev?.stopPropagation();
@@ -1215,8 +1237,8 @@ function applyNodeConfig(id, cfg) {
 
   st.database = cfg.database || st.database;
   st.plotType = cfg.plotType || 'line';
-  st.yCols    = cfg.y || [];
-  st.groupCols= cfg.group || [];
+  st.yCols    = toArray(cfg.y);
+  st.groupCols = toArray(cfg.group);
   st.extra    = cfg.extra || {};
   st.customScript = cfg.customScript || '';
   st.transformScript = cfg.transformScript || '';
