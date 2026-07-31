@@ -59,9 +59,9 @@ class BaseConfig(ABC):
 
     global_sbm_env = [
       '\n# Global SbatchMan env variables',
-      'export SBATCHMAN_WD={CWD}\n',
+      'export SBATCHMAN_WD={CWD}',
       'export SBATCHMAN_JOB_DIR={EXP_DIR}',
-      'export SBATCHMAN_JOB_TAG={JOB_TAG}\n',
+      'export SBATCHMAN_JOB_TAG={JOB_TAG}',
       'export SBATCHMAN_JOB_CONFIG={CONFIG}\n',
     ]
 
