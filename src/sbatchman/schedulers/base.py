@@ -59,8 +59,10 @@ class BaseConfig(ABC):
 
     global_sbm_env = [
       '\n# Global SbatchMan env variables',
-      'export SBATCHMAN_JOB_DIR={EXP_DIR}',
       'export SBATCHMAN_WD={CWD}\n',
+      'export SBATCHMAN_JOB_DIR={EXP_DIR}',
+      'export SBATCHMAN_JOB_TAG={JOB_TAG}\n',
+      'export SBATCHMAN_JOB_CONFIG={CONFIG}\n',
     ]
 
     start_timestamp = ['echo "start_timestamp: \'$(date +%Y%m%d_%H%M%S.%N)\'" >> "{EXP_DIR}/metadata.yaml"\n']

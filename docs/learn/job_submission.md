@@ -58,14 +58,16 @@ This is a list where each item defines a job template. Each template can have th
 
 !!! tip
     In these commands you can always assume that the following environment variables are set:
-    - `SBATCHMAN_JOB_DIR` -> directory where the job data will be saved.
     - `SBATCHMAN_WD` -> directory from which the `launch` command is run.
+    - `SBATCHMAN_JOB_DIR` -> directory where the job data will be saved.
+    - `SBATCHMAN_JOB_TAG` -> the tag of the current job.
+    - `SBATCHMAN_JOB_CONFIG` -> the config name of the job.
 
 #### The `config_jobs` Block
 
 Each entry in the `config_jobs` list defines a specific set of runs for a configuration and must contain a `tag`. It can also contain:
 
--   `tag`: To define the tag to be assigned to generated jobs.
+-   `tag`: To define the tag (user-assigned unique identifier) to be assigned to generated jobs.
 -   `variables`: To define or override variables for this specific variation.
 -   `command`: To provide a command that overrides the job template's command.
 -   `preprocess`: To provide a command that sets or overrides the preprocess command.

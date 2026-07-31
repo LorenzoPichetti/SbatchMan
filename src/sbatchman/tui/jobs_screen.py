@@ -982,7 +982,7 @@ class JobsScreen(Screen):
                 except Exception:
                     pass
             for j in new_jobs:
-                if j.status == Status.FAILED.value and j.exitcode:
+                if j.status in [Status.FAILED.value, Status.CHECK_FAIL.value] and j.exitcode:
                     j.status += f"({j.exitcode})"
             self.all_jobs = new_jobs
             self.update_tables()

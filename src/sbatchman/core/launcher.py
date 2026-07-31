@@ -314,6 +314,10 @@ def launch_job(
   ).replace(
     "{EXP_DIR}", str(exp_dir.resolve())
   ).replace(
+    "{JOB_TAG}", str(tag)
+  ).replace(
+    "{CONFIG}", str(config_name)
+  ).replace(
     "{CWD}", str(submission_cwd.resolve())
   ).replace(
     "{PREPROCESS}", str(preprocess) if preprocess is not None else ''

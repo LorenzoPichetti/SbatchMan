@@ -7,6 +7,7 @@ class Status(Enum):
   RUNNING = "RUNNING"
   COMPLETED = "COMPLETED"
   FAILED = "FAILED"
+  CHECK_FAIL = "CHECK_FAIL"
   CANCELLED = "CANCELLED"
   TIMEOUT = "TIMEOUT"
   OTHER = "OTHER"
@@ -17,6 +18,7 @@ TERMINAL_STATES = {
   Status.FAILED.value,
   Status.CANCELLED.value,
   Status.TIMEOUT.value,
-  Status.FAILED_SUBMISSION.value
+  Status.FAILED_SUBMISSION.value,
+  Status.CHECK_FAIL.value,
   # Status.UNKNOWN.value,
 }
