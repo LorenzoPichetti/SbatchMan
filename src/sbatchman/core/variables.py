@@ -5,6 +5,17 @@ from copy import deepcopy
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.exceptions import ClusterNameNotFoundError, SyntaxError
 
+def get_var_path_filename(path):
+  path = Path(path)
+
+  if path.is_file():
+    return path.stem
+
+  if path.is_dir():
+    return path.parts[-1]
+  
+  return "NOT_A_VALID_PATH"
+
 def load_variable_values(var_value, key):
   # If var_value is a list, return as is
   if isinstance(var_value, list):
@@ -42,7 +53,7 @@ def load_variable_values(var_value, key):
         return [line.strip().replace('\n', '') for line in f if line.strip()]
     elif path.is_dir():
       # Return sorted list of file names in the directory
-      return sorted([(str(p.absolute()), p.stem) for p in path.iterdir() if p.is_file()])
+      return sorted([(str(p.absolute()), get_var_path_filename(p)) for p in path.iterdir() if p.is_file()])
     else:
       raise SyntaxError(
         f"Variable value '{var_value}' (key: {key}) is not a list, file, or directory.\n"

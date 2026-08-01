@@ -5,7 +5,7 @@ import re
 import yaml
 import itertools
 
-from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, map_info_to_vars, resolve_map_variable
+from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, map_info_to_vars, resolve_map_variable, get_var_path_filename
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_project_configs_file_path
 from sbatchman.exceptions import ConfigurationError, SyntaxError
@@ -159,6 +159,12 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
         else:
           if k in used_vars:
             filtered_vars[k] = v
+
+      for k in used_vars:
+        if k.endswith('_filename'):
+          orginal_var_name = k[:-len('_filename')]
+          if len(filtered_vars.get(orginal_var_name, [])) > 0 and not isinstance(filtered_vars[orginal_var_name][0], tuple):
+            filtered_vars[orginal_var_name] = [(v, get_var_path_filename(v)) for v in filtered_vars[orginal_var_name]]
       
       if not filtered_vars and not map_info:
         # No variables to expand, create single config

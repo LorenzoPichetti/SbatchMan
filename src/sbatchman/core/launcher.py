@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from rich.console import Console
 
-from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, resolve_map_variable, map_info_to_vars
+from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, resolve_map_variable, map_info_to_vars, get_var_path_filename
 from sbatchman.core.config_manager import load_local_config, create_configs_from_file
 from sbatchman.core.job import Job, Status
 from sbatchman.core.jobs_manager import job_exists, register_job, count_active_jobs
@@ -728,6 +728,12 @@ def _launch_job_combinations(
       else:
         if k in used_vars:
           filtered_vars[k] = v
+
+    for k in used_vars:
+      if k.endswith('_filename'):
+        orginal_var_name = k[:-len('_filename')]
+        if len(filtered_vars.get(orginal_var_name, [])) > 0 and not isinstance(filtered_vars[orginal_var_name][0], tuple):
+          filtered_vars[orginal_var_name] = [(v, get_var_path_filename(v)) for v in filtered_vars[orginal_var_name]]
     
     if not filtered_vars and not map_info:
       # If no variables are used, launch a single job

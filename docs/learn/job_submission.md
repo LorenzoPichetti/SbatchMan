@@ -81,16 +81,16 @@ This section defines variables that will be used to generate different job confi
 Variables can be defined in three ways:
 
 1.  **As a list of values:**
-  ```yaml
-  variables:
-    float_var: [0.01, 0.001]
-    str_var: ['String1', 'String2']
-  ```
+    ```yaml
+    variables:
+      float_var: [0.01, 0.001]
+      str_var: ['String1', 'String2']
+    ```
 2.  **As a path to a file:** SbatchMan will treat **each line in the file** as a value for the variable.
-  ```yaml
-  variables:
-    dataset: "datasets.txt"
-  ```
+    ```yaml
+    variables:
+      dataset: "datasets.txt"
+    ```
 3.  **As a path to a directory:** SbatchMan will treat **each file in the directory** as a value for the variable.
     ```yaml
     variables:
@@ -103,7 +103,7 @@ Variables can be defined in three ways:
       └── data2.csv
     ```
     Then `dataset` will have two possible values: `absolute/path/to/datasets/data1.csv` and `absolute/path/to/datasets/data2.csv`.  
-    A new variable `dataset_filename` (in general `*_filename`) will be automatically generated. This variable will only contain the stem of the file, in this example: `data1` and `data2`.  
+    A new variable `dataset_filename` (in general `*_filename`) will be automatically generated. This variable will only contain the stem or the last directory in the path. If the path does not exist in the filesystem, it will be expanded to "NOT_A_VALID_PATH". In this example: `data1` and `data2` (assuming they exist in the fs).  
     You can find an example here [https://github.com/ThomasPasquali/SbatchManTutorial/blob/main/yaml_files/jobs/dir_var.yaml](https://github.com/ThomasPasquali/SbatchManTutorial/blob/main/yaml_files/jobs/dir_var.yaml)
 4.  **As 'per_cluster':**
     ```yaml
@@ -173,6 +173,9 @@ Variables can be defined in three ways:
 !!! warning "Important Note"
     DO NOT use an absolute path in the definition of job tags.  
     SbatchMan internally uses tags as part of paths. Including special characters (e.g, /?*$) in the jobs tag, will mess up the path of the directories where SbatchMan will store job results.  
+
+!!! tip "More on `*_filename` variables"
+    The syntax explained in point (3) applies to ALL variables (not only `dir` variables). In particular, if you declare `var`, a new variable `var_filename` is automatically available. It contains the stem or the last directory in the path. If the path does not exist in the filesystem, it will be expanded to "NOT_A_VALID_PATH". This new variable will not contribute to the variables cartesian product.  
 
 ### The `sequential` Global Flag
 
