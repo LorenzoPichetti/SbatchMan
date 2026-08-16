@@ -211,6 +211,17 @@ def _style_map(rows, col_idx, col: Optional[str], sequence: List[str]) -> dict:
     return {v: sequence[i % len(sequence)] for i, v in enumerate(values)}
 
 
+def _rows_for_col(rows, ci, col: str, is_log: bool):
+    """Drop rows whose value in `col` is None/zero/negative, but only when
+    `is_log` is true (i.e. the axis that column feeds is log-scaled) — a log
+    axis can't place those values, so leaving them in just produces empty or
+    broken columns/points/segments instead of simply not drawing that datum.
+    Linear/category axes, and columns not present in `ci`, are left alone."""
+    if not is_log or not col or col not in ci:
+        return rows
+    return [r for r in rows if r[ci[col]] is not None and r[ci[col]] > 0]
+
+
 @register_plot("line", "Line Chart", "X vs Y with multi-column grouping, marker & linestyle mapping", {"mode": "lines+markers"})
 def plot_line(df, cfg):
     ci = _col_idx(df["columns"]); rows = df["rows"]
@@ -221,6 +232,8 @@ def plot_line(df, cfg):
     group_cols = _norm_cols(cfg.get("group"))
     marker_by = cfg.get("marker_by") or None
     dash_by = cfg.get("dash_by") or None
+    log_x = cfg.get("x_scale") == "log"
+    log_y = cfg.get("y_scale") == "log"
 
     marker_map = _style_map(rows, ci, marker_by, MARKER_SEQUENCE)
     dash_map = _style_map(rows, ci, dash_by, DASH_SEQUENCE)
@@ -232,14 +245,17 @@ def plot_line(df, cfg):
         split_cols.append(dash_by)
 
     def make_trace(gr, label, y):
+        # Drop points that a log axis can't place, keeping x/y/marker in sync.
+        pts = _rows_for_col(gr, ci, x, log_x)
+        pts = _rows_for_col(pts, ci, y, log_y)
         trace = {"type": "scatter", "mode": cfg.get("mode", "lines+markers"),
                   "name": f"{label} — {y}" if (label and len(ys) > 1) else (label or y),
-                  "x": [r[ci[x]] for r in gr], "y": [r[ci[y]] for r in gr]}
+                  "x": [r[ci[x]] for r in pts], "y": [r[ci[y]] for r in pts]}
         if dash_by:
             dash_val = gr[0][ci[dash_by]]
             trace["line"] = {"dash": dash_map.get(dash_val, "solid")}
         if marker_by:
-            trace["marker"] = {"symbol": [marker_map.get(r[ci[marker_by]], "circle") for r in gr]}
+            trace["marker"] = {"symbol": [marker_map.get(r[ci[marker_by]], "circle") for r in pts]}
         return trace
 
     traces = []
@@ -261,17 +277,26 @@ def plot_bar(df, cfg):
     if isinstance(ys, str): ys = [ys]
     if not x or not ys: raise ValueError("Bar chart requires x and at least one y.")
     group_cols = _norm_cols(cfg.get("group"))
+    log_x = cfg.get("x_scale") == "log"
+    log_y = cfg.get("y_scale") == "log"
+
+    def xy(gr, y):
+        pts = _rows_for_col(gr, ci, x, log_x)
+        pts = _rows_for_col(pts, ci, y, log_y)
+        return [r[ci[x]] for r in pts], [r[ci[y]] for r in pts]
+
     traces = []
     if group_cols:
         for key, gr in sorted(_split_groups(rows, ci, group_cols).items(), key=lambda kv: [str(v) for v in kv[0]]):
             label = _group_label(key)
             for y in ys:
+                xs, ys_ = xy(gr, y)
                 traces.append({"type": "bar", "name": f"{label} — {y}" if len(ys) > 1 else label,
-                    "x": [r[ci[x]] for r in gr], "y": [r[ci[y]] for r in gr]})
+                    "x": xs, "y": ys_})
     else:
         for y in ys:
-            traces.append({"type": "bar", "name": y,
-                "x": [r[ci[x]] for r in rows], "y": [r[ci[y]] for r in rows]})
+            xs, ys_ = xy(rows, y)
+            traces.append({"type": "bar", "name": y, "x": xs, "y": ys_})
     return traces
 
 
@@ -284,13 +309,17 @@ def plot_scatter(df, cfg):
     group_cols = _norm_cols(cfg.get("group"))
     marker_by = cfg.get("marker_by") or None
     marker_map = _style_map(rows, ci, marker_by, MARKER_SEQUENCE)
+    log_x = cfg.get("x_scale") == "log"
+    log_y = cfg.get("y_scale") == "log"
 
     def make_trace(gr, label, y):
+        pts = _rows_for_col(gr, ci, x, log_x)
+        pts = _rows_for_col(pts, ci, y, log_y)
         trace = {"type": "scatter", "mode": "markers",
                   "name": f"{label} — {y}" if (label and len(ys) > 1) else (label or y),
-                  "x": [r[ci[x]] for r in gr], "y": [r[ci[y]] for r in gr]}
+                  "x": [r[ci[x]] for r in pts], "y": [r[ci[y]] for r in pts]}
         if marker_by:
-            trace["marker"] = {"symbol": [marker_map.get(r[ci[marker_by]], "circle") for r in gr]}
+            trace["marker"] = {"symbol": [marker_map.get(r[ci[marker_by]], "circle") for r in pts]}
         return trace
 
     traces = []
@@ -310,7 +339,9 @@ def plot_histogram(df, cfg):
     ci = _col_idx(df["columns"]); rows = df["rows"]
     x = cfg.get("x")
     if not x: raise ValueError("Histogram requires an x column.")
-    return [{"type":"histogram","name":x,"x":[r[ci[x]] for r in rows],"nbinsx":int(cfg.get("nbinsx",30))}]
+    # Histogram only has an x-axis; a log-scaled x can't bin None/<=0 values.
+    pts = _rows_for_col(rows, ci, x, cfg.get("x_scale") == "log")
+    return [{"type":"histogram","name":x,"x":[r[ci[x]] for r in pts],"nbinsx":int(cfg.get("nbinsx",30))}]
 
 
 @register_plot("box", "Box Plot", "Distribution summary per category", {})
@@ -319,10 +350,12 @@ def plot_box(df, cfg):
     x, ys = cfg.get("x"), cfg.get("y", [])
     if isinstance(ys, str): ys = [ys]
     if not ys: raise ValueError("Box plot requires at least one y column.")
+    log_y = cfg.get("y_scale") == "log"
     traces = []
     for y in ys:
-        t = {"type":"box","name":y,"y":[r[ci[y]] for r in rows]}
-        if x and x in ci: t["x"] = [r[ci[x]] for r in rows]
+        pts = _rows_for_col(rows, ci, y, log_y)
+        t = {"type":"box","name":y,"y":[r[ci[y]] for r in pts]}
+        if x and x in ci: t["x"] = [r[ci[x]] for r in pts]
         traces.append(t)
     return traces
 
@@ -333,6 +366,8 @@ def plot_heatmap(df, cfg):
     x, yc, z = cfg.get("x"), cfg.get("y", []), cfg.get("z")
     if isinstance(yc, list): yc = yc[0] if yc else None
     if not x or not yc or not z: raise ValueError("Heatmap requires x, y, and z columns.")
+    # x/y here are category axes (a grid of buckets), not the "log" scale
+    # concept used by continuous axes, so no filtering is applied.
     xs = sorted(set(r[ci[x]] for r in rows))
     ys = sorted(set(r[ci[yc]] for r in rows))
     xi = {v: i for i, v in enumerate(xs)}
@@ -348,11 +383,13 @@ def plot_violin(df, cfg):
     x, ys = cfg.get("x"), cfg.get("y", [])
     if isinstance(ys, str): ys = [ys]
     if not ys: raise ValueError("Violin plot requires at least one y column.")
+    log_y = cfg.get("y_scale") == "log"
     traces = []
     for y in ys:
-        t = {"type":"violin","name":y,"y":[r[ci[y]] for r in rows],
+        pts = _rows_for_col(rows, ci, y, log_y)
+        t = {"type":"violin","name":y,"y":[r[ci[y]] for r in pts],
              "box":{"visible":True},"meanline":{"visible":True}}
-        if x and x in ci: t["x"] = [r[ci[x]] for r in rows]
+        if x and x in ci: t["x"] = [r[ci[x]] for r in pts]
         traces.append(t)
     return traces
 
@@ -556,7 +593,37 @@ def _apply_custom_ticks(axis: dict, spec):
     axis["ticktext"] = [_format_tick_number(v) for v in vals]
 
 
-def build_layout(config, layout_overrides=None):
+# Above this many distinct values, auto-derived ticks are skipped in favour
+# of Plotly's normal autoticking — dense continuous data (e.g. a scatter of
+# thousands of points) would otherwise get one tick per value and become
+# unreadable. Sparse numeric axes (a handful of CPU counts, problem sizes,
+# etc.) are exactly the case this is for.
+MAX_AUTO_TICKS = 25
+
+
+def _numeric_axis_values(traces, axis_key: str):
+    """Collect the sorted, unique numeric values actually used for `axis_key`
+    ('x' or 'y') across every trace. Returns None if any trace lacks that
+    axis entirely, if any value isn't a plain number (so string/category or
+    date axes are left untouched), or if there are too many distinct values
+    to make sense as explicit ticks."""
+    vals = set()
+    for t in traces:
+        arr = t.get(axis_key)
+        if not arr:
+            continue
+        for v in arr:
+            if v is None:
+                continue
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                return None
+            vals.add(v)
+    if not vals or len(vals) > MAX_AUTO_TICKS:
+        return None
+    return sorted(vals)
+
+
+def build_layout(config, layout_overrides=None, traces=None):
     """Scientific-paper-grade default styling (white background, serif font,
     matplotlib tab10 colour cycle, mirrored axis lines, light gridlines) —
     deliberately close to a default matplotlib/seaborn figure rather than a
@@ -566,8 +633,16 @@ def build_layout(config, layout_overrides=None):
     list of numbers (e.g. "1,2,4,8,16") to pin ticks to specific values —
     handy for a log-scaled axis that should only show powers of two, for
     instance: set x_scale to "log" and x_tickvals to "1,2,4,8,16,32".
+
+    When `traces` is given and the person hasn't set `x_tickvals`/`y_tickvals`
+    explicitly, ticks are instead derived from the actual numeric values
+    present in the data (e.g. CPU counts 1,2,4,8) rather than Plotly's normal
+    "nice round numbers across the axis range" behaviour, so an axis never
+    shows tick positions (like 3, 5, 6, 7 between 1, 2, 4, 8) that no series
+    has data for.
     """
     layout_overrides = layout_overrides or {}
+    traces = traces or []
     y_label = config.get("y", [])
     if isinstance(y_label, list): y_label = ", ".join(y_label)
     axis_common = {
@@ -586,8 +661,11 @@ def build_layout(config, layout_overrides=None):
         "type": config.get("y_scale", "linear"),
         "tickformat": config.get("y_tickformat", ""),
     }
-    _apply_custom_ticks(xaxis, config.get("x_tickvals"))
-    _apply_custom_ticks(yaxis, config.get("y_tickvals"))
+
+    x_tickvals = config.get("x_tickvals") or _numeric_axis_values(traces, "x")
+    y_tickvals = config.get("y_tickvals") or _numeric_axis_values(traces, "y")
+    _apply_custom_ticks(xaxis, x_tickvals)
+    _apply_custom_ticks(yaxis, y_tickvals)
 
     layout = {
         "title": {"text": config.get("title", ""), "font": {"size": 16, **AXIS_FONT}, "pad": {"t": 8, "b": 8}, "x": 0.02, "xanchor": "left"},
@@ -815,7 +893,7 @@ class Handler(BaseHTTPRequestHandler):
 
                 df_data, log_entries = run_pipeline(db, sql, transform_script)
                 traces = compute_traces(df_data, plot_type, custom_script, config)
-                layout = build_layout(config, layout_overrides)
+                layout = build_layout(config, layout_overrides, traces)
 
                 if layout_script.strip():
                     script_log, entries = make_script_logger("layout")
@@ -870,7 +948,7 @@ class Handler(BaseHTTPRequestHandler):
                         t["yaxis"] = f"y{suffix}"
                     all_traces.extend(traces)
 
-                    panel_layout = build_layout(config, {})
+                    panel_layout = build_layout(config, {}, traces)
                     (x0, x1), (y0, y1) = domains[i]
                     xaxis = dict(panel_layout["xaxis"]); xaxis["domain"] = [x0, x1]
                     yaxis = dict(panel_layout["yaxis"]); yaxis["domain"] = [y0, y1]
