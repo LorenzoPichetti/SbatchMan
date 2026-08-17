@@ -147,15 +147,56 @@ REMOTE_SYSTEMS = {
 # Visual style — scientific-paper-grade defaults (matplotlib/seaborn-like)
 # ---------------------------------------------------------------------------
 
-# matplotlib "tab10" colour cycle
-COLORWAY = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-            "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+# Okabe-Ito color palette
+COLORWAY = ["#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2",
+            "#D55E00", "#CC79A7", "#000000"]
 
 DASH_SEQUENCE = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"]
 MARKER_SEQUENCE = ["circle", "square", "diamond", "cross", "x",
                     "triangle-up", "triangle-down", "star", "pentagon", "hexagon"]
 
 AXIS_FONT = {"color": "#222222", "family": "Georgia, 'Times New Roman', serif", "size": 13}
+
+# Explicit (rather than Plotly-default) line/marker sizing
+LINE_WIDTH = 2.0
+MARKER_SIZE = 7
+MARKER_LINE_WIDTH = 1.0
+MARKER_LINE_COLOR = "#ffffff"
+BAR_LINE_WIDTH = 0.8
+BAR_LINE_COLOR = "#333333"
+
+LEGEND_FONT_SIZE = 11
+
+# Legend placement presets
+LEGEND_POSITIONS = {
+    "right": {},
+    "top": {"orientation": "h", "x": 0.5, "xanchor": "center",
+            "y": 1, "yanchor": "top", "yref": "container"},
+    "bottom": {"orientation": "h", "x": 0.5, "xanchor": "center",
+               "y": 0, "yanchor": "bottom", "yref": "container"},
+    "inside-top-right": {"x": 0.98, "xanchor": "right", "y": 0.98, "yanchor": "top"},
+    "inside-top-left": {"x": 0.02, "xanchor": "left", "y": 0.98, "yanchor": "top"},
+    "inside-bottom-right": {"x": 0.98, "xanchor": "right", "y": 0.02, "yanchor": "bottom"},
+    "inside-bottom-left": {"x": 0.02, "xanchor": "left", "y": 0.02, "yanchor": "bottom"},
+}
+
+
+def _build_legend(config):
+    is_inside = config.get("legend_position", "right").startswith("inside-")
+    legend = {
+        "bgcolor": "rgba(255,255,255,0.94)" if is_inside else "rgba(255,255,255,0.85)",
+        "bordercolor": "#999999" if is_inside else "#cccccc",
+        "borderwidth": 1,
+        "font": {**AXIS_FONT, "size": LEGEND_FONT_SIZE},
+        "itemsizing": "constant",
+        "tracegroupgap": 2,
+    }
+    pos = LEGEND_POSITIONS.get(config.get("legend_position", "right"), LEGEND_POSITIONS["right"])
+    legend.update(pos)
+    legend_title = config.get("legend_title")
+    if legend_title:
+        legend["title"] = {"text": legend_title, "font": {**AXIS_FONT, "size": LEGEND_FONT_SIZE}}
+    return legend
 
 
 # ---------------------------------------------------------------------------
@@ -250,12 +291,14 @@ def plot_line(df, cfg):
         pts = _rows_for_col(pts, ci, y, log_y)
         trace = {"type": "scatter", "mode": cfg.get("mode", "lines+markers"),
                   "name": f"{label} — {y}" if (label and len(ys) > 1) else (label or y),
-                  "x": [r[ci[x]] for r in pts], "y": [r[ci[y]] for r in pts]}
+                  "x": [r[ci[x]] for r in pts], "y": [r[ci[y]] for r in pts],
+                  "line": {"width": LINE_WIDTH},
+                  "marker": {"size": MARKER_SIZE, "line": {"width": MARKER_LINE_WIDTH, "color": MARKER_LINE_COLOR}}}
         if dash_by:
             dash_val = gr[0][ci[dash_by]]
-            trace["line"] = {"dash": dash_map.get(dash_val, "solid")}
+            trace["line"]["dash"] = dash_map.get(dash_val, "solid")
         if marker_by:
-            trace["marker"] = {"symbol": [marker_map.get(r[ci[marker_by]], "circle") for r in pts]}
+            trace["marker"]["symbol"] = [marker_map.get(r[ci[marker_by]], "circle") for r in pts]
         return trace
 
     traces = []
@@ -292,11 +335,13 @@ def plot_bar(df, cfg):
             for y in ys:
                 xs, ys_ = xy(gr, y)
                 traces.append({"type": "bar", "name": f"{label} — {y}" if len(ys) > 1 else label,
-                    "x": xs, "y": ys_})
+                    "x": xs, "y": ys_,
+                    "marker": {"line": {"width": BAR_LINE_WIDTH, "color": BAR_LINE_COLOR}}})
     else:
         for y in ys:
             xs, ys_ = xy(rows, y)
-            traces.append({"type": "bar", "name": y, "x": xs, "y": ys_})
+            traces.append({"type": "bar", "name": y, "x": xs, "y": ys_,
+                "marker": {"line": {"width": BAR_LINE_WIDTH, "color": BAR_LINE_COLOR}}})
     return traces
 
 
@@ -317,9 +362,10 @@ def plot_scatter(df, cfg):
         pts = _rows_for_col(pts, ci, y, log_y)
         trace = {"type": "scatter", "mode": "markers",
                   "name": f"{label} — {y}" if (label and len(ys) > 1) else (label or y),
-                  "x": [r[ci[x]] for r in pts], "y": [r[ci[y]] for r in pts]}
+                  "x": [r[ci[x]] for r in pts], "y": [r[ci[y]] for r in pts],
+                  "marker": {"size": MARKER_SIZE, "line": {"width": MARKER_LINE_WIDTH, "color": MARKER_LINE_COLOR}}}
         if marker_by:
-            trace["marker"] = {"symbol": [marker_map.get(r[ci[marker_by]], "circle") for r in pts]}
+            trace["marker"]["symbol"] = [marker_map.get(r[ci[marker_by]], "circle") for r in pts]
         return trace
 
     traces = []
@@ -354,7 +400,9 @@ def plot_box(df, cfg):
     traces = []
     for y in ys:
         pts = _rows_for_col(rows, ci, y, log_y)
-        t = {"type":"box","name":y,"y":[r[ci[y]] for r in pts]}
+        t = {"type":"box","name":y,"y":[r[ci[y]] for r in pts],
+             "line": {"width": LINE_WIDTH * 0.75},
+             "marker": {"size": MARKER_SIZE * 0.6}}
         if x and x in ci: t["x"] = [r[ci[x]] for r in pts]
         traces.append(t)
     return traces
@@ -388,7 +436,8 @@ def plot_violin(df, cfg):
     for y in ys:
         pts = _rows_for_col(rows, ci, y, log_y)
         t = {"type":"violin","name":y,"y":[r[ci[y]] for r in pts],
-             "box":{"visible":True},"meanline":{"visible":True}}
+             "box":{"visible":True},"meanline":{"visible":True},
+             "line": {"width": LINE_WIDTH * 0.75}}
         if x and x in ci: t["x"] = [r[ci[x]] for r in pts]
         traces.append(t)
     return traces
@@ -676,7 +725,8 @@ def build_layout(config, layout_overrides=None, traces=None):
         "plot_bgcolor": "#ffffff",
         "font": dict(AXIS_FONT),
         "colorway": COLORWAY,
-        "legend": {"bgcolor": "rgba(255,255,255,0.85)", "bordercolor": "#cccccc", "borderwidth": 1},
+        "showlegend": config.get("show_legend", True),
+        "legend": _build_legend(config),
         # Generous, auto-expanding margins so long tick labels (e.g. large
         # sample counts) never get clipped; automargin on each axis will
         # grow these further if needed.

@@ -418,6 +418,8 @@ function defaultNodeState(base) {
     x:'', markerBy:'', dashBy:'', z:'', extra:{},
     chartTitle:'', xLabel:'', yLabel:'', xScale:'linear', yScale:'linear',
     xTickFmt:'', yTickFmt:'', customScript:'', transformScript:'', layoutScript:'',
+    legendPosition:'right', legendTitle:'', showLegend:true,
+
   }, base || {});
 }
 
@@ -722,6 +724,21 @@ function builderColumnsHTML(id) {
       <input type="text" id="x-tickfmt-${id}" placeholder=".2f">
       <label style="margin-top:5px">Y tick format</label>
       <input type="text" id="y-tickfmt-${id}" placeholder=".2f">
+      <label style="margin-top:5px" data-tip="Where the legend sits. The 'inside' options give the compact, journal-figure look when there's an empty corner to put it in.">Legend position</label>
+      <select id="legend-position-${id}">
+        <option value="right">outside right</option>
+        <option value="top">top (horizontal)</option>
+        <option value="bottom">bottom (horizontal)</option>
+        <option value="inside-top-right">inside — top right</option>
+        <option value="inside-top-left">inside — top left</option>
+        <option value="inside-bottom-right">inside — bottom right</option>
+        <option value="inside-bottom-left">inside — bottom left</option>
+      </select>
+      <label style="margin-top:5px">Legend title</label>
+      <input type="text" id="legend-title-${id}" placeholder="(none)">
+      <label style="margin-top:5px;display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="show-legend-${id}" checked style="width:auto;margin:0"> Show legend
+      </label>
 
       <div style="margin-top:8px">
         <div class="script-toggle" id="layout-toggle-${id}" data-tip="A short Python snippet to fine-tune this plot's appearance beyond the fields above">
@@ -740,8 +757,8 @@ function builderColumnsHTML(id) {
             <b>Common recipes</b>
             • Rotate x tick labels: <code>layout['xaxis']['tickangle'] = -45</code><br>
             • Fix the y-axis range: <code>layout['yaxis']['range'] = [0, 10]</code><br>
-            • Hide the legend: <code>layout['showlegend'] = False</code><br>
-            • Move the legend: <code>layout['legend'] = {'orientation':'h','y':-0.2}</code><br>
+            • Hide the legend: use the "Show legend" checkbox, or <code>layout['showlegend'] = False</code><br>
+            • Move the legend: use the "Legend position" dropdown, or <code>layout['legend'] = {'orientation':'h','y':-0.2}</code><br>
             • Add a reference line: <code>layout.setdefault('shapes', []).append({'type':'line','x0':0,'x1':1,'xref':'paper','y0':1,'y1':1,'line':{'dash':'dot'}})</code>
           </div>
         </div>
@@ -769,6 +786,9 @@ function wireBuilderColumns(id) {
   f(`y-scale-${id}`, st.yScale);
   f(`x-tickfmt-${id}`, st.xTickFmt);
   f(`y-tickfmt-${id}`, st.yTickFmt);
+  f(`legend-position-${id}`, st.legendPosition || 'right');
+  f(`legend-title-${id}`, st.legendTitle);
+  { const el = document.getElementById(`show-legend-${id}`); if (el) el.checked = st.showLegend !== false; }
   f(`script-${id}`, st.customScript);
   f(`transform-${id}`, st.transformScript);
   f(`layout-script-${id}`, st.layoutScript);
@@ -1077,6 +1097,9 @@ function gatherPlotPayload(id) {
     y_scale:     tabEl(id,'y-scale')?.value || 'linear',
     x_tickformat:tabEl(id,'x-tickfmt')?.value || '',
     y_tickformat:tabEl(id,'y-tickfmt')?.value || '',
+    legend_position: tabEl(id,'legend-position')?.value || 'right',
+    legend_title:    tabEl(id,'legend-title')?.value || '',
+    show_legend:     tabEl(id,'show-legend')?.checked !== false,
     ...extra,
   };
   return {
@@ -1210,6 +1233,9 @@ function getNodeConfig(id) {
     yScale:      (tabEl(id,'y-scale')?.value || 'linear') === 'linear' ? '' : tabEl(id,'y-scale').value,
     xTickFmt:    tabEl(id,'x-tickfmt')?.value || '',
     yTickFmt:    tabEl(id,'y-tickfmt')?.value || '',
+    legendPosition: (tabEl(id,'legend-position')?.value || 'right') === 'right' ? '' : tabEl(id,'legend-position').value,
+    legendTitle:    tabEl(id,'legend-title')?.value || '',
+    showLegend:     tabEl(id,'show-legend')?.checked !== false,
     extra,
     customScript:    tabEl(id,'script')?.value || '',
     transformScript: tabEl(id,'transform')?.value || '',
@@ -1231,6 +1257,9 @@ function applyNodeConfig(id, cfg) {
   f('y-scale',    cfg.yScale || 'linear');
   f('x-tickfmt',  cfg.xTickFmt || '');
   f('y-tickfmt',  cfg.yTickFmt || '');
+  f('legend-position', cfg.legendPosition || 'right');
+  f('legend-title',    cfg.legendTitle || '');
+  { const el = tabEl(id, 'show-legend'); if (el) el.checked = cfg.showLegend !== false; }
   f('script',     cfg.customScript || '');
   f('transform',  cfg.transformScript || '');
   f('layout-script', cfg.layoutScript || '');
