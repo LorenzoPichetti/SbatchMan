@@ -147,15 +147,118 @@ REMOTE_SYSTEMS = {
 # Visual style — scientific-paper-grade defaults (matplotlib/seaborn-like)
 # ---------------------------------------------------------------------------
 
-# matplotlib "tab10" colour cycle
-COLORWAY = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-            "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+# Okabe-Ito color palette
+COLORWAY = ["#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2",
+            "#D55E00", "#CC79A7", "#000000"]
 
 DASH_SEQUENCE = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"]
 MARKER_SEQUENCE = ["circle", "square", "diamond", "cross", "x",
                     "triangle-up", "triangle-down", "star", "pentagon", "hexagon"]
 
 AXIS_FONT = {"color": "#222222", "family": "Georgia, 'Times New Roman', serif", "size": 13}
+
+# Explicit (rather than Plotly-default) line/marker sizing
+LINE_WIDTH = 2.0
+MARKER_SIZE = 7
+MARKER_LINE_WIDTH = 1.0
+MARKER_LINE_COLOR = "#ffffff"
+BAR_LINE_WIDTH = 0.8
+BAR_LINE_COLOR = "#333333"
+
+LEGEND_FONT_SIZE = 11
+
+# Approximate footprint (px) of one vertically-stacked legend item
+LEGEND_ITEM_HEIGHT = 24
+
+# Rough average glyph width for the legend font, as a fraction of its
+# font-size — used to *estimate* rendered label width in px without an
+# actual canvas/font metrics call (server-side, no DOM available). Serif
+# fonts run a bit wider than sans on average; 0.62 is a safe-ish overestimate
+# so we reserve slightly more room rather than risk clipping again.
+LEGEND_CHAR_WIDTH_RATIO = 0.62
+
+# Fixed px overhead per legend entry that isn't the label text itself: the
+# color swatch, the gap between swatch and text, and inner legend padding.
+LEGEND_ITEM_CHROME_PX = 46
+
+# Ceiling on how far a "right" legend is allowed to grow the right margin,
+# so one absurdly long label can't collapse the plot area to nothing.
+LEGEND_MAX_MARGIN_R = 520
+DEFAULT_MARGIN_R = 30
+
+# For a "top"/"bottom" legend (centered, positioned relative to the *whole*
+# exported canvas rather than a margin) we can't reserve room by resizing a
+# margin — the box just needs the canvas itself to be wide enough. We can't
+# know the actual canvas/container size from here (that's a frontend
+# concern), so we just report the raw required width and let the frontend
+# compare it against the real on-screen size at export time. This is a
+# sanity ceiling on that reported value only, so one absurdly long label
+# can't ask the frontend for a multi-thousand-pixel export.
+LEGEND_MAX_CENTER_WIDTH = 1400
+
+# Must match BASE_PLOT_HEIGHT in webapp.html
+BASE_PLOT_HEIGHT = 420
+_BASE_MARGIN_T, _BASE_MARGIN_B = 64, 70
+AXES_DOMAIN_HEIGHT_ESTIMATE = BASE_PLOT_HEIGHT - _BASE_MARGIN_T - _BASE_MARGIN_B
+
+# Rough px clearance to keep a "bottom" legend below 
+BOTTOM_TICK_CLEARANCE_PX = 55
+BOTTOM_LEGEND_Y_OFFSET = -(BOTTOM_TICK_CLEARANCE_PX / AXES_DOMAIN_HEIGHT_ESTIMATE)
+
+# A "top" legend's bottom edge otherwise sits at y=1 with zero clearance —
+# flush against the plot's top edge, reading as if it's overlapping/
+# clipping into the plot even though nothing is actually cut off. Give it
+# the same kind of breathing-room gap "bottom" already gets from tick
+# labels (there's no tick labels to clear here, just visual crowding).
+TOP_LEGEND_GAP_PX = 14
+TOP_LEGEND_Y_OFFSET = 1 + (TOP_LEGEND_GAP_PX / AXES_DOMAIN_HEIGHT_ESTIMATE)
+
+# Legend placement presets
+LEGEND_POSITIONS = {
+    "right": {},
+    "top": {"x": 0.5, "xanchor": "center", "y": TOP_LEGEND_Y_OFFSET, "yanchor": "bottom"},
+    "bottom": {"x": 0.5, "xanchor": "center", "y": BOTTOM_LEGEND_Y_OFFSET, "yanchor": "top"},
+    "inside-top-right": {"x": 0.98, "xanchor": "right", "y": 0.98, "yanchor": "top"},
+    "inside-top-left": {"x": 0.02, "xanchor": "left", "y": 0.98, "yanchor": "top"},
+    "inside-bottom-right": {"x": 0.98, "xanchor": "right", "y": 0.02, "yanchor": "bottom"},
+    "inside-bottom-left": {"x": 0.02, "xanchor": "left", "y": 0.02, "yanchor": "bottom"},
+}
+
+
+def _estimate_text_width_px(text: str, font_size: float = LEGEND_FONT_SIZE) -> float:
+    return len(text or "") * font_size * LEGEND_CHAR_WIDTH_RATIO
+
+
+def _legend_required_width_px(config, traces=None) -> float:
+    traces = traces or []
+    labels = {t.get("name") for t in traces if t.get("name")}
+    widest_label_px = max((_estimate_text_width_px(l) for l in labels), default=0)
+
+    legend_title = config.get("legend_title")
+    if legend_title:
+        # The title sits on its own row above the entries but still has to
+        # fit within the same legend box width.
+        widest_label_px = max(widest_label_px, _estimate_text_width_px(legend_title))
+
+    return widest_label_px + LEGEND_ITEM_CHROME_PX
+
+
+def _build_legend(config, legend_pos: str, traces=None):
+    is_inside = legend_pos.startswith("inside-")
+    legend = {
+        "bgcolor": "rgba(255,255,255,0.94)" if is_inside else "rgba(255,255,255,0.85)",
+        "bordercolor": "#999999" if is_inside else "#cccccc",
+        "borderwidth": 1,
+        "font": {**AXIS_FONT, "size": LEGEND_FONT_SIZE},
+        "itemsizing": "constant",
+        "tracegroupgap": 2,
+    }
+    pos = LEGEND_POSITIONS.get(legend_pos, LEGEND_POSITIONS["right"])
+    legend.update(pos)
+    legend_title = config.get("legend_title")
+    if legend_title:
+        legend["title"] = {"text": legend_title, "font": {**AXIS_FONT, "size": LEGEND_FONT_SIZE}}
+    return legend
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +305,10 @@ def _group_label(key: Tuple) -> str:
     return " | ".join(str(v) for v in key)
 
 
+def _next_color(i: int) -> str:
+    return COLORWAY[i % len(COLORWAY)]
+
+
 def _style_map(rows, col_idx, col: Optional[str], sequence: List[str]) -> dict:
     """Assigns each distinct value of `col` a symbol/dash from `sequence`, in
     stable sorted order, so the same value always maps to the same style."""
@@ -209,6 +316,17 @@ def _style_map(rows, col_idx, col: Optional[str], sequence: List[str]) -> dict:
         return {}
     values = sorted(set(r[col_idx[col]] for r in rows), key=lambda v: str(v))
     return {v: sequence[i % len(sequence)] for i, v in enumerate(values)}
+
+
+def _rows_for_col(rows, ci, col: str, is_log: bool):
+    """Drop rows whose value in `col` is None/zero/negative, but only when
+    `is_log` is true (i.e. the axis that column feeds is log-scaled) — a log
+    axis can't place those values, so leaving them in just produces empty or
+    broken columns/points/segments instead of simply not drawing that datum.
+    Linear/category axes, and columns not present in `ci`, are left alone."""
+    if not is_log or not col or col not in ci:
+        return rows
+    return [r for r in rows if r[ci[col]] is not None and r[ci[col]] > 0]
 
 
 @register_plot("line", "Line Chart", "X vs Y with multi-column grouping, marker & linestyle mapping", {"mode": "lines+markers"})
@@ -221,6 +339,8 @@ def plot_line(df, cfg):
     group_cols = _norm_cols(cfg.get("group"))
     marker_by = cfg.get("marker_by") or None
     dash_by = cfg.get("dash_by") or None
+    log_x = cfg.get("x_scale") == "log"
+    log_y = cfg.get("y_scale") == "log"
 
     marker_map = _style_map(rows, ci, marker_by, MARKER_SEQUENCE)
     dash_map = _style_map(rows, ci, dash_by, DASH_SEQUENCE)
@@ -231,15 +351,21 @@ def plot_line(df, cfg):
     if dash_by and dash_by not in split_cols:
         split_cols.append(dash_by)
 
-    def make_trace(gr, label, y):
+    def make_trace(gr, label, y, color):
+        # Drop points that a log axis can't place, keeping x/y/marker in sync.
+        pts = _rows_for_col(gr, ci, x, log_x)
+        pts = _rows_for_col(pts, ci, y, log_y)
         trace = {"type": "scatter", "mode": cfg.get("mode", "lines+markers"),
                   "name": f"{label} — {y}" if (label and len(ys) > 1) else (label or y),
-                  "x": [r[ci[x]] for r in gr], "y": [r[ci[y]] for r in gr]}
+                  "x": [r[ci[x]] for r in pts], "y": [r[ci[y]] for r in pts],
+                  "line": {"width": LINE_WIDTH, "color": color},
+                  "marker": {"size": MARKER_SIZE, "color": color,
+                             "line": {"width": MARKER_LINE_WIDTH, "color": MARKER_LINE_COLOR}}}
         if dash_by:
             dash_val = gr[0][ci[dash_by]]
-            trace["line"] = {"dash": dash_map.get(dash_val, "solid")}
+            trace["line"]["dash"] = dash_map.get(dash_val, "solid")
         if marker_by:
-            trace["marker"] = {"symbol": [marker_map.get(r[ci[marker_by]], "circle") for r in gr]}
+            trace["marker"]["symbol"] = [marker_map.get(r[ci[marker_by]], "circle") for r in pts]
         return trace
 
     traces = []
@@ -247,10 +373,10 @@ def plot_line(df, cfg):
         for key, gr in sorted(_split_groups(rows, ci, split_cols).items(), key=lambda kv: [str(v) for v in kv[0]]):
             label = _group_label(key)
             for y in ys:
-                traces.append(make_trace(gr, label, y))
+                traces.append(make_trace(gr, label, y, _next_color(len(traces))))
     else:
         for y in ys:
-            traces.append(make_trace(rows, None, y))
+            traces.append(make_trace(rows, None, y, _next_color(len(traces))))
     return traces
 
 
@@ -261,17 +387,30 @@ def plot_bar(df, cfg):
     if isinstance(ys, str): ys = [ys]
     if not x or not ys: raise ValueError("Bar chart requires x and at least one y.")
     group_cols = _norm_cols(cfg.get("group"))
+    log_x = cfg.get("x_scale") == "log"
+    log_y = cfg.get("y_scale") == "log"
+
+    def xy(gr, y):
+        pts = _rows_for_col(gr, ci, x, log_x)
+        pts = _rows_for_col(pts, ci, y, log_y)
+        return [r[ci[x]] for r in pts], [r[ci[y]] for r in pts]
+
     traces = []
     if group_cols:
         for key, gr in sorted(_split_groups(rows, ci, group_cols).items(), key=lambda kv: [str(v) for v in kv[0]]):
             label = _group_label(key)
             for y in ys:
+                xs, ys_ = xy(gr, y)
                 traces.append({"type": "bar", "name": f"{label} — {y}" if len(ys) > 1 else label,
-                    "x": [r[ci[x]] for r in gr], "y": [r[ci[y]] for r in gr]})
+                    "x": xs, "y": ys_,
+                    "marker": {"color": _next_color(len(traces)),
+                               "line": {"width": BAR_LINE_WIDTH, "color": BAR_LINE_COLOR}}})
     else:
         for y in ys:
-            traces.append({"type": "bar", "name": y,
-                "x": [r[ci[x]] for r in rows], "y": [r[ci[y]] for r in rows]})
+            xs, ys_ = xy(rows, y)
+            traces.append({"type": "bar", "name": y, "x": xs, "y": ys_,
+                "marker": {"color": _next_color(len(traces)),
+                           "line": {"width": BAR_LINE_WIDTH, "color": BAR_LINE_COLOR}}})
     return traces
 
 
@@ -284,13 +423,19 @@ def plot_scatter(df, cfg):
     group_cols = _norm_cols(cfg.get("group"))
     marker_by = cfg.get("marker_by") or None
     marker_map = _style_map(rows, ci, marker_by, MARKER_SEQUENCE)
+    log_x = cfg.get("x_scale") == "log"
+    log_y = cfg.get("y_scale") == "log"
 
-    def make_trace(gr, label, y):
+    def make_trace(gr, label, y, color):
+        pts = _rows_for_col(gr, ci, x, log_x)
+        pts = _rows_for_col(pts, ci, y, log_y)
         trace = {"type": "scatter", "mode": "markers",
                   "name": f"{label} — {y}" if (label and len(ys) > 1) else (label or y),
-                  "x": [r[ci[x]] for r in gr], "y": [r[ci[y]] for r in gr]}
+                  "x": [r[ci[x]] for r in pts], "y": [r[ci[y]] for r in pts],
+                  "marker": {"size": MARKER_SIZE, "color": color,
+                             "line": {"width": MARKER_LINE_WIDTH, "color": MARKER_LINE_COLOR}}}
         if marker_by:
-            trace["marker"] = {"symbol": [marker_map.get(r[ci[marker_by]], "circle") for r in gr]}
+            trace["marker"]["symbol"] = [marker_map.get(r[ci[marker_by]], "circle") for r in pts]
         return trace
 
     traces = []
@@ -298,10 +443,10 @@ def plot_scatter(df, cfg):
         for key, gr in sorted(_split_groups(rows, ci, group_cols).items(), key=lambda kv: [str(v) for v in kv[0]]):
             label = _group_label(key)
             for y in ys:
-                traces.append(make_trace(gr, label, y))
+                traces.append(make_trace(gr, label, y, _next_color(len(traces))))
     else:
         for y in ys:
-            traces.append(make_trace(rows, None, y))
+            traces.append(make_trace(rows, None, y, _next_color(len(traces))))
     return traces
 
 
@@ -310,7 +455,9 @@ def plot_histogram(df, cfg):
     ci = _col_idx(df["columns"]); rows = df["rows"]
     x = cfg.get("x")
     if not x: raise ValueError("Histogram requires an x column.")
-    return [{"type":"histogram","name":x,"x":[r[ci[x]] for r in rows],"nbinsx":int(cfg.get("nbinsx",30))}]
+    # Histogram only has an x-axis; a log-scaled x can't bin None/<=0 values.
+    pts = _rows_for_col(rows, ci, x, cfg.get("x_scale") == "log")
+    return [{"type":"histogram","name":x,"x":[r[ci[x]] for r in pts],"nbinsx":int(cfg.get("nbinsx",30))}]
 
 
 @register_plot("box", "Box Plot", "Distribution summary per category", {})
@@ -319,10 +466,14 @@ def plot_box(df, cfg):
     x, ys = cfg.get("x"), cfg.get("y", [])
     if isinstance(ys, str): ys = [ys]
     if not ys: raise ValueError("Box plot requires at least one y column.")
+    log_y = cfg.get("y_scale") == "log"
     traces = []
     for y in ys:
-        t = {"type":"box","name":y,"y":[r[ci[y]] for r in rows]}
-        if x and x in ci: t["x"] = [r[ci[x]] for r in rows]
+        pts = _rows_for_col(rows, ci, y, log_y)
+        t = {"type":"box","name":y,"y":[r[ci[y]] for r in pts],
+             "line": {"width": LINE_WIDTH * 0.75, "color": _next_color(len(traces))},
+             "marker": {"size": MARKER_SIZE * 0.6, "color": _next_color(len(traces))}}
+        if x and x in ci: t["x"] = [r[ci[x]] for r in pts]
         traces.append(t)
     return traces
 
@@ -333,6 +484,8 @@ def plot_heatmap(df, cfg):
     x, yc, z = cfg.get("x"), cfg.get("y", []), cfg.get("z")
     if isinstance(yc, list): yc = yc[0] if yc else None
     if not x or not yc or not z: raise ValueError("Heatmap requires x, y, and z columns.")
+    # x/y here are category axes (a grid of buckets), not the "log" scale
+    # concept used by continuous axes, so no filtering is applied.
     xs = sorted(set(r[ci[x]] for r in rows))
     ys = sorted(set(r[ci[yc]] for r in rows))
     xi = {v: i for i, v in enumerate(xs)}
@@ -348,11 +501,14 @@ def plot_violin(df, cfg):
     x, ys = cfg.get("x"), cfg.get("y", [])
     if isinstance(ys, str): ys = [ys]
     if not ys: raise ValueError("Violin plot requires at least one y column.")
+    log_y = cfg.get("y_scale") == "log"
     traces = []
     for y in ys:
-        t = {"type":"violin","name":y,"y":[r[ci[y]] for r in rows],
-             "box":{"visible":True},"meanline":{"visible":True}}
-        if x and x in ci: t["x"] = [r[ci[x]] for r in rows]
+        pts = _rows_for_col(rows, ci, y, log_y)
+        t = {"type":"violin","name":y,"y":[r[ci[y]] for r in pts],
+             "box":{"visible":True},"meanline":{"visible":True},
+             "line": {"width": LINE_WIDTH * 0.75, "color": _next_color(len(traces))}}
+        if x and x in ci: t["x"] = [r[ci[x]] for r in pts]
         traces.append(t)
     return traces
 
@@ -556,7 +712,37 @@ def _apply_custom_ticks(axis: dict, spec):
     axis["ticktext"] = [_format_tick_number(v) for v in vals]
 
 
-def build_layout(config, layout_overrides=None):
+# Above this many distinct values, auto-derived ticks are skipped in favour
+# of Plotly's normal autoticking — dense continuous data (e.g. a scatter of
+# thousands of points) would otherwise get one tick per value and become
+# unreadable. Sparse numeric axes (a handful of CPU counts, problem sizes,
+# etc.) are exactly the case this is for.
+MAX_AUTO_TICKS = 25
+
+
+def _numeric_axis_values(traces, axis_key: str):
+    """Collect the sorted, unique numeric values actually used for `axis_key`
+    ('x' or 'y') across every trace. Returns None if any trace lacks that
+    axis entirely, if any value isn't a plain number (so string/category or
+    date axes are left untouched), or if there are too many distinct values
+    to make sense as explicit ticks."""
+    vals = set()
+    for t in traces:
+        arr = t.get(axis_key)
+        if not arr:
+            continue
+        for v in arr:
+            if v is None:
+                continue
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                return None
+            vals.add(v)
+    if not vals or len(vals) > MAX_AUTO_TICKS:
+        return None
+    return sorted(vals)
+
+
+def build_layout(config, layout_overrides=None, traces=None):
     """Scientific-paper-grade default styling (white background, serif font,
     matplotlib tab10 colour cycle, mirrored axis lines, light gridlines) —
     deliberately close to a default matplotlib/seaborn figure rather than a
@@ -566,8 +752,16 @@ def build_layout(config, layout_overrides=None):
     list of numbers (e.g. "1,2,4,8,16") to pin ticks to specific values —
     handy for a log-scaled axis that should only show powers of two, for
     instance: set x_scale to "log" and x_tickvals to "1,2,4,8,16,32".
+
+    When `traces` is given and the person hasn't set `x_tickvals`/`y_tickvals`
+    explicitly, ticks are instead derived from the actual numeric values
+    present in the data (e.g. CPU counts 1,2,4,8) rather than Plotly's normal
+    "nice round numbers across the axis range" behaviour, so an axis never
+    shows tick positions (like 3, 5, 6, 7 between 1, 2, 4, 8) that no series
+    has data for.
     """
     layout_overrides = layout_overrides or {}
+    traces = traces or []
     y_label = config.get("y", [])
     if isinstance(y_label, list): y_label = ", ".join(y_label)
     axis_common = {
@@ -586,11 +780,77 @@ def build_layout(config, layout_overrides=None):
         "type": config.get("y_scale", "linear"),
         "tickformat": config.get("y_tickformat", ""),
     }
-    _apply_custom_ticks(xaxis, config.get("x_tickvals"))
-    _apply_custom_ticks(yaxis, config.get("y_tickvals"))
+
+    x_tickvals = config.get("x_tickvals") or _numeric_axis_values(traces, "x")
+    y_tickvals = config.get("y_tickvals") or _numeric_axis_values(traces, "y")
+    _apply_custom_ticks(xaxis, x_tickvals)
+    _apply_custom_ticks(yaxis, y_tickvals)
+
+    # Fixed, deterministic margin/title-padding reservation for a top/bottom legend
+    legend_pos = config.get("legend_position", "right")
+    margin_t, margin_b, title_pad_t = 64, 70, 8
+    margin_r = DEFAULT_MARGIN_R
+    legend_extra_height = 0
+    # Extra canvas width the *export* needs beyond the on-screen size, for
+    # a "right" legend (see the "right" branch below for why).
+    legend_extra_width = 0
+    # Raw estimated px width of a centered top/bottom legend box. Unlike
+    # legend_extra_width above, this isn't pre-adjusted against any
+    # baseline — the frontend compares it against the actual on-screen
+    # rect at export time, since only it knows the real canvas size.
+    legend_center_required_width = 0
+    if legend_pos in ("top", "bottom"):
+        n_items = min(len({t.get("name") for t in traces if t.get("name")}) or 1, 60)  # sanity ceiling only
+        legend_extra_height = n_items * LEGEND_ITEM_HEIGHT
+        if legend_pos == "top":
+            margin_t += legend_extra_height + TOP_LEGEND_GAP_PX
+        else:
+            margin_b += legend_extra_height
+        if n_items > 4:
+            log(f"Legend for this plot has {n_items} entries — the figure "
+                f"will be {legend_extra_height}px taller/shorter than usual "
+                f"to fit them without overlapping.", "info")
+
+        if config.get("show_legend", True):
+            # A "top"/"bottom" legend is centered (x=0.5) relative to the
+            # *whole exported canvas*, not to a margin — so unlike the
+            # "right" case, we can't reserve room for it by resizing
+            # margin.l/margin.r (those only reallocate space *within* a
+            # fixed canvas; they don't change the canvas's total width).
+            # If the legend needs more width than the canvas has, it simply
+            # overflows past the left/right edges and gets hard-clipped
+            # there (no ellipsis — a different failure mode than "right").
+            # The only real fix is a wider canvas; we can't size that here
+            # without knowing the actual on-screen/export width, so we just
+            # report the requirement and let the frontend do that comparison.
+            legend_center_required_width = min(
+                round(_legend_required_width_px(config, traces)),
+                LEGEND_MAX_CENTER_WIDTH,
+            )
+    elif legend_pos == "right" and config.get("show_legend", True):
+        # A "right" legend lives in the right margin. If the margin is
+        # narrower than the widest label, Plotly truncates that label with
+        # an ellipsis instead of growing the margin itself — so we size the
+        # margin to the content here, the same way top/bottom sizes height.
+        required_r = _legend_required_width_px(config, traces)
+        margin_r = min(max(DEFAULT_MARGIN_R, round(required_r)), LEGEND_MAX_MARGIN_R)
+        # Growing margin.r alone would eat into the plot area (squeezing
+        # the axes narrower) to make room for the legend. Reporting the
+        # growth as legend_extra_width lets the frontend grow the exported
+        # canvas by the same amount instead, so the axes keep their normal
+        # width and only the legend gets the extra room.
+        legend_extra_width = margin_r - DEFAULT_MARGIN_R
+        if margin_r >= LEGEND_MAX_MARGIN_R:
+            log(f"Legend labels are very long — capping the right margin at "
+                f"{LEGEND_MAX_MARGIN_R}px, so the longest label(s) may still "
+                f"be clipped. Consider shortening them or moving the legend "
+                f"to \"top\"/\"bottom\".", "warn")
+        elif margin_r > DEFAULT_MARGIN_R:
+            log(f"Widening the right margin to {margin_r}px to fit the "
+                f"legend labels without truncating them.", "info")
 
     layout = {
-        "title": {"text": config.get("title", ""), "font": {"size": 16, **AXIS_FONT}, "pad": {"t": 8, "b": 8}, "x": 0.02, "xanchor": "left"},
+        "title": {"text": config.get("title", ""), "font": {"size": 16, **AXIS_FONT}, "pad": {"t": title_pad_t, "b": 8}, "x": 0.02, "xanchor": "left"},
         "xaxis": xaxis,
         "yaxis": yaxis,
         "barmode": config.get("barmode", "group"),
@@ -598,11 +858,12 @@ def build_layout(config, layout_overrides=None):
         "plot_bgcolor": "#ffffff",
         "font": dict(AXIS_FONT),
         "colorway": COLORWAY,
-        "legend": {"bgcolor": "rgba(255,255,255,0.85)", "bordercolor": "#cccccc", "borderwidth": 1},
-        # Generous, auto-expanding margins so long tick labels (e.g. large
-        # sample counts) never get clipped; automargin on each axis will
-        # grow these further if needed.
-        "margin": {"l": 80, "r": 30, "t": 64, "b": 70, "pad": 4},
+        "showlegend": config.get("show_legend", True),
+        "legend": _build_legend(config, legend_pos, traces),
+        "margin": {"l": 80, "r": margin_r, "t": margin_t, "b": margin_b, "pad": 4},
+        "_legend_extra_height": legend_extra_height,
+        "_legend_extra_width": legend_extra_width,
+        "_legend_center_required_width": legend_center_required_width,
     }
     layout.update(layout_overrides)
     return layout
@@ -815,18 +1076,25 @@ class Handler(BaseHTTPRequestHandler):
 
                 df_data, log_entries = run_pipeline(db, sql, transform_script)
                 traces = compute_traces(df_data, plot_type, custom_script, config)
-                layout = build_layout(config, layout_overrides)
+                layout = build_layout(config, layout_overrides, traces)
 
                 if layout_script.strip():
                     script_log, entries = make_script_logger("layout")
                     layout = run_layout_script(layout_script, layout, config, script_log)
                     log_entries.extend(entries)
 
+                legend_extra_height = layout.pop("_legend_extra_height", 0)
+                legend_extra_width = layout.pop("_legend_extra_width", 0)
+                legend_center_required_width = layout.pop("_legend_center_required_width", 0)
+
                 self.send_json({"traces": traces, "layout": layout,
                                 "columns": df_data["columns"],
                                 "truncated": df_data.get("truncated", False),
                                 "preview": preview_of(df_data),
-                                "log_entries": log_entries})
+                                "log_entries": log_entries,
+                                "legend_extra_height": legend_extra_height,
+                                "legend_extra_width": legend_extra_width,
+                                "legend_center_required_width": legend_center_required_width})
             except Exception as e:
                 log(str(e), "error")
                 self.send_json({"error": str(e), "traceback": traceback.format_exc()}, 400)
@@ -870,7 +1138,7 @@ class Handler(BaseHTTPRequestHandler):
                         t["yaxis"] = f"y{suffix}"
                     all_traces.extend(traces)
 
-                    panel_layout = build_layout(config, {})
+                    panel_layout = build_layout(config, {}, traces)
                     (x0, x1), (y0, y1) = domains[i]
                     xaxis = dict(panel_layout["xaxis"]); xaxis["domain"] = [x0, x1]
                     yaxis = dict(panel_layout["yaxis"]); yaxis["domain"] = [y0, y1]
