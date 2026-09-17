@@ -160,6 +160,7 @@ def job_submit(
     check=job.check,
     variables=job.variables if job.variables is not None else {},
     queued_timestamp=queued_ts,
+    category=job.category
   )
 
   job.write_metadata()
@@ -215,6 +216,7 @@ def launch_job(
   postprocess: Optional[str] = None,
   check: Optional[str] = None,
   force: bool = False,
+  category: Optional[str] = None,
   previous_job_id: Optional[int] = None,
   variables: Optional[Dict[str, Any]] = None,
   dry_run: bool = False,
@@ -233,6 +235,7 @@ def launch_job(
     preprocess: Optional; a command to run before the main command.
     postprocess: Optional; a command to run after the main command.
     check: Optional; a command to run after postprocess whose exit code determines job status.
+    category: Optional; user-defined job category.
     previous_job_id: Optional; if this is set, the job will be only launched after the previous is done.
     max_queued_jobs: Optional; if set, will wait before submitting if the queue has this many jobs.
   Returns:
@@ -359,6 +362,7 @@ def launch_job(
     check=check,
     variables=job_vars,
     queued_timestamp=queued_ts,
+    category=category,
   )
 
   if dry_run:
@@ -582,6 +586,7 @@ def launch_jobs_from_file(
     config_jobs = job_def.get("config_jobs", [])
     if not config_jobs:
       job_tag = job_def.get("tag", "default")
+      job_category = job_def.get("category")
       
       # Early tag filter: skip if tag doesn't match any filter pattern
       if filter_tags is not None:
@@ -597,6 +602,7 @@ def launch_jobs_from_file(
         job_config_template,
         job_command_template,
         job_tag,
+        job_category,
         job_preprocess_template,
         job_postprocess_template,
         job_check_template,
@@ -616,6 +622,7 @@ def launch_jobs_from_file(
     else:
       for entry in config_jobs:
         tag_name = entry.get("tag")
+        job_category = entry.get("category")
         if not tag_name:
           continue # Skip matrix entry if it has no tag
 
@@ -644,6 +651,7 @@ def launch_jobs_from_file(
           job_config_template,
           entry_command_template,
           tag_name,
+          job_category,
           entry_preprocess_template,
           entry_postprocess_template,
           entry_check_template,
@@ -668,6 +676,7 @@ def _launch_job_combinations(
   config_template: str,
   command_template: str,
   tag: str,
+  category: Optional[str],
   preprocess_template: Optional[str],
   postprocess_template: Optional[str],
   check_template: Optional[str],
@@ -753,6 +762,7 @@ def _launch_job_combinations(
           config_name,
           command,
           tag=job_tag,
+          category=category,
           preprocess=preprocess,
           postprocess=postprocess,
           check=check,
@@ -817,6 +827,7 @@ def _launch_job_combinations(
               config_name,
               command,
               tag=job_tag,
+              category=category,
               preprocess=preprocess,
               postprocess=postprocess,
               check=check,
@@ -854,6 +865,7 @@ def _launch_job_combinations(
             config_name,
             command,
             tag=job_tag,
+            category=category,
             preprocess=preprocess,
             postprocess=postprocess,
             check=check,

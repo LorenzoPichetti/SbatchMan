@@ -68,6 +68,7 @@ This is a list where each item defines a job template. Each template can have th
 Each entry in the `config_jobs` list defines a specific set of runs for a configuration and must contain a `tag`. It can also contain:
 
 -   `tag`: To define the tag (user-assigned unique identifier) to be assigned to generated jobs.
+-   `category`: An optional user-assigned value to categorize jobs.
 -   `variables`: To define or override variables for this specific variation.
 -   `command`: To provide a command that overrides the job template's command.
 -   `preprocess`: To provide a command that sets or overrides the preprocess command.

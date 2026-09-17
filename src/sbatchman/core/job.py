@@ -25,6 +25,7 @@ class Job:
   tag: str
   job_id: int
   queued_timestamp: str
+  category: Optional[str] = None
   exitcode: Optional[int] = None
   preprocess: Optional[str] = None
   postprocess: Optional[str] = None
