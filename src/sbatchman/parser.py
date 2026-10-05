@@ -1,5 +1,6 @@
 import importlib.util
 import sqlite3
+import traceback
 import pandas as pd
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -77,8 +78,9 @@ def parse_jobs_and_generate_sqlite_db(parser: Path, output_path: Path) -> None:
     for job in jobs_list():
         try:
             result: ParseResult = user_parse(job)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[parse_jobs_and_generate_sqlite_db] parse() failed for job {job!r}: {exc}")
+        except Exception:  # noqa: BLE001
+            print(f"[parse_jobs_and_generate_sqlite_db] parse() failed for job {job!r}:")
+            print(traceback.format_exc())
             continue
 
         if not result:

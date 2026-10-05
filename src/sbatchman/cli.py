@@ -583,26 +583,26 @@ def visualize(
 API-compliant Python script to parse jobs.
 
 
-Parser API contract
---------------------
+Parser API contract\n
+--------------------\n
 The parser script must define:
 
-    def parse(job: sbm.Job) -> dict | None:
-        ...
+def parse(job: sbm.Job) -> dict | None:\n
+  ...
 
-`parse` should return either:
-  - None / {} if the job produced no rows, or
-  - a dict mapping table_name -> row(s), where each value is either
-      - a single row: a dict of {column_name: value}, or
-      - multiple rows: a list of such dicts.
+`parse` should return either:\n
+  - None / {} if the job produced no rows, or\n
+  - a dict mapping table_name -> row(s), where each value is either\n
+      - a single row: a dict of {column_name: value}, or\n
+      - multiple rows: a list of such dicts.\n
 
-Example
--------
-    def parse(job: sbm.Job) -> dict:
-        return {
-            "jobs": {"id": job.id, "status": job.status},
-            "job_tags": [{"job_id": job.id, "tag": t} for t in job.tags],
-        }
+Example\n
+-------\n
+def parse(job: sbm.Job) -> dict:\n
+    return {\n
+        "jobs": {"id": job.id, "status": job.status},\n
+        "job_tags": [{"job_id": job.id, "tag": t} for t in job.tags],\n
+    }\n
       """
     ),
   ),
