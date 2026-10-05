@@ -765,13 +765,14 @@ def _update_single_job_status(job: Job) -> bool:
 
 def update_jobs_status() -> int:
   """
-  Updates the status of active jobs on the current cluster by querying the scheduler.
+  Updates the status of active jobs by querying the scheduler.
   
   Returns:
     The number of jobs whose status was updated.
   """
-  current_cluster = get_cluster_name()
-  active_jobs = jobs_list(cluster_name=current_cluster, from_active=True, from_archived=False, update_jobs=False)
+  # current_cluster = get_cluster_name()
+  # cluster_name=current_cluster,
+  active_jobs = jobs_list(from_active=True, from_archived=False, update_jobs=False)
   
   updated_count = 0
 
