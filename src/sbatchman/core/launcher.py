@@ -749,6 +749,7 @@ def _launch_job_combinations(
       config_name = substitute(config_template, {})
       command = substitute(command_template, {})
       job_tag = substitute(tag, {})
+      job_category = substitute(category, {})
       preprocess = substitute(preprocess_template, {})
       postprocess = substitute(postprocess_template, {})
       check = substitute(check_template, {})
@@ -762,7 +763,7 @@ def _launch_job_combinations(
           config_name,
           command,
           tag=job_tag,
-          category=category,
+          category=job_category,
           preprocess=preprocess,
           postprocess=postprocess,
           check=check,
@@ -814,6 +815,7 @@ def _launch_job_combinations(
           config_name = substitute(config_template, final_vars)
           command = substitute(command_template, final_vars)
           job_tag = substitute(tag, final_vars)
+          job_category = substitute(category, final_vars)
           preprocess = substitute(preprocess_template, final_vars)
           postprocess = substitute(postprocess_template, final_vars)
           check = substitute(check_template, final_vars)
@@ -827,7 +829,7 @@ def _launch_job_combinations(
               config_name,
               command,
               tag=job_tag,
-              category=category,
+              category=job_category,
               preprocess=preprocess,
               postprocess=postprocess,
               check=check,
@@ -852,6 +854,7 @@ def _launch_job_combinations(
         config_name = substitute(config_template, substitution_vars)
         command = substitute(command_template, substitution_vars)
         job_tag = substitute(tag, substitution_vars)
+        job_category = substitute(category, substitution_vars)
         preprocess = substitute(preprocess_template, substitution_vars)
         postprocess = substitute(postprocess_template, substitution_vars)
         check = substitute(check_template, substitution_vars)
@@ -865,7 +868,7 @@ def _launch_job_combinations(
             config_name,
             command,
             tag=job_tag,
-            category=category,
+            category=job_category,
             preprocess=preprocess,
             postprocess=postprocess,
             check=check,
