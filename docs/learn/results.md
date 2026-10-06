@@ -81,4 +81,11 @@ Then, run
 sbatchman visualize
 ```
 
-And, in you browser, go to: `http://localhost:8765/`
+And, in your browser, go to: `http://localhost:8765/`.
+
+Plotly is the default renderer. To use the Matplotlib / Seaborn backend, install
+the optional dependencies with `pip install 'sbatchman[visualization]'`, then
+select the renderer in the figure toolbar. The selection is saved in workspace
+JSON files. Both backends use the same query, transform, axes, grouping, and
+style controls; the Matplotlib backend returns PNG and SVG images from the
+server.

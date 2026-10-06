@@ -30,6 +30,9 @@ dependencies = [
     "pysqlite3",
 ]
 
+[project.optional-dependencies]
+visualization = ["matplotlib>=3.5", "seaborn>=0.12"]
+
 [project.urls]
 "Homepage" = "https://github.com/LorenzoPichetti/SbatchMan"
 "Bug Tracker" = "https://github.com/LorenzoPichetti/SbatchMan/issues"

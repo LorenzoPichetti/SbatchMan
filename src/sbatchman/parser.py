@@ -75,7 +75,7 @@ def parse_jobs_and_generate_sqlite_db(parser: Path, output_path: Path) -> None:
     # Accumulate rows per table across all jobs before touching the DB.
     tables: Dict[str, List[Dict[str, Any]]] = {}
 
-    for job in jobs_list():
+    for job in jobs_list(from_archived=True):
         try:
             result: ParseResult = user_parse(job)
         except Exception:  # noqa: BLE001

@@ -15,7 +15,6 @@ from sbatchman.tui.tui_status import run_tui
 from sbatchman.core.campaign import run_campaign
 from sbatchman.tui.tui_campaign import run_campaign_tui
 from sbatchman.tui.tui_remote import run_remotes_config_tui
-from sbatchman.visualize.visualize import launch_visualize_web_server
 from sbatchman.parser import print_sqlite_db
 
 console = Console(width=shutil.get_terminal_size().columns)
@@ -626,6 +625,8 @@ def parse(job: sbm.Job) -> dict:\n
     print_sqlite_db(db_path=describe, verbose=verbose)
   else:
     # TODO implement preset loading
+    # from sbatchman.visualize.visualize import launch_visualize_web_server
+    from sbatchman.visualize.handler import launch_visualize_web_server
     launch_visualize_web_server(parser, presets)
 
 
