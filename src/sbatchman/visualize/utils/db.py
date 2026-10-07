@@ -1,4 +1,4 @@
-"""SQLite registry, schema introspection and (read-only) querying."""
+"""SQLite and CSV registry, schema introspection and read-only querying."""
 import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -16,8 +16,20 @@ def _connect(name: str, readonly=True):
     path = DB_REGISTRY.get(name)
     if not path:
         raise ValueError(f"Unknown database: {name}")
+    path = Path(path)
+    if path.is_dir():
+        # Load CSV tables into an in-memory SQLite database. This keeps the
+        # query and schema APIs identical for SQLite files and CSV directories.
+        conn = sqlite3.connect(":memory:")
+        try:
+            for csv_path in sorted(path.glob("*.csv")):
+                pd.read_csv(csv_path).to_sql(csv_path.stem, conn, index=False, if_exists="replace")
+            return conn
+        except Exception:
+            conn.close()
+            raise
     if readonly:  # user SQL can never modify the data
-        return sqlite3.connect(Path(path).as_uri() + "?mode=ro", uri=True)
+        return sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
     return sqlite3.connect(path)
 
 

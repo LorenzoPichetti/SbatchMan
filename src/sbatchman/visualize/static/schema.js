@@ -2,12 +2,60 @@
 // builder is currently visible" helper the tree's click handler uses to
 // know which x/sql fields to fill in when a table is clicked.
 import { G, getState, tabEl } from './state.js';
+import { clientLog } from './log.js';
+
+async function copySchemaName(name, kind) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(name);
+    } else {
+      const input = document.createElement('textarea');
+      input.value = name;
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      input.select();
+      const copied = document.execCommand('copy');
+      input.remove();
+      if (!copied) throw new Error('Clipboard access is unavailable');
+    }
+    clientLog(`Copied ${kind} name: ${name}`);
+  } catch (error) {
+    clientLog(`Could not copy ${kind} name: ${error.message}`, 'warn');
+  }
+}
+
+function makeCopyableName(name, kind) {
+  const el = document.createElement('span');
+  el.className = 'schema-copy-name';
+  el.textContent = name;
+  el.title = `Click to copy ${kind} name`;
+  el.setAttribute('role', 'button');
+  el.setAttribute('tabindex', '0');
+  el.addEventListener('click', event => {
+    event.stopPropagation();
+    copySchemaName(name, kind);
+  });
+  el.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      copySchemaName(name, kind);
+    }
+  });
+  return el;
+}
 
 export function renderTableList(container, dbName, tables) {
   for (const [tname, cols] of Object.entries(tables || {})) {
     const ti = document.createElement('div');
     ti.className = 'table-item';
-    ti.innerHTML = `<svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="14" height="14" rx="1"/><line x1="1" y1="5.5" x2="15" y2="5.5"/><line x1="6" y1="5.5" x2="6" y2="15"/></svg> ${tname} <span class="badge">${cols.length}</span>`;
+    ti.innerHTML = '<svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="14" height="14" rx="1"/><line x1="1" y1="5.5" x2="15" y2="5.5"/><line x1="6" y1="5.5" x2="6" y2="15"/></svg>';
+    ti.append(makeCopyableName(tname, 'table'));
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = cols.length;
+    ti.append(badge);
     let colsOpen = false;
     const colsDiv = document.createElement('div');
     colsDiv.className = 'table-cols';
@@ -15,7 +63,13 @@ export function renderTableList(container, dbName, tables) {
     cols.forEach(c => {
       const ci = document.createElement('div');
       ci.className = 'col-item';
-      ci.innerHTML = `▸ ${c.name} <span class="col-type">${c.type}</span>`;
+      const marker = document.createElement('span');
+      marker.textContent = '▸';
+      ci.append(marker, makeCopyableName(c.name, 'column'));
+      const type = document.createElement('span');
+      type.className = 'col-type';
+      type.textContent = c.type || '';
+      ci.append(type);
       colsDiv.appendChild(ci);
     });
     ti.addEventListener('click', e => {

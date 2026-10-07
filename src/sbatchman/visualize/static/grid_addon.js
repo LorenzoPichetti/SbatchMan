@@ -116,11 +116,11 @@
       <input class="grid-dimension" type="number" id="grid-subplot-height-${tabId}" min="0.5" step="0.1" title="Subplot height in inches">
       gap x <input class="grid-gap" type="number" id="grid-xgap-${tabId}" min="0" max="0.5" step="0.02">
       y <input class="grid-gap" type="number" id="grid-ygap-${tabId}" min="0" max="0.5" step="0.02">
-      legend <select id="grid-legend-pos-${tabId}">
+      legend <select id="grid-legend-pos-${tabId}" style="width:7rem">
         <option value="right">right</option><option value="top">top</option>
         <option value="bottom">bottom</option><option value="none">hidden</option>
       </select>
-      <input type="text" id="grid-legend-title-${tabId}" placeholder="legend title" style="width:90px">`;
+      <input type="text" id="grid-legend-title-${tabId}" placeholder="legend title" style="width:10rem">`;
     wrap.appendChild(box);
 
     const bind = (id, key, isCheckbox) => {

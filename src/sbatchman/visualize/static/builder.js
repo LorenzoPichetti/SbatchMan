@@ -135,24 +135,7 @@ export function updateAxisControls(id, columns) {
 export function builderColumnsHTML(id) {
   const dbOpts = Object.keys(G.databases).map(n => `<option value="${n}">${n}</option>`).join('');
   return `
-    <div class="b-col" style="min-width:200px;max-width:240px">
-      <div class="b-col-title" data-tip="Choose how data is rendered">Plot type</div>
-      <div class="plot-type-grid" id="chips-${id}"></div>
-      <div style="margin-top:6px">
-        <div class="script-toggle" id="script-toggle-${id}" data-tip="Define a custom plot() function in Python — overrides the plot type above">
-          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 2l4 6-4 6h-3l4-6-4-6h3zm-6 0l4 6-4 6H0l4-6L0 2h3.5z"/></svg>
-          Custom plot script
-          <svg id="script-arrow-${id}" width="9" height="9" viewBox="0 0 16 16" fill="currentColor" style="margin-left:auto;transition:transform .2s"><path d="M4 6l4 4 4-4"/></svg>
-        </div>
-        <div class="script-box" id="script-box-${id}">
-          <div class="script-hint">def <b>plot</b>(df_data, config) → list of Plotly trace dicts. Overrides the plot-type chips above.</div>
-          <textarea id="script-${id}" class="code-editor python-editor" spellcheck="false" aria-label="Custom Python plot script" placeholder="def plot(df_data, config):&#10;    # return list of Plotly trace dicts&#10;    ..."></textarea>
-        </div>
-      </div>
-      <div class="extra-opts" id="extra-opts-${id}"></div>
-    </div>
-
-    <div class="b-col" style="min-width:240px;flex:1.2">
+    <div class="b-col" style="grid-column:1 / -1;min-width:240px;flex:1.2">
       <div class="b-col-title">Data source</div>
       <div id="db-select-wrap-${id}" style="margin-bottom:5px">
         <select id="db-select-${id}">${dbOpts}</select>
@@ -176,6 +159,23 @@ export function builderColumnsHTML(id) {
         <span id="preview-status-${id}" style="font-size:9px;color:var(--text3)"></span>
       </div>
       <div class="data-preview" id="inline-preview-${id}" style="max-height:160px;margin-top:5px;border:1px solid var(--border);border-radius:var(--radius)"></div>
+    </div>
+
+    <div class="b-col" style="grid-column:1 / -1;min-width:200px;max-width:240px">
+      <div class="b-col-title" data-tip="Choose how data is rendered">Plot type</div>
+      <div class="plot-type-grid" id="chips-${id}"></div>
+      <div style="margin-top:6px">
+        <div class="script-toggle" id="script-toggle-${id}" data-tip="Define a custom plot() function in Python — overrides the plot type above">
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 2l4 6-4 6h-3l4-6-4-6h3zm-6 0l4 6-4 6H0l4-6L0 2h3.5z"/></svg>
+          Custom plot script
+          <svg id="script-arrow-${id}" width="9" height="9" viewBox="0 0 16 16" fill="currentColor" style="margin-left:auto;transition:transform .2s"><path d="M4 6l4 4 4-4"/></svg>
+        </div>
+        <div class="script-box" id="script-box-${id}">
+          <div class="script-hint">def <b>plot</b>(df_data, config) → list of Plotly trace dicts. Overrides the plot-type chips above.</div>
+          <textarea id="script-${id}" class="code-editor python-editor" spellcheck="false" aria-label="Custom Python plot script" placeholder="def plot(df_data, config):&#10;    # return list of Plotly trace dicts&#10;    ..."></textarea>
+        </div>
+      </div>
+      <div class="extra-opts" id="extra-opts-${id}"></div>
     </div>
 
     <div class="b-col" style="min-width:180px">

@@ -32,11 +32,14 @@ def _normalize_rows(value: Union[Dict[str, Any], List[Dict[str, Any]]]) -> List[
     )
 
 
-def parse_jobs_and_generate_sqlite_db(parser: Path, output_path: Path) -> None:
+def parse_jobs_and_generate_sqlite_db(
+    parser: Path, output_path: Path, csv_files: bool = False
+) -> None:
     """
     Run the user-defined parse(job) function (found in `parser`) over every job
     returned by jobs_list(), and write the accumulated results to a SQLite
-    database at `output_path`.
+    database at `output_path`. If `csv_files` is True, write one CSV file per
+    table into the directory at `output_path` instead.
 
     Parser API contract
     --------------------
@@ -94,7 +97,16 @@ def parse_jobs_and_generate_sqlite_db(parser: Path, output_path: Path) -> None:
         for table_name, rows in result.items():
             tables.setdefault(table_name, []).extend(_normalize_rows(rows))
 
-    # Build a DataFrame per table, then write everything to SQLite.
+    # Build a DataFrame per table, then write everything to SQLite or CSV.
+    if csv_files:
+        output_path.mkdir(parents=True, exist_ok=True)
+        for table_name, rows in tables.items():
+            if not rows:
+                continue
+            df = pd.DataFrame(rows)
+            df.to_csv(output_path / f"{table_name}.csv", index=False)
+        return
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(output_path)
     try:

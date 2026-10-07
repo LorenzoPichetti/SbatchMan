@@ -127,6 +127,17 @@ export function createTab(label, stateOverride) {
   btn.className = 'plot-tab';
   btn.id = `tabbtn-${id}`;
   btn.innerHTML = `<span class="tab-label" ondblclick="renameTab(${id})">${escHtml(tab.label)}</span><span class="plot-tab-close" onclick="closeTab(${id},event)">×</span>`;
+  const clone = document.createElement('span');
+  clone.className = 'plot-tab-clone';
+  clone.textContent = '⧉';
+  clone.title = `Clone ${tab.label}`;
+  clone.setAttribute('role', 'button');
+  clone.setAttribute('aria-label', `Clone ${tab.label}`);
+  clone.addEventListener('click', event => {
+    event.stopPropagation();
+    cloneTab(id);
+  });
+  btn.insertBefore(clone, btn.querySelector('.plot-tab-close'));
   btn.addEventListener('click', () => activateTab(id));
   bar.insertBefore(btn, document.getElementById('btn-add-tab'));
 
@@ -168,6 +179,18 @@ export function renameTab(id) {
   }
 }
 
+export function cloneTab(id) {
+  const source = G.tabs.find(t => t.id === id);
+  if (!source) return;
+  const config = window.getTabConfig(id);
+  const label = `${source.label} copy`;
+  config.label = label;
+  const newId = createTab(label, {});
+  window.applyTabConfig(newId, config);
+  activateTab(newId);
+  clientLog(`Cloned tab "${source.label}" as "${label}"`);
+}
+
 export function wireTabBar() {
   document.getElementById('btn-add-tab').addEventListener('click', () => {
     const src = activeTabObj();
@@ -182,5 +205,5 @@ export function wireTabBar() {
 }
 
 Object.assign(window, {
-  activeTabObj, resizePlot, workspaceHTML, createTab, activateTab, closeTab, renameTab, wireTabBar,
+  activeTabObj, resizePlot, workspaceHTML, createTab, activateTab, closeTab, renameTab, cloneTab, wireTabBar,
 });

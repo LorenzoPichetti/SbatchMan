@@ -14,8 +14,7 @@ HTML_PATH = MODULE_DIR / "webapp.html"
 DOCS_PATH = MODULE_DIR / "docs.html"
 STATIC_DIR = MODULE_DIR / "static"
 
-# db_name -> {"parser": Path, "output_path": Path}, so re-parse can actually
-# regenerate the SQLite file rather than just re-read whatever's on disk.
+# db_name -> parser/output settings, so re-parse regenerates the selected format.
 REPARSE_SOURCES: dict = {}
 REMOTE_SYSTEMS: dict = {}
 
@@ -29,7 +28,10 @@ def hook_reparse(db_name: str) -> dict:
     try:
         if src:
             from sbatchman.parser import parse_jobs_and_generate_sqlite_db
-            parse_jobs_and_generate_sqlite_db(parser=src["parser"], output_path=src["output_path"])
+            parse_jobs_and_generate_sqlite_db(
+                parser=src["parser"], output_path=src["output_path"],
+                csv_files=src.get("csv_files", False),
+            )
         counts = db.table_counts(db_name)
         summary = ", ".join(f"{t}={n}" for t, n in counts.items())
         return {"ok": True, "message": f"Re-parsed '{db_name}': {summary}"}
@@ -210,18 +212,20 @@ class Handler(BaseHTTPRequestHandler):
                 "log_entry": entry}
 
 
-def launch_visualize_web_server(parser, presets, port=8765, plugins=None):
+def launch_visualize_web_server(parser, presets, port=8765, plugins=None, csv_files=False):
     from sbatchman.config.project_config import get_project_root
     from sbatchman.parser import parse_jobs_and_generate_sqlite_db
 
-    db_path = get_project_root() / "data.sqlite"
-    parse_jobs_and_generate_sqlite_db(parser=parser, output_path=db_path)
-    db.load_databases([db_path])
+    output_path = get_project_root() / ("data_csv" if csv_files else "data.sqlite")
+    parse_jobs_and_generate_sqlite_db(parser=parser, output_path=output_path, csv_files=csv_files)
+    db.load_databases([output_path])
     if not db.DB_REGISTRY:
         log("No valid databases loaded. Exiting.", "error")
         raise SystemExit(1)
 
-    REPARSE_SOURCES[Path(db_path).stem] = {"parser": parser, "output_path": db_path}
+    REPARSE_SOURCES[Path(output_path).stem] = {
+        "parser": parser, "output_path": output_path, "csv_files": csv_files,
+    }
     load_remote_systems()
     if plugins:
         plots.load_plugins(plugins)

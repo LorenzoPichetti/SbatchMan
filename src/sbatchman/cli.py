@@ -610,24 +610,51 @@ def parse(job: sbm.Job) -> dict:\n
     "--presets",
     help="web UI pre-defined plots workspace. (WIP)"
   ),
-  describe: Path = typer.Option(
+  csv_files: bool = typer.Option(
+    False,
+    "--csv-files", "-csv",
+    help="Store parsed tables as CSV files in a directory instead of SQLite (default).",
+  ),
+  describe: Optional[Path] = typer.Option(
     None,
     "--describe", "-d",
-    help="A path or name of a SQLite database to describe. This will NOT start the web UI."
+    help="Describe a SQLite database or directory of CSV tables without starting the web UI."
   ),
-  verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose database description."),
-):
+  verbose: bool = typer.Option(False, "--verbose", "-v", help="Show all rows when describing a database."),
+) -> None:
+  """Inspect a database or launch the interactive plot builder."""
   if describe:
     if not describe.exists():
-      console.print(f"[bold red]Could not find SQLite database at:[/bold red] {describe.resolve().absolute()}")
+      console.print(f"[bold red]Could not find database:[/bold red] {describe.resolve()}")
       raise typer.Exit(1)
-    # TODO automatic search in Sbatchman project root
-    print_sqlite_db(db_path=describe, verbose=verbose)
-  else:
-    # TODO implement preset loading
-    # from sbatchman.visualize.visualize import launch_visualize_web_server
-    from sbatchman.visualize.handler import launch_visualize_web_server
-    launch_visualize_web_server(parser, presets)
+    if describe.is_dir() and not any(describe.glob("*.csv")):
+      console.print(f"[bold red]CSV directory contains no .csv files:[/bold red] {describe.resolve()}")
+      raise typer.Exit(1)
+    if not describe.is_dir() and not describe.is_file():
+      console.print(f"[bold red]Database path is not a file or directory:[/bold red] {describe.resolve()}")
+      raise typer.Exit(1)
+
+    if describe.is_dir():
+      from sbatchman.visualize.utils import db
+      db.load_databases([describe])
+      name = db.only_db_name()
+      tables = db.get_all_tables_as_dataframes(name)
+      if not tables:
+        console.print(f"No tables found in {describe}")
+      for table_name, frame in tables.items():
+        console.print(f"[bold]{table_name}[/bold] ({len(frame)} rows)")
+        console.print(frame.to_string(index=False) if verbose else frame.head(5).to_string(index=False))
+    else:
+      print_sqlite_db(db_path=describe, verbose=verbose)
+    return
+
+  parser = parser.expanduser().resolve()
+  if not parser.is_file():
+    console.print(f"[bold red]Parser script not found:[/bold red] {parser}")
+    raise typer.Exit(1)
+
+  from sbatchman.visualize.handler import launch_visualize_web_server
+  launch_visualize_web_server(parser, presets.expanduser().resolve(), csv_files=csv_files)
 
 
 if __name__ == "__main__":

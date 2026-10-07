@@ -86,13 +86,15 @@
   focusBtn.onclick = () => {
     document.body.classList.toggle('focus');
     focusBtn.textContent = document.body.classList.contains('focus') ? 'Show controls' : 'Focus plot';
-    if (G.activeTab) resizePlot(G.activeTab);
+    requestAnimationFrame(() => {
+      if (G.activeTab) window.resizePlot(G.activeTab);
+    });
   };
   document.querySelector('.topbar-mid').append(focusBtn);
   const css = document.createElement('style');
   css.textContent = `.plotly-wrap{min-height:0;min-width:0;overflow:hidden}.builder{max-height:40%}
     body.focus .builder,body.focus .panel-tabs{display:none}body.focus #sidebar{display:none}
-    body.focus #app{grid-template-columns:0 1fr}`;
+    body.focus #app{grid-template-columns:minmax(0,1fr)}`;
   document.head.append(css);
 
   // Sync panels: copy the active panel's settings to every other panel in the grid

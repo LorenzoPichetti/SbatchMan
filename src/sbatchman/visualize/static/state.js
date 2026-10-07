@@ -45,7 +45,7 @@ export function currentDb(id) {
 }
 
 export function defaultNodeState(base) {
-  return Object.assign({
+  const state = Object.assign({
     database: G.defaultDb || Object.keys(G.databases)[0] || '',
     sql: '', plotType: 'line', columns: [], yCols: [], groupCols: [],
     x: '', markerBy: '', dashBy: '', z: '', extra: {},
@@ -54,6 +54,11 @@ export function defaultNodeState(base) {
     rendererBackend: 'matplotlib',
     legendPosition: 'right', legendTitle: '', showLegend: true,
   }, base || {});
+  if (!state.sql?.trim()) {
+    const firstTable = G.databases[state.database]?.[0]?.name;
+    if (firstTable) state.sql = `SELECT * FROM "${String(firstTable).replaceAll('"', '""')}"`;
+  }
+  return state;
 }
 
 // Transitional: expose on window so the existing style/axis/grid addons
