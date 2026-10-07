@@ -608,12 +608,21 @@ def parse(job: sbm.Job) -> dict:\n
   presets: Path = typer.Option(
     "plots.json",
     "--presets",
-    help="web UI pre-defined plots workspace. (WIP)"
+    help="web UI pre-defined plots workspace."
   ),
   csv_files: bool = typer.Option(
     False,
     "--csv-files", "-csv",
     help="Store parsed tables as CSV files in a directory instead of SQLite (default).",
+  ),
+  data_source: Optional[Path] = typer.Option(
+    None,
+    "--data-source", "-i",
+    exists=True,
+    file_okay=True,
+    dir_okay=True,
+    readable=True,
+    help="Use an existing SQLite database or directory of CSV tables instead of running the parser.",
   ),
   describe: Optional[Path] = typer.Option(
     None,
@@ -648,13 +657,25 @@ def parse(job: sbm.Job) -> dict:\n
       print_sqlite_db(db_path=describe, verbose=verbose)
     return
 
-  parser = parser.expanduser().resolve()
-  if not parser.is_file():
-    console.print(f"[bold red]Parser script not found:[/bold red] {parser}")
-    raise typer.Exit(1)
+  if data_source:
+    data_source = data_source.expanduser().resolve()
+    if data_source.is_dir() and not any(data_source.glob("*.csv")):
+      console.print(f"[bold red]CSV directory contains no .csv files:[/bold red] {data_source}")
+      raise typer.Exit(1)
+    if data_source.is_file() and data_source.suffix.lower() == ".csv":
+      console.print("[bold red]Expected a SQLite database file or a directory of CSV tables.[/bold red]")
+      raise typer.Exit(1)
+  else:
+    parser = parser.expanduser().resolve()
+    if not parser.is_file():
+      console.print(f"[bold red]Parser script not found:[/bold red] {parser}")
+      raise typer.Exit(1)
 
   from sbatchman.visualize.handler import launch_visualize_web_server
-  launch_visualize_web_server(parser, presets.expanduser().resolve(), csv_files=csv_files)
+  launch_visualize_web_server(
+    parser, presets.expanduser().resolve(), csv_files=csv_files,
+    data_source=data_source,
+  )
 
 
 if __name__ == "__main__":

@@ -212,20 +212,25 @@ class Handler(BaseHTTPRequestHandler):
                 "log_entry": entry}
 
 
-def launch_visualize_web_server(parser, presets, port=8765, plugins=None, csv_files=False):
-    from sbatchman.config.project_config import get_project_root
-    from sbatchman.parser import parse_jobs_and_generate_sqlite_db
+def launch_visualize_web_server(parser, presets, port=8765, plugins=None, csv_files=False,
+                                data_source=None):
+    if data_source is None:
+        from sbatchman.config.project_config import get_project_root
+        from sbatchman.parser import parse_jobs_and_generate_sqlite_db
 
-    output_path = get_project_root() / ("data_csv" if csv_files else "data.sqlite")
-    parse_jobs_and_generate_sqlite_db(parser=parser, output_path=output_path, csv_files=csv_files)
-    db.load_databases([output_path])
+        output_path = get_project_root() / ("data_csv" if csv_files else "data.sqlite")
+        parse_jobs_and_generate_sqlite_db(parser=parser, output_path=output_path, csv_files=csv_files)
+        db.load_databases([output_path])
+    else:
+        db.load_databases([data_source])
     if not db.DB_REGISTRY:
         log("No valid databases loaded. Exiting.", "error")
         raise SystemExit(1)
 
-    REPARSE_SOURCES[Path(output_path).stem] = {
-        "parser": parser, "output_path": output_path, "csv_files": csv_files,
-    }
+    if data_source is None:
+        REPARSE_SOURCES[Path(output_path).stem] = {
+            "parser": parser, "output_path": output_path, "csv_files": csv_files,
+        }
     load_remote_systems()
     if plugins:
         plots.load_plugins(plugins)
