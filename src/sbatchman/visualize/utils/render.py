@@ -1,8 +1,9 @@
 """High-level pipeline: SQL -> pandas transform -> traces -> layout -> style.
 The HTTP handler only needs render_plot / render_grid / run_preview."""
 from . import styles
-from .core import (log, make_script_logger, run_custom_plot_script,
-                   run_layout_script, run_transform_script)
+from .core import (load_custom_plot_script, log, make_script_logger,
+                   run_custom_plot_script, run_layout_script,
+                   run_layout_script_with_hooks, run_transform_script)
 from .db import (dataframe_to_df_data, df_data_to_dataframe,
                  get_all_tables_as_dataframes, run_query)
 from .layout import build_layout, grid_domains
@@ -82,7 +83,7 @@ def _apply_matplotlib_layout_script(config, traces, style, source, scope="layout
     if scope.startswith("layout(panel"):
         layout = {"xaxis": layout["xaxis"], "yaxis": layout["yaxis"]}
     script_log, entries = make_script_logger(scope)
-    edited = run_layout_script(source, layout, config, script_log)
+    edited, matplotlib_layout_fn = run_layout_script_with_hooks(source, layout, config, script_log)
     for axis in ("x", "y"):
         spec = edited.get(f"{axis}axis") or {}
         title = spec.get("title")
@@ -115,7 +116,7 @@ def _apply_matplotlib_layout_script(config, traces, style, source, scope="layout
         config["legend_orientation"] = "horizontal" if legend["orientation"] == "h" else "vertical"
     if isinstance(legend.get("title"), dict) and legend["title"].get("text") is not None:
         config["legend_title"] = legend["title"]["text"]
-    return config, entries
+    return config, entries, matplotlib_layout_fn
 
 
 def preview_of(df_data, limit=500):
@@ -136,16 +137,37 @@ def render_plot(p):
     if backend not in ("plotly", "matplotlib"):
         raise ValueError(f"Unknown plotting backend: {backend}")
     df, entries = run_pipeline(p["database"], p["sql"], p.get("transform_script", ""))
-    traces = compute_traces(df, p.get("plot_type", "line"), p.get("custom_script", ""), config)
     if backend == "matplotlib":
         from .matplotlib_backend import render_matplotlib_plot
+        custom_script = p.get("custom_script", "")
+        custom_plot_fn = None
+        if custom_script and custom_script.strip():
+            script_ns = load_custom_plot_script(custom_script)
+            custom_plot_fn = script_ns.get("plot_matplotlib")
+            if callable(custom_plot_fn):
+                traces = []
+            else:
+                plot_fn = script_ns.get("plot")
+                if not callable(plot_fn):
+                    raise ValueError(
+                        "Custom plot script must define plot(df_data, config) for Plotly, "
+                        "or plot_matplotlib(ax, df_data, config) for Matplotlib."
+                    )
+                traces = plot_fn(df, config)
+        else:
+            traces = compute_traces(df, p.get("plot_type", "line"), "", config)
+        matplotlib_layout_fn = None
         if p.get("layout_script", "").strip():
-            config, script_entries = _apply_matplotlib_layout_script(
+            config, script_entries, matplotlib_layout_fn = _apply_matplotlib_layout_script(
                 config, traces, style, p["layout_script"], "layout")
             entries += script_entries
-        images = render_matplotlib_plot(df, traces, config, style)
+        images = render_matplotlib_plot(
+            df, traces, config, style,
+            custom_plot_fn=custom_plot_fn, layout_fn=matplotlib_layout_fn,
+        )
         return {**images, "columns": df["columns"], "truncated": df.get("truncated", False),
                 "preview": preview_of(df), "log_entries": entries, "panel_count": 1}
+    traces = compute_traces(df, p.get("plot_type", "line"), p.get("custom_script", ""), config)
     marker_size = config.get("legend_marker_size")
     if isinstance(marker_size, (int, float)) and marker_size > 0:
         for t in traces:
@@ -332,7 +354,7 @@ def render_grid(p):
                     t["_panel_marker_size"] = marker_size
             for t in traces:
                 t["legend"] = legend_key
-                if not grid_legend_show or config.get("show_legend", True) is False:
+                if config.get("show_legend", True) is False:
                     t["showlegend"] = False
         has_y2 = "yaxis2" in sub
         y2sfx = alloc_extra() if has_y2 else None
@@ -375,8 +397,13 @@ def render_grid(p):
     layout["annotations"] += _panel_label_annotations(p.get("panel_labels"), doms, rows, cols)
 
     lg = p.get("legend") or {}
-    legend_cfg = {"legend_position": lg.get("position", "right"), "legend_title": lg.get("title", ""),
-                 "show_legend": lg.get("show", True)}
+    source_legend_config = (panels[0].get("config", {}) if panels else {})
+    legend_cfg = {
+        **source_legend_config,
+        "legend_position": lg.get("position", "right"),
+        "legend_title": lg.get("title", ""),
+        "show_legend": lg.get("show", True),
+    }
     if per_panel_legends:
         # Legend coordinates are set inside each subplot cell so neighboring
         # panels cannot paint one another's labels. Position follows each
@@ -403,9 +430,16 @@ def render_grid(p):
                 else:
                     legend.update(y=y1 - .015, yanchor="top")
             layout[key] = legend
-        layout["showlegend"] = grid_legend_show
+        layout["showlegend"] = any(
+            config.get("show_legend", True) is not False
+            for _, _, config in panel_legend_keys
+        )
         legend_layout = build_layout(legend_cfg, {}, [], style)
     else:
+        marker_size = source_legend_config.get("legend_marker_size")
+        if isinstance(marker_size, (int, float)) and marker_size > 0:
+            for trace in all_traces:
+                trace["_panel_marker_size"] = marker_size
         _dedupe_legend(all_traces)
         legend_layout = build_layout(legend_cfg, {}, all_traces, style)
         layout["legend"], layout["showlegend"] = legend_layout["legend"], legend_layout["showlegend"]
@@ -497,11 +531,28 @@ def _render_matplotlib_grid(p):
             df, panel_entries = run_pipeline(
                 panel["database"], panel["sql"], panel.get("transform_script", ""))
             entries += panel_entries
+        panel["_df_data"] = df
         panel_config = panel.get("config", {})
-        panel_traces = compute_traces(
-            df, panel.get("plot_type", "line"), panel.get("custom_script", ""), panel_config)
+        custom_script = panel.get("custom_script", "")
+        panel["_custom_mpl_plot_fn"] = None
+        if custom_script and custom_script.strip():
+            script_ns = load_custom_plot_script(custom_script)
+            panel["_custom_mpl_plot_fn"] = script_ns.get("plot_matplotlib")
+            if callable(panel["_custom_mpl_plot_fn"]):
+                panel_traces = []
+            else:
+                plot_fn = script_ns.get("plot")
+                if not callable(plot_fn):
+                    raise ValueError(
+                        "Custom plot script must define plot(df_data, config) for Plotly, "
+                        "or plot_matplotlib(ax, df_data, config) for Matplotlib."
+                    )
+                panel_traces = plot_fn(df, panel_config)
+        else:
+            panel_traces = compute_traces(df, panel.get("plot_type", "line"), "", panel_config)
+        panel["_matplotlib_layout_fn"] = None
         if panel.get("layout_script", "").strip():
-            panel_config, script_entries = _apply_matplotlib_layout_script(
+            panel_config, script_entries, panel["_matplotlib_layout_fn"] = _apply_matplotlib_layout_script(
                 panel_config, panel_traces, p.get("style"), panel["layout_script"], f"layout(panel {len(previews) + 1})")
             entries += script_entries
             panel["config"] = panel_config

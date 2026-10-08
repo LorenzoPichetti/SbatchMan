@@ -51,6 +51,7 @@
 
       <div class="b-col-title" style="margin-top:10px" data-tip="Plot some Y columns against a second, independently-scaled y axis on the right">Secondary y-axis</div>
       <label>Columns on y2 (multi-select)</label>
+      <div style="font-size:9px;color:var(--text3);margin:2px 0">Choose columns already selected under Y column(s); they move to the right axis.</div>
       <div class="multi-col-list" id="y2-pills-${id}"></div>
       <input type="text" id="y2-label-${id}" placeholder="y2 axis label" style="margin-top:4px">
       <div style="display:flex;gap:4px;margin-top:4px">

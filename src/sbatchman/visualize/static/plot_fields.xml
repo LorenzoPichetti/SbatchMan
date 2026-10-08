@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plot-fields version="1">
+  <plot name="heatmap" label="Heatmap">
+    <field
+      name="z"
+      label="Z axis (cell values)"
+      type="column"
+      required="true"
+      help="Numeric column used to determine each cell's color."
+    />
+  </plot>
+</plot-fields>

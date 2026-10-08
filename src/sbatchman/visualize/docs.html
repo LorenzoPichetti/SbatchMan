@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plot Builder — Quick Start</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--text:#e6edf3;--muted:#9da7b3;--accent:#58a6ff;--border:#30363d}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 system-ui,sans-serif}
+    main{max-width:760px;margin:48px auto;padding:0 24px 48px}h1{font-size:28px;margin:0 0 8px}h2{font-size:18px;margin:0 0 6px}
+    p{margin:0;color:var(--muted)}ol{padding-left:24px;margin:24px 0;display:grid;gap:14px}
+    li{padding:16px 18px;background:var(--panel);border:1px solid var(--border);border-radius:8px}
+    li p{margin-top:4px}strong{color:var(--text)}code{color:#79c0ff;background:#21262d;padding:1px 5px;border-radius:4px;font-size:.92em}
+    .tip{border-left:3px solid var(--accent);padding:10px 14px;background:var(--panel);color:var(--muted)}
+    a{color:var(--accent)}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Make your first plot</h1>
+    <p>Follow these steps in order: query data, check its columns, configure the chart, then render it.</p>
+
+    <ol>
+      <li>
+        <h2>Choose a table and query</h2>
+        <p>In <strong>Schema</strong>, expand a table with its arrow. A new tab starts with a basic <code>SELECT *</code> query when a table is available. Edit the SQL in <strong>Data source</strong> to select the rows and columns you need.</p>
+      </li>
+      <li>
+        <h2>Run the query</h2>
+        <p>Click <strong>Run &amp; show</strong>. This checks the query and displays a data preview. The query’s column names then become available in the mapping controls.</p>
+      </li>
+      <li>
+        <h2>Configure the chart</h2>
+        <p>Choose a plot type, then select an <strong>X column</strong> and one or more <strong>Y columns</strong> in <strong>Data mappings</strong>. Some plot types show extra required fields; for example, a heatmap asks for a Z column.</p>
+      </li>
+      <li>
+        <h2>Render the plot</h2>
+        <p>Click <strong>Run</strong> in the top bar. If the result is not what you expect, adjust the SQL or mappings and run it again.</p>
+      </li>
+      <li>
+        <h2>Save your workspace</h2>
+        <p>Click <strong>Export workspace</strong> and save the JSON file (plots.json) to the directory from where your ran the <strong>visualize command</strong>. This way, next time you start the webUI, you will resume from where you left off.</p>
+      </li>
+    </ol>
+
+    <div class="tip">To save the result, choose PNG or SVG in the top bar and click <strong>Save image</strong>.</div>
+  </main>
+</body>
+</html>

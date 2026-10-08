@@ -50,17 +50,58 @@ function wireAll() {
   window.wireActionsSidebar();
 }
 
+function parsePlotFieldDefinitions(xmlText) {
+  if (!xmlText) return {};
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.querySelector('parsererror')) throw new Error('Invalid plot_fields.xml');
+  const definitions = {};
+  doc.querySelectorAll('plot-fields > plot').forEach(plot => {
+    definitions[plot.getAttribute('name')] = Array.from(plot.children)
+      .filter(node => node.tagName === 'field')
+      .map(field => ({
+        name: field.getAttribute('name'),
+        label: field.getAttribute('label') || field.getAttribute('name'),
+        type: field.getAttribute('type') || 'text',
+        required: field.getAttribute('required') === 'true',
+        help: field.getAttribute('help') || '',
+        placeholder: field.getAttribute('placeholder') || '',
+        default: field.getAttribute('default') || '',
+        min: field.getAttribute('min'),
+        max: field.getAttribute('max'),
+        step: field.getAttribute('step'),
+        options: Array.from(field.children)
+          .filter(node => node.tagName === 'option')
+          .map(option => ({value: option.getAttribute('value') || option.textContent,
+            label: option.getAttribute('label') || option.textContent})),
+      }));
+  });
+  return definitions;
+}
+
 export async function init() {
-  const [dbRes, ptRes, rsRes, wsRes] = await Promise.all([
+  const [dbRes, ptRes, rsRes, wsRes, fieldXml] = await Promise.all([
     window.api('GET', '/api/databases'),
     window.api('GET', '/api/plot_types'),
     window.api('GET', '/api/remote_systems'),
     window.api('GET', '/api/initial_workspace'),
+    fetch('/static/plot_fields.xml').then(response => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.text();
+    }).catch(error => {
+      clientLog(`Could not load plot field definitions: ${error.message}`, 'warn');
+      return '';
+    }),
   ]);
   G.databases = dbRes.databases || {};
   G.singleDb = !!dbRes.single_db;
   G.defaultDb = dbRes.default_database || '';
   G.plotTypes = ptRes.plot_types || {};
+  try {
+    G.plotFields = parsePlotFieldDefinitions(fieldXml);
+  } catch (error) {
+    G.plotFields = {};
+    clientLog(error.message, 'warn');
+  }
   G.remoteSystems = rsRes.systems || {};
 
   window.renderSchemaTree();

@@ -107,7 +107,7 @@
       <label style="display:flex;gap:3px;align-items:center;font-size:10px"><input type="checkbox" id="grid-share-x-${tabId}" style="width:auto"> share x</label>
       <label style="display:flex;gap:3px;align-items:center;font-size:10px"><input type="checkbox" id="grid-share-y-${tabId}" style="width:auto"> share y</label>
       <label style="display:flex;gap:3px;align-items:center;font-size:10px" title="Use one deduplicated legend for the whole grid"><input type="checkbox" id="grid-share-legend-${tabId}" style="width:auto"> share legend</label>
-      <label style="display:flex;gap:3px;align-items:center;font-size:10px"><input type="checkbox" id="grid-panel-labels-${tabId}" style="width:auto"> (a)(b)(c)</label>
+      <label style="display:flex;gap:3px;align-items:center;font-size:10px"><input type="checkbox" id="grid-panel-labels-${tabId}" style="width:auto">(a)(b)... labels</label>
       <span style="font-size:10px">Figure W/H (in)</span>
       <input class="grid-dimension" type="number" id="grid-figure-width-${tabId}" min="0" step="0.1" title="Figure width in inches; 0 uses subplot width × columns" placeholder="auto">
       <input class="grid-dimension" type="number" id="grid-figure-height-${tabId}" min="0" step="0.1" title="Figure height in inches; 0 uses subplot height × rows" placeholder="auto">

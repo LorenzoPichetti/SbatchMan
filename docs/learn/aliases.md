@@ -9,6 +9,7 @@ The `sbatchman` CLI provides powerful functionality, but the commands can be len
 | Command                         | Alias   |
 |---------------------------------|---------|
 | `sbatchman`                     | `sbm`   |
+| `sbatchman set-cluster-name`    | `sbmscn`|
 | `sbatchman init`                | `sbmi`  |
 | `sbatchman launch`              | `sbml`  |
 | `sbatchman status`              | `sbms`  |
@@ -19,6 +20,7 @@ The `sbatchman` CLI provides powerful functionality, but the commands can be len
 | `sbatchman sync`                | `sbmsy` |
 | `sbatchman fetch`               | `sbmfe` |
 | `sbatchman remotes-config`      | `sbmrc` |
+| `sbatchman visualize`           | `sbmviz`|
 
 Append `h` to any alias to get the help message for the command.
 
@@ -60,6 +62,8 @@ alias sbmsyh='sbatchman sync --help'
 alias sbmfe='sbatchman fetch'
 alias sbmfeh='sbatchman fetch --help'
 alias sbmrc='sbatchman remotes-config'
+alias sbmscn='sbatchman set-cluster-name'
+alias sbmviz='sbatchman visualize'
 # End SbatchMan Aliases
 EOF
 echo "SbatchMan aliases added to $SHELL_RC. Run 'source $SHELL_RC' to activate them."

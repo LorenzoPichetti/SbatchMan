@@ -283,6 +283,15 @@ def _style_axes(ax, right_ax, config, style, title=""):
             ax.yaxis.set_major_formatter(FormatStrFormatter("%" + fmt))
         elif fmt.startswith("%"):
             ax.yaxis.set_major_formatter(DateFormatter(fmt))
+    tick_formatter_source = config.get("tick_formatter", "")
+    if isinstance(tick_formatter_source, str) and tick_formatter_source.strip():
+        from matplotlib.ticker import FuncFormatter
+        from .core import load_tick_formatter
+        formatter = load_tick_formatter(tick_formatter_source)
+        ax.xaxis.set_major_formatter(FuncFormatter(
+            lambda value, _position: str(formatter(value, "x"))))
+        ax.yaxis.set_major_formatter(FuncFormatter(
+            lambda value, _position: str(formatter(value, "y"))))
     for axis in ("x", "y"):
         vals = config.get(f"_mpl_{axis}_tickvals")
         labels = config.get(f"_mpl_{axis}_ticktext")
@@ -335,7 +344,24 @@ def _encode_figure(fig, dpi):
             "image_pdf": base64.b64encode(pdf.getvalue()).decode("ascii")}
 
 
-def render_matplotlib_plot(df, traces, config, style=None, title=""):
+def _call_custom_hook(fn, plt, np, sns, *args):
+    if not callable(fn):
+        return
+    fn.__globals__.update({"plt": plt, "np": np, "sns": sns})
+    fn(*args)
+
+
+def _axis_legend_handles(ax, right_ax=None):
+    handles, labels = ax.get_legend_handles_labels()
+    if right_ax:
+        right_handles, right_labels = right_ax.get_legend_handles_labels()
+        handles += right_handles; labels += right_labels
+    return [(handle, label) for handle, label in zip(handles, labels)
+            if label and not label.startswith("_")]
+
+
+def render_matplotlib_plot(df, traces, config, style=None, title="",
+                           custom_plot_fn=None, layout_fn=None):
     plt, _, np, sns = _modules()
     style = styles.resolve(style)
     sns.set_theme(style="whitegrid" if style.get("grid", True) else "white", context="paper",
@@ -351,15 +377,20 @@ def render_matplotlib_plot(df, traces, config, style=None, title=""):
     bar_traces = [t for t in traces if t.get("type") == "bar"]
     bar_indexes = {id(t): i for i, t in enumerate(bar_traces)}
     handles = []
-    for t in traces:
-        ycol = t.get("_ycol", t.get("name"))
-        trace_color = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color")
-        color = color_map.get(t.get("name"), colors[len(handles) % len(colors)]) if style.get("recolor", True) else trace_color
-        result = _draw_trace(ax, right_ax, t, config, style, color,
-                             bar_indexes.get(id(t), 0), len(bar_traces) or 1)
-        if result: handles.append(result)
+    if callable(custom_plot_fn):
+        _call_custom_hook(custom_plot_fn, plt, np, sns, ax, df, config)
+    else:
+        for t in traces:
+            trace_color = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color")
+            color = color_map.get(t.get("name"), colors[len(handles) % len(colors)]) if style.get("recolor", True) else trace_color
+            result = _draw_trace(ax, right_ax, t, config, style, color,
+                                 bar_indexes.get(id(t), 0), len(bar_traces) or 1)
+            if result: handles.append(result)
     _style_axes(ax, right_ax, config, style, title)
+    if callable(custom_plot_fn):
+        handles = _axis_legend_handles(ax, right_ax)
     _legend(ax, handles, config, style)
+    _call_custom_hook(layout_fn, plt, np, sns, fig, ax, config)
     return _encode_figure(fig, int(style.get("dpi", 300)))
 
 
@@ -375,7 +406,7 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
                              sharex=bool(share_x), sharey=bool(share_y))
     colors = style.get("palette") if isinstance(style.get("palette"), list) else styles.OKABE_ITO
     color_map, all_handles = {}, []
-    shared = legend or {}
+    shared = {**(panels[0].get("config", {}) if panels else {}), **(legend or {})}
     independent = not share_legend
     for i, panel in enumerate(panels):
         r, c = divmod(i, cols)
@@ -388,18 +419,26 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
         bar_traces = [t for t in traces if t.get("type") == "bar"]
         bar_indexes = {id(t): j for j, t in enumerate(bar_traces)}
         handles = []
-        for t in traces:
-            name = t.get("name")
-            if name not in color_map:
-                color_map[name] = colors[len(color_map) % len(colors)]
-            if not style.get("recolor", True):
-                color_map[name] = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color") or colors[0]
-            result = _draw_trace(ax, right_ax, t, config, style, color_map[name],
-                                 bar_indexes.get(id(t), 0), len(bar_traces) or 1)
-            if result:
-                handles.append(result)
-                if name not in {n for _, n in all_handles}:
+        custom_plot_fn = panel.get("_custom_mpl_plot_fn")
+        if callable(custom_plot_fn):
+            _call_custom_hook(custom_plot_fn, plt, np, sns, ax, panel.get("_df_data"), config)
+            handles = _axis_legend_handles(ax, right_ax)
+            for result in handles:
+                if result[1] not in {name for _, name in all_handles}:
                     all_handles.append(result)
+        else:
+            for t in traces:
+                name = t.get("name")
+                if name not in color_map:
+                    color_map[name] = colors[len(color_map) % len(colors)]
+                if not style.get("recolor", True):
+                    color_map[name] = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color") or colors[0]
+                result = _draw_trace(ax, right_ax, t, config, style, color_map[name],
+                                     bar_indexes.get(id(t), 0), len(bar_traces) or 1)
+                if result:
+                    handles.append(result)
+                    if name not in {n for _, n in all_handles}:
+                        all_handles.append(result)
         _style_axes(ax, right_ax, config, style, config.get("title", ""))
         if share_x and r < rows - 1:
             ax.set_xlabel("")
@@ -416,29 +455,31 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
                 **config,
                 "legend_position": config.get("legend_position", shared.get("position", "right")),
                 "legend_title": config.get("legend_title") or shared.get("title", ""),
-                "show_legend": shared.get("show", True) is not False and config.get("show_legend", True) is not False,
+                "show_legend": config.get("show_legend", True) is not False,
             }
             _legend(ax, handles, panel_legend_config, style)
         if panel_labels:
             label = f"({chr(97 + i)})" if panel_labels is True else str(panel_labels[i]) if i < len(panel_labels) else ""
             if label:
                 ax.text(.02, .98, label, transform=ax.transAxes, ha="left", va="top", fontweight="bold")
+        _call_custom_hook(panel.get("_matplotlib_layout_fn"), plt, np, sns, fig, ax, config)
     for i in range(len(panels), rows * cols):
         axes[i // cols][i % cols].set_visible(False)
     if shared.get("show", True) and not independent and all_handles:
-        orientation = style.get("legend_orientation", "auto")
+        orientation = shared.get("legend_orientation") or style.get("legend_orientation", "auto")
         position = shared.get("position", "right")
         horizontal = orientation == "horizontal" or (orientation == "auto" and position in ("top", "bottom"))
         if horizontal and position == "right":
             position = "top"
-        ncols = int(style.get("legend_columns") or 0)
-        nrows = int(style.get("legend_rows") or 0)
+        ncols = int(shared.get("legend_columns") or style.get("legend_columns") or 0)
+        nrows = int(shared.get("legend_rows") or style.get("legend_rows") or 0)
         if not ncols:
             ncols = max(1, math.ceil(len(all_handles) / nrows)) if nrows else (len(all_handles) if horizontal else 1)
         loc = {"right": "center left", "top": "lower center", "bottom": "upper center"}.get(position, "center left")
         anchor = {"right": (1.01, .5), "top": (.5, 1.01), "bottom": (.5, -.01)}.get(position, (1.01, .5))
         fig.legend([h for h, _ in all_handles], [n for _, n in all_handles],
-                   title=shared.get("title") or None, loc=loc, bbox_to_anchor=anchor,
+                   title=shared.get("title") or shared.get("legend_title") or None,
+                   loc=loc, bbox_to_anchor=anchor,
                    ncol=ncols, fontsize=style.get("legend_size", 10), frameon=False)
     fig.tight_layout()
     if rows > 1 or cols > 1:

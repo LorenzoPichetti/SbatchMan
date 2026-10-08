@@ -32,13 +32,14 @@ export function gatherPlotPayload(id) {
     group: st.groupCols,
     marker_by: tabEl(id, 'marker-by')?.value || '',
     dash_by: tabEl(id, 'dash-by')?.value || '',
-    z: tabEl(id, 'z-col')?.value || '',
+    z: st.z || '',
     x_label: tabEl(id, 'x-label')?.value || '',
     y_label: tabEl(id, 'y-label')?.value || '',
     x_scale: tabEl(id, 'x-scale')?.value || 'linear',
     y_scale: tabEl(id, 'y-scale')?.value || 'linear',
     x_tickformat: tabEl(id, 'x-tickfmt')?.value || '',
     y_tickformat: tabEl(id, 'y-tickfmt')?.value || '',
+    tick_formatter: tabEl(id, 'tick-formatter')?.value || '',
     legend_position: tabEl(id, 'legend-position')?.value || 'right',
     legend_title: tabEl(id, 'legend-title')?.value || '',
     legend_orientation: tabEl(id, 'legend-orientation')?.value || '',
@@ -48,6 +49,12 @@ export function gatherPlotPayload(id) {
     show_legend: tabEl(id, 'show-legend')?.checked !== false,
     ...extra,
   };
+  for (const field of G.plotFields[st.plotType] || []) {
+    const input = document.getElementById(`plot-field-${id}-${field.name}`);
+    if (!input) continue;
+    config[field.name] = input.type === 'checkbox' ? input.checked
+      : input.type === 'number' ? (input.value === '' ? '' : Number(input.value)) : input.value;
+  }
   return {
     database: currentDb(id),
     sql: tabEl(id, 'sql-input')?.value.trim() || '',
@@ -90,7 +97,8 @@ export async function runPlot() {
   if (tab.state.mode === 'grid' || tab.state.mode === 'facet') return runGridPlot(tab.id);
 
   const tabId = tab.id;
-  const payload = gatherPlotPayload(tabId);
+  // Addons (axis_addon.js, etc.) extend this payload by wrapping the global.
+  const payload = window.gatherPlotPayload(tabId);
   if (!payload.database || !payload.sql) { setStatus(tabId, 'Set a database and SQL query first', 'err'); return; }
 
   setStatus(tabId, 'Running…', '');
@@ -150,7 +158,9 @@ export async function runGridPlot(tabId) {
 
   const isFacet = tab.state.mode === 'facet';
   const panelIds = isFacet ? grid.panelIds.slice(0, 1) : grid.panelIds;
-  const panels = panelIds.map(pid => gatherPlotPayload(pid));
+  // Use the wrapped global so addon fields such as y2 columns are included
+  // for both ordinary panels and the source panel of a data-driven grid.
+  const panels = panelIds.map(pid => window.gatherPlotPayload(pid));
   const missing = panels.findIndex(p => !p.database || !p.sql);
   if (missing !== -1) { setStatus(tabId, `Panel ${missing + 1}: set a database and SQL query`, 'err'); return; }
 

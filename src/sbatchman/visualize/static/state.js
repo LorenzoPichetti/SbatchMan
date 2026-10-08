@@ -5,6 +5,7 @@
 export const G = {
   databases:  {},
   plotTypes:  {},
+  plotFields: {}, // plot type -> XML-declared UI field definitions
   remoteSystems: {},
   tabs:       [],     // top-level tabs: [{id, label, state}]
   panelState: {},     // panelId -> state (same shape as tab.state), for grid-mode sub-panels
@@ -50,7 +51,8 @@ export function defaultNodeState(base) {
     sql: '', plotType: 'line', columns: [], yCols: [], groupCols: [],
     x: '', markerBy: '', dashBy: '', z: '', extra: {},
     chartTitle: '', xLabel: '', yLabel: '', xScale: 'linear', yScale: 'linear',
-    xTickFmt: '', yTickFmt: '', customScript: '', transformScript: '', layoutScript: '',
+    plotFields: {},
+    xTickFmt: '', yTickFmt: '', tickFormatter: '', customScript: '', transformScript: '', layoutScript: '',
     rendererBackend: 'matplotlib',
     legendPosition: 'right', legendTitle: '', showLegend: true,
   }, base || {});

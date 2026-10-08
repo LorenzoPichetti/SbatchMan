@@ -1,8 +1,9 @@
 """Plotly layout construction: axes, ticks, legend sizing, subplot grid geometry."""
 import math
+from numbers import Real
 
 from . import styles
-from .core import log
+from .core import load_tick_formatter, log
 
 BASE_H, MT, MB, MR = 420, 64, 70, 30
 MAX_MR, MAX_CENTER_W, ITEM_H, CHAR_W, CHROME, TOP_GAP = 520, 1400, 24, 0.62, 46, 14
@@ -40,6 +41,46 @@ def _set_ticks(axis, vals):
     if vals:
         axis.update(tickmode="array", tickvals=vals,
                     ticktext=[str(int(v)) if float(v).is_integer() else str(v) for v in vals])
+
+
+def _apply_custom_tick_formatter(axis_spec, axis_name, config, traces):
+    source = config.get("tick_formatter", "")
+    if not isinstance(source, str) or not source.strip():
+        return
+    # Preserve explicitly requested tick positions; otherwise use values from
+    # the plotted traces because Plotly cannot call a Python formatter in the browser.
+    explicit = config.get(f"{axis_name}_tickvals")
+    if explicit:
+        values = list(explicit) if isinstance(explicit, (list, tuple)) else str(explicit).split(",")
+    else:
+        values, seen = [], set()
+        for trace in traces:
+            raw = trace.get(axis_name)
+            if raw is None:
+                continue
+            raw = raw if isinstance(raw, (list, tuple)) else [raw]
+            for value in raw:
+                if value is None:
+                    continue
+                key = repr(value)
+                if key not in seen:
+                    seen.add(key)
+                    values.append(value)
+        if values and all(isinstance(v, Real) and not isinstance(v, bool) for v in values):
+            values.sort(key=float)
+        # For numeric and date axes, select at most ten representative
+        # positions. Keep all categories so the labels still match each value.
+        numeric = bool(values) and all(isinstance(v, Real) and not isinstance(v, bool) for v in values)
+        limit = 10 if numeric or config.get(f"{axis_name}_scale") == "date" else None
+        if limit and len(values) > limit:
+            indexes = sorted({round(i * (len(values) - 1) / (limit - 1)) for i in range(limit)})
+            values = [values[i] for i in indexes]
+    if not values:
+        return
+    formatter = load_tick_formatter(source)
+    axis_spec.update(tickmode="array", tickvals=values,
+                     ticktext=[str(formatter(value, axis_name)) for value in values])
+    axis_spec.pop("tickformat", None)
 
 
 def _apply_range(axis, config, k):
@@ -101,6 +142,8 @@ def build_layout(config, overrides=None, traces=None, style=None):
     x_ticks, y_ticks = _ticks_from(config.get("x_tickvals")), _ticks_from(config.get("y_tickvals"))
     _set_ticks(xaxis, x_ticks)
     _set_ticks(yaxis, y_ticks)
+    _apply_custom_tick_formatter(xaxis, "x", config, traces)
+    _apply_custom_tick_formatter(yaxis, "y", config, traces)
     if x_ticks: xaxis.pop("dtick", None)
     if y_ticks: yaxis.pop("dtick", None)
     _apply_range(xaxis, config, "x")

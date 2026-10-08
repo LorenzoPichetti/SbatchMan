@@ -53,6 +53,7 @@ export function renderPlotChips(id) {
       st.plotType = key;
       wrap.querySelectorAll('.plot-chip').forEach(c => c.classList.toggle('active', c.dataset.type === key));
       renderExtraOpts(id);
+      renderPlotSpecificFields(id);
     });
     wrap.appendChild(ch);
   }
@@ -68,12 +69,83 @@ export function renderExtraOpts(id) {
   for (const [key, val] of Object.entries(pt.defaults || {})) {
     const wrap = document.createElement('div');
     const lbl = document.createElement('label'); lbl.textContent = key;
+    if (key === 'mode') {
+      lbl.title = 'For line charts: choose lines, markers, or both. Supported by Plotly and Matplotlib.';
+    }
     const inp = document.createElement('input');
     inp.id = `extra-${id}-${key}`;
     inp.value = st.extra?.[key] ?? val;
     inp.type = typeof val === 'number' ? 'number' : 'text';
     wrap.appendChild(lbl); wrap.appendChild(inp);
+    if (key === 'mode') {
+      const hint = document.createElement('small');
+      hint.textContent = 'Line, markers, or both (Plotly and Matplotlib)';
+      hint.style.cssText = 'display:block;color:var(--text3);font-size:9px';
+      wrap.appendChild(hint);
+    }
     area.appendChild(wrap);
+  }
+}
+
+export function renderPlotSpecificFields(id) {
+  const panel = document.getElementById(`plot-specific-fields-${id}`);
+  const controls = document.getElementById(`plot-field-controls-${id}`);
+  const st = getState(id);
+  if (!panel || !controls || !st) return;
+  const fields = G.plotFields[st.plotType] || [];
+  panel.hidden = fields.length === 0;
+  controls.replaceChildren();
+
+  for (const field of fields) {
+    const wrap = document.createElement('div');
+    wrap.className = 'plot-specific-field';
+    const label = document.createElement('label');
+    label.htmlFor = `plot-field-${id}-${field.name}`;
+    label.textContent = `${field.label}${field.required ? ' *' : ''}`;
+    if (field.help) label.title = field.help;
+    wrap.appendChild(label);
+
+    let input;
+    if (field.type === 'column' || field.type === 'select') {
+      input = document.createElement('select');
+      const empty = document.createElement('option');
+      empty.value = '';
+      empty.textContent = field.required ? '— select a column —' : '— none —';
+      input.appendChild(empty);
+      const options = field.type === 'column'
+        ? (st.columns || []).map(value => ({value, label: value}))
+        : field.options;
+      options.forEach(option => {
+        const el = document.createElement('option');
+        el.value = option.value;
+        el.textContent = option.label;
+        input.appendChild(el);
+      });
+    } else if (field.type === 'textarea') {
+      input = document.createElement('textarea');
+    } else {
+      input = document.createElement('input');
+      input.type = field.type === 'number' ? 'number' : field.type === 'checkbox' ? 'checkbox' : 'text';
+      if (field.min !== null) input.min = field.min;
+      if (field.max !== null) input.max = field.max;
+      if (field.step !== null) input.step = field.step;
+    }
+    input.id = `plot-field-${id}-${field.name}`;
+    input.required = !!field.required;
+    if (field.placeholder && input.type !== 'checkbox') input.placeholder = field.placeholder;
+    const legacyValue = field.name === 'z' ? st.z : undefined;
+    const value = st.extra?.[field.name] ?? legacyValue ?? field.default ?? '';
+    if (input.type === 'checkbox') input.checked = value === true || value === 'true';
+    else input.value = value;
+    input.addEventListener('change', () => {
+      const current = getState(id);
+      if (!current.extra) current.extra = {};
+      current.extra[field.name] = input.type === 'checkbox' ? input.checked
+        : input.type === 'number' ? (input.value === '' ? '' : Number(input.value)) : input.value;
+      if (field.name === 'z') current.z = input.value;
+    });
+    wrap.appendChild(input);
+    controls.appendChild(wrap);
   }
 }
 
@@ -84,20 +156,19 @@ export function updateAxisControls(id, columns) {
   st.columns = columns;
   st.yCols = toArray(st.yCols).filter(c => columns.includes(c));
   st.groupCols = toArray(st.groupCols).filter(c => columns.includes(c));
+  renderPlotSpecificFields(id);
 
   const xSel = tabEl(id, 'x-col');
-  const zSel = tabEl(id, 'z-col');
   const markerSel = tabEl(id, 'marker-by');
   const dashSel = tabEl(id, 'dash-by');
   const yPills = document.getElementById(`y-pills-${id}`);
   const grpPills = document.getElementById(`group-pills-${id}`);
   if (!xSel || !yPills) return;
 
-  const prevX = xSel.value, prevZ = zSel?.value, prevMarker = markerSel?.value, prevDash = dashSel?.value;
+  const prevX = xSel.value, prevMarker = markerSel?.value, prevDash = dashSel?.value;
   const mkOpt = (v, sel) => { const o = document.createElement('option'); o.value = v; o.textContent = v; if (v === sel) o.selected = true; return o; };
 
   xSel.innerHTML = '<option value="">— x column —</option>';
-  if (zSel) zSel.innerHTML = '<option value="">— none —</option>';
   if (markerSel) markerSel.innerHTML = '<option value="">— none —</option>';
   if (dashSel) dashSel.innerHTML = '<option value="">— none —</option>';
   yPills.innerHTML = '';
@@ -105,7 +176,6 @@ export function updateAxisControls(id, columns) {
 
   for (const col of columns) {
     xSel.appendChild(mkOpt(col, prevX || st.x));
-    if (zSel) zSel.appendChild(mkOpt(col, prevZ || st.z));
     if (markerSel) markerSel.appendChild(mkOpt(col, prevMarker || st.markerBy));
     if (dashSel) dashSel.appendChild(mkOpt(col, prevDash || st.dashBy));
 
@@ -171,11 +241,15 @@ export function builderColumnsHTML(id) {
           <svg id="script-arrow-${id}" width="9" height="9" viewBox="0 0 16 16" fill="currentColor" style="margin-left:auto;transition:transform .2s"><path d="M4 6l4 4 4-4"/></svg>
         </div>
         <div class="script-box" id="script-box-${id}">
-          <div class="script-hint">def <b>plot</b>(df_data, config) → list of Plotly trace dicts. Overrides the plot-type chips above.</div>
-          <textarea id="script-${id}" class="code-editor python-editor" spellcheck="false" aria-label="Custom Python plot script" placeholder="def plot(df_data, config):&#10;    # return list of Plotly trace dicts&#10;    ..."></textarea>
+          <div class="script-hint">Define <code>plot(df_data, config)</code> to return Plotly traces, or <code>plot_matplotlib(ax, df_data, config)</code> to draw directly with Matplotlib. You can define both; each backend uses its matching function. <code>df_data</code> has <code>columns</code> and <code>rows</code>.</div>
+          <textarea id="script-${id}" class="code-editor python-editor" spellcheck="false" aria-label="Custom Python plot script" placeholder="def plot_matplotlib(ax, df_data, config):&#10;    x = df_data['columns'].index(config['x'])&#10;    y = df_data['columns'].index(config['y'][0])&#10;    ax.scatter([r[x] for r in df_data['rows']],&#10;               [r[y] for r in df_data['rows']])"></textarea>
         </div>
       </div>
       <div class="extra-opts" id="extra-opts-${id}"></div>
+      <div class="plot-specific-fields" id="plot-specific-fields-${id}" hidden>
+        <div class="b-col-title">Plot-specific fields</div>
+        <div id="plot-field-controls-${id}"></div>
+      </div>
     </div>
 
     <div class="b-col" style="min-width:180px">
@@ -190,8 +264,6 @@ export function builderColumnsHTML(id) {
       <select id="marker-by-${id}"><option value="">— none —</option></select>
       <label style="margin-top:5px" data-tip="Assign a distinct linestyle (solid/dash/dot/…) to each value of this column (line charts)">Linestyle by</label>
       <select id="dash-by-${id}"><option value="">— none —</option></select>
-      <label style="margin-top:5px" data-tip="Z column for heatmaps">Z column (heatmap)</label>
-      <select id="z-col-${id}"><option value="">— none —</option></select>
     </div>
 
     <div class="b-col" style="min-width:180px">
@@ -216,6 +288,9 @@ export function builderColumnsHTML(id) {
       <input type="text" id="x-tickfmt-${id}" placeholder=".2f">
       <label style="margin-top:5px">Y tick format</label>
       <input type="text" id="y-tickfmt-${id}" placeholder=".2f">
+      <label style="margin-top:7px" data-tip="Optional Python formatter. When set, it takes precedence over the X/Y tick format strings above.">Custom tick formatter (Python)</label>
+      <textarea id="tick-formatter-${id}" class="tick-formatter-editor code-editor python-editor" spellcheck="false" aria-label="Python tick formatter" placeholder="def format_tick(value, axis):&#10;    return f'{value:g}'"></textarea>
+      <div class="script-hint">Define <code>format_tick(value, axis)</code>; <code>axis</code> is <code>'x'</code> or <code>'y'</code>. Return the label as a string. It is used for both plotting backends.</div>
       <label style="margin-top:5px" data-tip="Where the legend sits. The 'inside' options give the compact, journal-figure look when there's an empty corner to put it in.">Legend position</label>
       <select id="legend-position-${id}">
         <option value="right">outside right</option>
@@ -251,10 +326,10 @@ export function builderColumnsHTML(id) {
         </div>
         <div class="script-box" id="layout-box-${id}">
           <div class="script-hint">
-            <b>What this is:</b> everything above (title, labels, scales, tick format) covers the common cases. This box is for anything else Plotly supports — it's a few lines of Python that edit the chart's <code>layout</code> dictionary directly before the chart is drawn.<br><br>
-            <b>How to use it:</b> the variable <code>layout</code> is already built from your settings above; just change the part you need, e.g. <code>layout['xaxis']['tickangle'] = 45</code>. <code>config</code> holds your current axis/label settings (read-only), and <code>log(msg)</code> prints to the Logs panel.
+            <b>Plotly:</b> edit the supplied <code>layout</code> dictionary, for example <code>layout['xaxis']['tickangle'] = 45</code>.<br>
+            <b>Matplotlib:</b> optionally define <code>customize_matplotlib(fig, ax, config)</code> to edit the figure or axes directly. In a subplot grid, <code>ax</code> is the current panel's axes. <code>log(msg)</code> writes to the Logs panel.
           </div>
-          <textarea id="layout-script-${id}" class="code-editor python-editor" spellcheck="false" aria-label="Python layout script" placeholder="layout['xaxis']['tickangle'] = 45&#10;layout['yaxis']['range'] = [0, 100]"></textarea>
+          <textarea id="layout-script-${id}" class="code-editor python-editor" spellcheck="false" aria-label="Python layout script" placeholder="layout['xaxis']['tickangle'] = 45&#10;&#10;def customize_matplotlib(fig, ax, config):&#10;    ax.grid(True, alpha=0.25)"></textarea>
         </div>
       </div>
     </div>`;
@@ -267,6 +342,7 @@ export function wireBuilderColumns(id) {
 
   renderPlotChips(id);
   renderExtraOpts(id);
+  renderPlotSpecificFields(id);
 
   const f = (sid, val) => { const el = document.getElementById(sid); if (el && val !== undefined) el.value = val; };
   f(`db-select-${id}`, st.database);
@@ -278,6 +354,7 @@ export function wireBuilderColumns(id) {
   f(`y-scale-${id}`, st.yScale);
   f(`x-tickfmt-${id}`, st.xTickFmt);
   f(`y-tickfmt-${id}`, st.yTickFmt);
+  f(`tick-formatter-${id}`, st.tickFormatter);
   f(`legend-position-${id}`, st.legendPosition || 'right');
   f(`legend-title-${id}`, st.legendTitle);
   f(`legend-orientation-${id}`, st.legendOrientation || '');
@@ -410,6 +487,6 @@ document.addEventListener('keydown', event => {
 });
 
 Object.assign(window, {
-  renderDataTable, renderMultiPreview, renderPlotChips, renderExtraOpts,
+  renderDataTable, renderMultiPreview, renderPlotChips, renderExtraOpts, renderPlotSpecificFields,
   updateAxisControls, builderColumnsHTML, wireBuilderColumns, runShow,
 });

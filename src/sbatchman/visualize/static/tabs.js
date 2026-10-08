@@ -57,6 +57,7 @@ export function workspaceHTML(id) {
     <label style="display:flex;align-items:center;gap:4px;margin:0">Title format
       <input type="text" id="facet-label-format-${id}" placeholder="{column}={value}" title="Placeholders: {column} and {value}" style="width:150px;padding:3px 5px">
     </label>
+    <!-- <span style="font-size:10px;color:var(--text3)" title="Legend rows, columns, and orientation come from Panel 1's Appearance &amp; legend section">Legend layout: Panel 1 → Appearance &amp; legend (uncheck share legend for per-facet legends)</span> -->
   </span>
   <span id="grid-shared-controls-${id}" style="display:none;align-items:center;gap:6px"></span>
 </div>

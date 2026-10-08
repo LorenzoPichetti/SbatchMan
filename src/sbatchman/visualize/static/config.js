@@ -44,6 +44,15 @@ export function getNodeConfig(id) {
     const val = isNaN(inp.value) ? inp.value : Number(inp.value);
     if (String(val) !== String(defVal)) extra[key] = val; // only non-default values
   }
+  for (const field of G.plotFields[st.plotType] || []) {
+    const input = document.getElementById(`plot-field-${id}-${field.name}`);
+    if (!input) continue;
+    const val = input.type === 'checkbox' ? input.checked
+      : input.type === 'number' ? (input.value === '' ? '' : Number(input.value)) : input.value;
+    const defaultValue = input.type === 'checkbox' ? field.default === 'true'
+      : input.type === 'number' && field.default !== '' ? Number(field.default) : field.default || '';
+    if (val !== defaultValue) extra[field.name] = val;
+  }
   const raw = {
     database: window.currentDb ? window.currentDb(id) : (G.singleDb ? G.defaultDb : document.getElementById(`db-select-${id}`)?.value) || '',
     sql: document.getElementById(`sql-input-${id}`)?.value || '',
@@ -55,13 +64,14 @@ export function getNodeConfig(id) {
     group: st.groupCols,
     markerBy: document.getElementById(`marker-by-${id}`)?.value || '',
     dashBy: document.getElementById(`dash-by-${id}`)?.value || '',
-    z: document.getElementById(`z-col-${id}`)?.value || '',
+    z: document.getElementById(`plot-field-${id}-z`)?.value || st.z || '',
     xLabel: document.getElementById(`x-label-${id}`)?.value || '',
     yLabel: document.getElementById(`y-label-${id}`)?.value || '',
     xScale: (document.getElementById(`x-scale-${id}`)?.value || 'linear') === 'linear' ? '' : document.getElementById(`x-scale-${id}`).value,
     yScale: (document.getElementById(`y-scale-${id}`)?.value || 'linear') === 'linear' ? '' : document.getElementById(`y-scale-${id}`).value,
     xTickFmt: document.getElementById(`x-tickfmt-${id}`)?.value || '',
     yTickFmt: document.getElementById(`y-tickfmt-${id}`)?.value || '',
+    tickFormatter: document.getElementById(`tick-formatter-${id}`)?.value || '',
     legendPosition: (document.getElementById(`legend-position-${id}`)?.value || 'right') === 'right' ? '' : document.getElementById(`legend-position-${id}`).value,
     legendTitle: document.getElementById(`legend-title-${id}`)?.value || '',
     legendOrientation: document.getElementById(`legend-orientation-${id}`)?.value || '',
@@ -90,6 +100,7 @@ export function applyNodeConfig(id, cfg) {
   f('y-scale', cfg.yScale || 'linear');
   f('x-tickfmt', cfg.xTickFmt || '');
   f('y-tickfmt', cfg.yTickFmt || '');
+  f('tick-formatter', cfg.tickFormatter || '');
   f('legend-position', cfg.legendPosition || 'right');
   f('legend-title', cfg.legendTitle || '');
   f('legend-orientation', cfg.legendOrientation || '');
@@ -113,6 +124,7 @@ export function applyNodeConfig(id, cfg) {
   st.markerBy = cfg.markerBy || '';
   st.dashBy = cfg.dashBy || '';
   st.extra = cfg.extra || {};
+  if (cfg.z && st.extra.z === undefined) st.extra.z = cfg.z;
   st.customScript = cfg.customScript || '';
   st.transformScript = cfg.transformScript || '';
   st.layoutScript = cfg.layoutScript || '';
@@ -123,12 +135,12 @@ export function applyNodeConfig(id, cfg) {
   // subtleties if a future addon ever does wrap them.
   window.renderPlotChips(id);
   window.renderExtraOpts(id);
+  window.renderPlotSpecificFields(id);
   if (st.columns.length) {
     window.updateAxisControls(id, st.columns);
     window.updateFacetGroupColumns?.(id, st.columns);
   }
   f('x-col', st.x);
-  f('z-col', st.z);
   for (const [key, val] of Object.entries(cfg.extra || {})) {
     const inp = document.getElementById(`extra-${id}-${key}`);
     if (inp) inp.value = val;
@@ -143,7 +155,6 @@ export function applyNodeConfig(id, cfg) {
     setTimeout(() => window.runShow(id).then(() => {
       setTimeout(() => {
         f('x-col', cfg.x || '');
-        f('z-col', cfg.z || '');
         f('marker-by', st.markerBy);
         f('dash-by', st.dashBy);
       }, 0);

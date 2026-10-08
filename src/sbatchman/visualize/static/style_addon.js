@@ -111,8 +111,8 @@
   async function syncPanels(tabId) {
     const g = getState(tabId).grid, src = g.activePanel;
     const withSql = confirm('Also copy SQL / transform scripts? (Cancel = keep each panel\'s own query)');
-    const ids = ['x-label', 'y-label', 'x-scale', 'y-scale', 'x-tickfmt', 'y-tickfmt', 'legend-position', 'legend-title',
-      'marker-by', 'dash-by', 'z-col', 'layout-script', 'script', ...(withSql ? ['sql-input', 'transform'] : [])];
+    const ids = ['x-label', 'y-label', 'x-scale', 'y-scale', 'x-tickfmt', 'y-tickfmt', 'tick-formatter', 'legend-position', 'legend-title',
+      'marker-by', 'dash-by', 'layout-script', 'script', ...(withSql ? ['sql-input', 'transform'] : [])];
     const s0 = getState(src);
     for (const pid of g.panelIds.filter(p => p !== src)) {
       const st = getState(pid);
@@ -120,6 +120,7 @@
       const c = document.getElementById(`show-legend-${pid}`); if (c) c.checked = document.getElementById(`show-legend-${src}`).checked;
       Object.assign(st, {plotType: s0.plotType, yCols: [...s0.yCols], groupCols: [...s0.groupCols], extra: {...s0.extra}});
       renderPlotChips(pid); renderExtraOpts(pid);
+      window.renderPlotSpecificFields(pid);
       const x = document.getElementById(`x-col-${src}`).value;
       await runShow(pid); const xs = document.getElementById(`x-col-${pid}`); if (xs) xs.value = x;
     }

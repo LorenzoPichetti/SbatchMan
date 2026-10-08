@@ -51,6 +51,10 @@ export function renderTableList(container, dbName, tables) {
     const ti = document.createElement('div');
     ti.className = 'table-item';
     ti.innerHTML = '<svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="14" height="14" rx="1"/><line x1="1" y1="5.5" x2="15" y2="5.5"/><line x1="6" y1="5.5" x2="6" y2="15"/></svg>';
+    const expandIcon = document.createElement('span');
+    expandIcon.className = 'table-expand-icon';
+    expandIcon.textContent = '▾';
+    ti.append(expandIcon);
     ti.append(makeCopyableName(tname, 'table'));
     const badge = document.createElement('span');
     badge.className = 'badge';
@@ -76,6 +80,8 @@ export function renderTableList(container, dbName, tables) {
       e.stopPropagation();
       colsOpen = !colsOpen;
       colsDiv.style.display = colsOpen ? 'block' : 'none';
+      expandIcon.classList.toggle('expanded', colsOpen);
+      ti.setAttribute('aria-expanded', String(colsOpen));
       const id = activeBuilderId();
       if (id) {
         const sel = tabEl(id, 'db-select');

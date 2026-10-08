@@ -1,5 +1,6 @@
 """Server log, user-script execution, initial-workspace autoload."""
 import json
+import math
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -29,10 +30,19 @@ def _exec(source, name, ns):
 
 
 def run_custom_plot_script(source, df_data, config):
-    ns = _exec(source, "<custom_plot>", {"pd": pd, "log": log, "agg": agg})
-    if "plot" not in ns:
-        raise ValueError("Custom script must define a `plot(df_data, config)` function.")
-    return ns["plot"](df_data, config)
+    ns = load_custom_plot_script(source)
+    plot = ns.get("plot")
+    if not callable(plot):
+        raise ValueError(
+            "For Plotly, custom script must define plot(df_data, config). "
+            "For Matplotlib, define plot_matplotlib(ax, df_data, config)."
+        )
+    return plot(df_data, config)
+
+
+def load_custom_plot_script(source):
+    """Execute a custom plot script and return its namespace for either backend."""
+    return _exec(source, "<custom_plot>", {"pd": pd, "log": log, "agg": agg})
 
 
 def run_transform_script(source, data, log_fn):
@@ -46,6 +56,21 @@ def run_transform_script(source, data, log_fn):
 def run_layout_script(source, layout, config, log_fn):
     ns = _exec(source, "<layout_script>", {"layout": layout, "config": config, "log": log_fn})
     return ns.get("layout", layout)
+
+
+def run_layout_script_with_hooks(source, layout, config, log_fn):
+    """Run Plotly layout edits and return an optional Matplotlib layout hook."""
+    ns = _exec(source, "<layout_script>", {"layout": layout, "config": config, "log": log_fn})
+    return ns.get("layout", layout), ns.get("customize_matplotlib")
+
+
+def load_tick_formatter(source):
+    """Compile a user tick formatter, which must define format_tick(value, axis)."""
+    ns = _exec(source, "<tick_formatter>", {"math": math, "pd": pd})
+    formatter = ns.get("format_tick")
+    if not callable(formatter):
+        raise ValueError("Custom tick formatter must define format_tick(value, axis).")
+    return formatter
 
 
 _WORKSPACE = None

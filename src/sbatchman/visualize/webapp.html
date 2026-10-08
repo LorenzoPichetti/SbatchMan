@@ -124,6 +124,10 @@ textarea{resize:vertical}
 
 .extra-opts{display:flex;flex-wrap:wrap;gap:8px}
 .extra-opts>div{flex:1;min-width:100px}
+.plot-specific-fields{margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.plot-specific-fields[hidden]{display:none}
+.plot-specific-field{margin-top:5px}
+.plot-specific-field label{display:block}
 
 .plot-area{flex:1;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;min-height:0}
 .plotly-wrap{flex:1;min-height:0;min-width:0;position:relative;background:#fff;overflow:hidden}
@@ -176,6 +180,8 @@ table.data-table tr:hover td{background:var(--bg3)}
 .table-item{display:flex;align-items:center;gap:5px;padding:2px 4px;border-radius:4px;cursor:pointer;
   color:var(--text2);font-family:var(--mono);font-size:10px;transition:all .12s}
 .table-item:hover{background:var(--bg4);color:var(--text)}
+.table-expand-icon{display:inline-block;width:9px;flex:0 0 9px;color:var(--text3);font-size:11px;line-height:1;text-align:center;transition:transform .12s}
+.table-expand-icon.expanded{transform:rotate(180deg)}
 .schema-copy-name{display:inline-flex;align-items:center;gap:4px;cursor:copy}
 .schema-copy-name::after{content:'⧉';font-family:var(--sans);font-size:10px;color:var(--accent2);opacity:0;transition:opacity .12s}
 .schema-copy-name:hover::after,.schema-copy-name:focus-visible::after{opacity:.9}
@@ -239,6 +245,7 @@ table.data-table tr:hover td{background:var(--bg3)}
 .code-editor:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,212,212,.12)}
 .sql-editor{min-height:145px}
 .python-editor{min-height:175px}
+.python-editor.tick-formatter-editor{min-height:88px}
 .grid-dimension{width:4rem!important;min-width:4rem!important;padding:3px 4px!important;color:#f0f6fc!important;background:#0b1016!important;
   border-color:#66717f!important;font-size:12px!important;font-weight:600;letter-spacing:.01em}
 .grid-gap{width:4rem!important;min-width:4rem!important;padding:3px 4px!important;color:#f0f6fc!important;background:#0b1016!important;
