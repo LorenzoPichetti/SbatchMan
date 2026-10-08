@@ -27,11 +27,10 @@ dependencies = [
     "pandas",
     "paramiko",
     "tomli_w",
-    "pysqlite3",
 ]
 
 [project.optional-dependencies]
-visualization = ["matplotlib>=3.5", "seaborn>=0.12"]
+visualization = ["pysqlite3", "matplotlib>=3.5", "seaborn>=0.12", "numpy"]
 
 [project.urls]
 "Homepage" = "https://github.com/LorenzoPichetti/SbatchMan"
