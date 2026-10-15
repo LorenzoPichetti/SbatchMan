@@ -12,10 +12,26 @@
 // behind this rule; getting it wrong here is exactly how three class of
 // regression already slipped into earlier chunks before being caught.
 import { G, getState, toArray } from './state.js';
-import { clientLog } from './log.js';
+import { api, clientLog } from './log.js';
 import './builder.js';
 import './tabs.js';
 import './grid.js';
+
+let SCRIPT_PATHS = [];
+
+async function mergeScriptPaths(paths = SCRIPT_PATHS) {
+  const result = await api('POST', '/api/script_paths/merge', { paths });
+  if (result.error || !result.ok) throw new Error(result.error || 'Could not save Python script paths.');
+  SCRIPT_PATHS = result.paths || [];
+  return SCRIPT_PATHS;
+}
+
+async function loadScriptPaths() {
+  const result = await api('GET', '/api/script_paths');
+  if (result.error) throw new Error(result.error);
+  SCRIPT_PATHS = result.paths || [];
+  return result;
+}
 
 function isEmptyVal(v) {
   return v === '' || v === null || v === undefined ||
@@ -57,7 +73,6 @@ export function getNodeConfig(id) {
     database: window.currentDb ? window.currentDb(id) : (G.singleDb ? G.defaultDb : document.getElementById(`db-select-${id}`)?.value) || '',
     sql: document.getElementById(`sql-input-${id}`)?.value || '',
     plotType: st.plotType,
-    columns: st.columns,
     chartTitle: document.getElementById(`chart-title-${id}`)?.value || '',
     x: document.getElementById(`x-col-${id}`)?.value || '',
     y: st.yCols,
@@ -111,6 +126,9 @@ export function applyNodeConfig(id, cfg) {
   f('script', cfg.customScript || '');
   f('transform', cfg.transformScript || '');
   f('layout-script', cfg.layoutScript || '');
+  // Configuration import assigns textarea values programmatically, so refresh
+  // the visual layer explicitly. This does not alter any editor value.
+  window.enhanceCodeEditors?.(document.getElementById(`builder-inner-${id}`) || document);
 
   st.database = cfg.database || st.database;
   st.plotType = cfg.plotType || 'line';
@@ -165,16 +183,12 @@ export function applyNodeConfig(id, cfg) {
 export function getTabConfig(tabId) {
   const tab = G.tabs.find(t => t.id === tabId);
   if (!tab) return null;
-  const mode = tab.state.mode || 'single';
+  const mode = tab.state.mode === 'facet' ? 'facet' : 'grid';
   const cfg = { version: 3, label: tab.label, mode,
     rendererBackend: tab.state.rendererBackend || 'matplotlib' };
-  if (mode === 'grid' || mode === 'facet') {
-    // Keep the tab's own builder too: it remains configured while the grid
-    // panel builders are active and can be selected again later.
-    cfg.single = window.getNodeConfig(tabId);
-  } else {
-    Object.assign(cfg, window.getNodeConfig(tabId));
-  }
+  // Retain the tab-level builder config for compatibility and to avoid
+  // dropping values from workspaces created before the grid conversion.
+  cfg.single = window.getNodeConfig(tabId);
   if (tab.state.grid) {
     cfg.grid = {
       rows: tab.state.grid.rows, cols: tab.state.grid.cols,
@@ -192,7 +206,7 @@ function restoreGridConfig(tabId, grid, mode) {
   const tab = G.tabs.find(t => t.id === tabId);
   if (!tab || !grid) return;
   // Construct panels through the wrapped API so addon controls are wired for
-  // every imported grid, including a grid saved while Single plot was active.
+  // every imported grid, including a grid saved before the mode conversion.
   window.setFigureMode(tabId, mode === 'facet' ? 'facet' : 'grid');
   document.getElementById(`grid-rows-${tabId}`).value = grid.rows || 1;
   document.getElementById(`grid-cols-${tabId}`).value = grid.cols || 1;
@@ -203,11 +217,15 @@ function restoreGridConfig(tabId, grid, mode) {
   const activeIndex = Math.min(tab.state.grid.panelIds.length - 1,
     Math.max(0, Number(grid.activePanelIndex) || 0));
   if (tab.state.grid.panelIds[activeIndex]) window.showBuilderFor(tabId, tab.state.grid.panelIds[activeIndex]);
-  if (mode === 'single') window.setFigureMode(tabId, 'single');
 }
 
 export function applyTabConfig(tabId, cfg) {
   if (!cfg || cfg.version < 2) { alert('Invalid or incompatible config (expected version 2 or later).'); return; }
+  if (cfg.script_paths?.length) {
+    mergeScriptPaths(cfg.script_paths).catch(e => {
+      clientLog(`Could not register config Python paths: ${e.message}`, 'error');
+    });
+  }
   const tab = G.tabs.find(t => t.id === tabId);
   if (!tab) return;
   tab.label = cfg.label || tab.label;
@@ -217,22 +235,29 @@ export function applyTabConfig(tabId, cfg) {
   const lbl = document.querySelector(`#tabbtn-${tabId} .tab-label`);
   if (lbl) lbl.textContent = tab.label;
 
-  const mode = ['grid', 'facet'].includes(cfg.mode) ? cfg.mode : 'single';
+  // Legacy exports used mode="single" with the node config at the root.
+  // Load these as a one-panel static grid so their settings remain intact.
+  const mode = cfg.mode === 'facet' ? 'facet' : 'grid';
   if (cfg.grid) restoreGridConfig(tabId, cfg.grid, mode);
+  else {
+    window.setFigureMode(tabId, 'grid');
+    const firstPanel = G.tabs.find(t => t.id === tabId)?.state.grid?.panelIds?.[0];
+    if (firstPanel) window.applyNodeConfig(firstPanel, cfg.single || cfg);
+  }
   const radios = document.getElementsByName(`mode-${tabId}`);
   radios.forEach(r => { r.checked = (r.value === mode); });
-  if (mode === 'single') {
-    window.setFigureMode(tabId, 'single');
-    window.applyNodeConfig(tabId, cfg.single || cfg);
-  } else if (cfg.single) {
-    window.applyNodeConfig(tabId, cfg.single);
-  }
+  if (cfg.grid && cfg.single) window.applyNodeConfig(tabId, cfg.single);
   window.setStatus(tabId, 'Config loaded — click Run to render', 'warn');
   clientLog(`Config imported into tab "${tab.label}"`);
 }
 
 export function applyWorkspace(ws, sourceLabel) {
   if (!ws?.tabs?.length) { alert('Invalid workspace file.'); return; }
+  if (ws.script_paths?.length) {
+    mergeScriptPaths(ws.script_paths).catch(e => {
+      clientLog(`Could not register workspace Python paths: ${e.message}`, 'error');
+    });
+  }
   [...G.tabs].forEach(t => window.closeTab(t.id));
   G.tabs = [];
   document.querySelectorAll('.plot-tab').forEach(el => el.remove());
@@ -258,7 +283,12 @@ export function download(text, filename) {
 
 export function readJson(file, cb) {
   const r = new FileReader();
-  r.onload = ev => { try { cb(JSON.parse(ev.target.result)); } catch (e) { alert('Could not parse JSON: ' + e.message); } };
+  r.onload = ev => {
+    try {
+      Promise.resolve(cb(JSON.parse(ev.target.result)))
+        .catch(e => alert('Could not load JSON: ' + e.message));
+    } catch (e) { alert('Could not parse JSON: ' + e.message); }
+  };
   r.readAsText(file);
 }
 
@@ -330,30 +360,68 @@ function openWorkspaceExportMenu(button, json, filename) {
 }
 
 export function wireConfigControls() {
-  document.getElementById('btn-export-config').addEventListener('click', () => {
-    // window.getTabConfig/window.download: grid_addon.js wraps the former,
-    // style_addon.js wraps the latter (though style_addon's wrap only
-    // touches objects shaped like a workspace, {tabs:[...]}, so a single
-    // tab's config export is passed through untouched by design there).
+  const pathsDialog = document.getElementById('script-paths-dialog');
+  const pathsInput = document.getElementById('script-paths-input');
+  const pathsFile = document.getElementById('script-paths-file');
+  document.getElementById('btn-script-paths').addEventListener('click', async () => {
+    try {
+      const result = await loadScriptPaths();
+      pathsInput.value = SCRIPT_PATHS.join('\n');
+      pathsFile.textContent = `Saved in ${result.config_file}`;
+      pathsDialog.showModal();
+    } catch (e) {
+      clientLog(`Could not load Python script paths: ${e.message}`, 'error');
+      alert(`Could not load Python script paths: ${e.message}`);
+    }
+  });
+  document.getElementById('script-paths-cancel').addEventListener('click', () => pathsDialog.close());
+  document.getElementById('script-paths-save').addEventListener('click', async () => {
+    const paths = pathsInput.value.split(/\r?\n/).map(path => path.trim()).filter(Boolean);
+    try {
+      const result = await api('POST', '/api/script_paths', { paths });
+      if (result.error || !result.ok) throw new Error(result.error || 'unknown error');
+      SCRIPT_PATHS = result.paths || [];
+      pathsFile.textContent = `Saved in ${result.config_file}`;
+      pathsDialog.close();
+      clientLog(`Saved ${SCRIPT_PATHS.length} Python script path(s).`);
+    } catch (e) { alert(`Could not save Python script paths: ${e.message}`); }
+  });
+  loadScriptPaths().catch(e => clientLog(`Could not load Python script paths: ${e.message}`, 'warn'));
+
+  document.getElementById('btn-export-config').addEventListener('click', async () => {
+    // Include the global style with a standalone tab config; workspace
+    // exports carry the same style at the workspace level.
     const cfg = window.getTabConfig(G.activeTab);
     if (!cfg) return;
+    try { cfg.script_paths = await mergeScriptPaths(); }
+    catch (e) { alert(`Could not save Python script paths: ${e.message}`); return; }
+    cfg.style = window.G_STYLE || {};
     window.download(JSON.stringify(cfg, null, 2), `plot-config-${cfg.label.replace(/\s+/g, '-')}.json`);
     clientLog(`Config exported for tab "${cfg.label}"`);
   });
   document.getElementById('btn-import-config').addEventListener('click', () => document.getElementById('import-file-input').click());
   document.getElementById('import-file-input').addEventListener('change', e => {
     const f = e.target.files[0]; if (!f) return;
-    readJson(f, cfg => window.applyTabConfig(G.activeTab, cfg));
+    readJson(f, async cfg => {
+      if (cfg.script_paths?.length) await mergeScriptPaths(cfg.script_paths);
+      window.applyTabConfig(G.activeTab, cfg);
+    });
     e.target.value = '';
   });
 
-  document.getElementById('btn-export-all').addEventListener('click', event => {
+  document.getElementById('btn-export-all').addEventListener('click', async event => {
     // window.getTabConfig here too, and for the same reason: this is a
     // *workspace* export, exactly the shape style_addon.js's window.download
     // wrap looks for to inject the global style.
     const ws = { version: 3,
       activeTabIndex: Math.max(0, G.tabs.findIndex(t => t.id === G.activeTab)),
       tabs: G.tabs.map(t => window.getTabConfig(t.id)), style: window.G_STYLE || {} };
+    try { ws.script_paths = await mergeScriptPaths(); }
+    catch (e) {
+      clientLog(`Workspace export failed: ${e.message}`, 'error');
+      alert(`Could not save Python script paths: ${e.message}`);
+      return;
+    }
     const json = JSON.stringify(ws, null, 2);
     openWorkspaceExportMenu(event.currentTarget, json, `workspace-${Date.now()}.json`);
   });
@@ -361,7 +429,10 @@ export function wireConfigControls() {
   document.getElementById('import-ws-file-input').addEventListener('change', e => {
     const f = e.target.files[0]; if (!f) return;
     // window.applyWorkspace: style_addon.js wraps it to restore G_STYLE.
-    readJson(f, ws => window.applyWorkspace(ws, 'imported'));
+    readJson(f, async ws => {
+      if (ws.script_paths?.length) await mergeScriptPaths(ws.script_paths);
+      window.applyWorkspace(ws, 'imported');
+    });
     e.target.value = '';
   });
 }

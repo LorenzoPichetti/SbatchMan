@@ -93,6 +93,7 @@ export async function init() {
     }),
   ]);
   G.databases = dbRes.databases || {};
+  G.tableCounts = dbRes.table_counts || {};
   G.singleDb = !!dbRes.single_db;
   G.defaultDb = dbRes.default_database || '';
   G.plotTypes = ptRes.plot_types || {};

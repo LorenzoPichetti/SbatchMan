@@ -108,6 +108,8 @@ export function applyGrid(tabId) {
 export function setFigureMode(tabId, mode) {
   const tab = G.tabs.find(t => t.id === tabId);
   if (!tab) return;
+  // Support saved workspaces and older callers that still request "single".
+  if (mode === 'single') mode = 'grid';
   tab.state.mode = mode;
   document.getElementById(`grid-controls-wrap-${tabId}`).style.display = mode === 'grid' ? 'inline-flex' : 'none';
   document.getElementById(`facet-controls-${tabId}`).style.display = mode === 'facet' ? 'inline-flex' : 'none';
@@ -124,8 +126,6 @@ export function setFigureMode(tabId, mode) {
     // into grid mode.
     if (!tab.state.grid.panelIds.length) window.applyGrid(tabId);
     else showBuilderFor(tabId, mode === 'facet' ? tab.state.grid.panelIds[0] : (tab.state.grid.activePanel || tab.state.grid.panelIds[0]));
-  } else {
-    showBuilderFor(tabId, tabId);
   }
 }
 

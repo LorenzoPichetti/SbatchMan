@@ -57,8 +57,12 @@ export function renderTableList(container, dbName, tables) {
     ti.append(expandIcon);
     ti.append(makeCopyableName(tname, 'table'));
     const badge = document.createElement('span');
-    badge.className = 'badge';
-    badge.textContent = cols.length;
+    badge.className = 'badge schema-table-counts';
+    const rowCount = G.tableCounts?.[dbName]?.[tname];
+    const formattedRows = Number.isFinite(Number(rowCount))
+      ? new Intl.NumberFormat().format(Number(rowCount)) : '—';
+    badge.textContent = `${cols.length} cols · ${formattedRows} rows`;
+    badge.title = `${cols.length} columns, ${formattedRows} rows`;
     ti.append(badge);
     let colsOpen = false;
     const colsDiv = document.createElement('div');

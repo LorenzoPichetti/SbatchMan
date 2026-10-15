@@ -100,10 +100,17 @@ def export_workspace(workspace: dict, out_dir="figures", formats=("png",), style
                 group_by = grid.get("groupBy", grid.get("facetGroupCols", [])) if tab.get("mode") == "facet" else []
                 lg = {"position": grid.get("legendPosition") or "right", "title": grid.get("legendTitle", ""),
                      "show": grid.get("showLegend", True)}
+                share_x_mode = grid.get("shareXMode")
+                share_y_mode = grid.get("shareYMode")
+                share_x = share_x_mode in ("scale", "both") if share_x_mode else bool(grid.get("shareX", False))
+                share_y = share_y_mode in ("scale", "both") if share_y_mode else bool(grid.get("shareY", False))
+                share_x_label = share_x_mode in ("label", "both") if share_x_mode else bool(grid.get("shareX", False))
+                share_y_label = share_y_mode in ("label", "both") if share_y_mode else bool(grid.get("shareY", False))
                 result = render_grid({
                     "rows": grid["rows"], "cols": grid["cols"], "panels": panels, "style": tab_style,
                     "backend": tab.get("rendererBackend", "matplotlib"),
-                    "share_x": grid.get("shareX", False), "share_y": grid.get("shareY", False),
+                    "share_x": share_x, "share_y": share_y,
+                    "share_x_label": share_x_label, "share_y_label": share_y_label,
                     "share_legend": grid.get("shareLegend", True), "group_by": group_by,
                     "facet_axis": grid.get("facetAxis", "cols"), "facet_count": grid.get("facetCount", grid.get("cols", 1)),
                     "facet_label_format": grid.get("facetLabelFormat", "{column}={value}"),

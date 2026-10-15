@@ -19,16 +19,29 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;overflow:hidden}
 
-#app{display:grid;grid-template-columns:minmax(240px,280px) minmax(0,1fr);grid-template-rows:52px minmax(0,1fr);height:100vh}
+#app{display:grid;grid-template-columns:minmax(0,min(var(--sidebar-width,280px),48vw)) 7px minmax(0,1fr);grid-template-rows:52px minmax(0,1fr);height:100vh}
 #topbar{grid-column:1/-1;background:var(--bg2);border-bottom:1px solid var(--border);
         display:flex;align-items:center;padding:0 14px;gap:12px;z-index:10}
-#sidebar{background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column}
-#centre{display:flex;flex-direction:column;overflow:hidden;position:relative}
+#sidebar{grid-column:1;background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;min-width:0}
+#centre{grid-column:3;display:flex;flex-direction:column;overflow:hidden;position:relative;min-width:0}
+#sidebar-resizer{grid-column:2;grid-row:2}
+.panel-resizer{position:relative;z-index:4;flex:0 0 7px;background:transparent;touch-action:none;user-select:none}
+.panel-resizer::after{content:"";position:absolute;background:var(--border2);border-radius:4px;opacity:.45;transition:opacity .12s,background .12s}
+.panel-resizer:hover::after,.panel-resizer.dragging::after{opacity:1;background:var(--accent2)}
+#sidebar-resizer,#log-resizer{cursor:col-resize}
+#sidebar-resizer::after,#log-resizer::after{top:25%;bottom:25%;left:2px;right:2px}
+.workspace-resizer,.preview-resizer{cursor:row-resize}
+.workspace-resizer::after,.preview-resizer::after{height:3px;left:25%;right:25%;top:2px}
+body.panel-resizing{user-select:none!important}
+body.panel-resizing #log-panel{transition:none}
+body.panel-resizing.col-resize{cursor:col-resize!important}
+body.panel-resizing.row-resize{cursor:row-resize!important}
 
 #log-panel{position:fixed;top:52px;right:0;bottom:0;width:0;background:var(--bg2);
            border-left:1px solid var(--border);display:flex;flex-direction:column;
            transition:width .2s ease;z-index:20;overflow:hidden}
-#log-panel.open{width:340px}
+#log-panel.open{width:min(var(--log-width,340px),85vw)}
+#log-resizer{position:absolute;left:0;top:0;bottom:0;width:7px}
 #log-header{display:flex;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);gap:8px;flex-shrink:0}
 #log-header span{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);flex:1}
 #log-body{flex:1;overflow-y:auto;padding:6px 0;font-family:var(--mono);font-size:10px}
@@ -79,7 +92,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 .panel-clone-btn{width:17px;height:17px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--text3);font-size:12px;line-height:16px;cursor:pointer}
 .panel-clone-btn:hover{background:var(--bg4);color:var(--accent2)}
 
-.builder{background:var(--bg);border-bottom:1px solid var(--border);overflow-y:auto;max-height:48%;flex-shrink:0;padding:9px 11px}
+.builder{background:var(--bg);border-bottom:1px solid var(--border);overflow-y:auto;flex:0 0 var(--builder-height,40%);min-height:150px;max-height:none;padding:9px 11px}
 .builder-inner{display:none;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
 .builder-inner.active{display:grid}
 
@@ -129,7 +142,7 @@ textarea{resize:vertical}
 .plot-specific-field{margin-top:5px}
 .plot-specific-field label{display:block}
 
-.plot-area{flex:1;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;min-height:0}
+.plot-area{flex:1;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;min-height:150px}
 .plotly-wrap{flex:1;min-height:0;min-width:0;position:relative;background:#fff;overflow:hidden}
 .plotly-div{width:100%;height:100%;min-width:0;min-height:0}
 .plot-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -139,12 +152,17 @@ textarea{resize:vertical}
   font-family:var(--mono);display:flex;gap:14px;align-items:center;flex-shrink:0}
 .s-ok{color:var(--accent3)} .s-err{color:var(--warn)} .s-warn{color:var(--warn2)}
 
-.data-preview{display:none;max-height:220px;overflow:auto;border-top:1px solid var(--border);
+.preview-resizer{display:none;flex:0 0 7px}
+.plot-area.preview-open .preview-resizer{display:block}
+.data-preview{display:none;max-height:220px;min-width:0;overflow:auto;border-top:1px solid var(--border);
   background:var(--bg2);flex-shrink:0}
 .data-preview.open{display:block}
+.plot-area>.data-preview{height:var(--preview-height,25%);min-height:0;max-height:none;overflow:auto;
+  flex:0 0 var(--preview-height,25%)}
+.plot-area>.data-preview.open{display:block}
 .preview-section-label{font-size:9px;color:var(--text3);padding:5px 10px;background:var(--bg3);
   text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0}
-table.data-table{border-collapse:collapse;font-family:var(--mono);font-size:10px;width:100%}
+table.data-table{border-collapse:collapse;font-family:var(--mono);font-size:10px;width:max-content;min-width:100%}
 table.data-table th{position:sticky;top:0;background:var(--bg4);color:var(--accent2);text-align:left;
   padding:4px 8px;border-bottom:1px solid var(--border2);white-space:nowrap}
 table.data-table td{padding:3px 8px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--text2);white-space:nowrap}
@@ -178,7 +196,8 @@ table.data-table tr:hover td{background:var(--bg3)}
 .table-list{margin-left:10px}
 .table-list.flat{margin-left:0}
 .table-item{display:flex;align-items:center;gap:5px;padding:2px 4px;border-radius:4px;cursor:pointer;
-  color:var(--text2);font-family:var(--mono);font-size:10px;transition:all .12s}
+  min-width:0;color:var(--text2);font-family:var(--mono);font-size:10px;transition:all .12s}
+.table-item>.schema-copy-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .table-item:hover{background:var(--bg4);color:var(--text)}
 .table-expand-icon{display:inline-block;width:9px;flex:0 0 9px;color:var(--text3);font-size:11px;line-height:1;text-align:center;transition:transform .12s}
 .table-expand-icon.expanded{transform:rotate(180deg)}
@@ -189,6 +208,7 @@ table.data-table tr:hover td{background:var(--bg3)}
 .col-item{font-family:var(--mono);font-size:9px;color:var(--text3);padding:1px 0;display:flex;align-items:center;gap:3px}
 .col-type{color:var(--warn2);font-size:8px}
 .badge{font-size:8px;padding:1px 4px;border-radius:3px;background:var(--bg4);color:var(--text3);font-family:var(--mono)}
+.schema-table-counts{margin-left:auto;white-space:nowrap;flex-shrink:0}
 
 .action-btn{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:var(--radius);
   border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:10px;
@@ -240,12 +260,27 @@ table.data-table tr:hover td{background:var(--bg3)}
 .action-btn{padding:8px 10px}
 .btn{min-height:27px;padding:3px 9px}
 .btn.sm{min-height:23px;padding:2px 7px}
-.code-editor{width:100%;min-height:150px;padding:9px 10px;background:#0b1016;border-color:#46515e;color:#e6edf3;
+.script-paths-dialog{width:min(680px,calc(100vw - 32px));max-height:85vh;margin:auto;padding:18px;background:var(--bg2);color:var(--text);border:1px solid var(--border2);border-radius:8px;box-shadow:0 16px 48px rgba(0,0,0,.5)}
+.script-paths-dialog::backdrop{background:rgba(0,0,0,.62)}
+.script-paths-dialog h2{font-size:14px;margin-bottom:5px}
+.script-paths-dialog p{font-size:11px;color:var(--text3);margin:0 0 8px}
+.script-paths-dialog textarea{min-height:220px;resize:vertical}
+.script-paths-dialog .dialog-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:10px}
+.code-editor-wrap{position:relative;display:grid;width:100%;min-width:0;min-height:150px;background:#0b1016;border:1px solid #46515e;border-radius:var(--radius);overflow:hidden}
+.code-highlight{position:absolute;inset:0;margin:0;padding:9px 10px;overflow:hidden;pointer-events:none;
+  color:#e6edf3;font-family:var(--mono);font-size:12px;line-height:1.5;tab-size:4;white-space:pre}
+.code-editor{position:relative;z-index:1;grid-area:1/1;display:block;width:100%;height:190px;min-height:150px;padding:9px 10px;
+  background:transparent!important;border:0!important;color:transparent!important;-webkit-text-fill-color:transparent;
   font-size:12px;line-height:1.5;tab-size:4;white-space:pre;overflow:auto;resize:vertical;caret-color:var(--accent)}
-.code-editor:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,212,212,.12)}
-.sql-editor{min-height:145px}
-.python-editor{min-height:175px}
-.python-editor.tick-formatter-editor{min-height:88px}
+.code-editor::placeholder{-webkit-text-fill-color:var(--text3);color:var(--text3)}
+.code-editor::selection{background:rgba(88,166,255,.35);-webkit-text-fill-color:#fff}
+.code-editor:not(.highlight-ready){background:#0b1016!important;color:#e6edf3!important;-webkit-text-fill-color:initial}
+.tok-keyword{color:#ff7b72;font-weight:600}.tok-string{color:#a5d6ff}.tok-comment{color:#8b949e;font-style:italic}
+.tok-number{color:#79c0ff}.tok-builtin{color:#d2a8ff}.tok-function{color:#d2a8ff}.tok-identifier{color:#e6edf3}
+.code-editor-wrap:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,212,212,.12)}
+.sql-editor{height:145px;min-height:110px}
+.python-editor{height:175px;min-height:120px}
+.python-editor.tick-formatter-editor{height:88px;min-height:70px}
 .grid-dimension{width:4rem!important;min-width:4rem!important;padding:3px 4px!important;color:#f0f6fc!important;background:#0b1016!important;
   border-color:#66717f!important;font-size:12px!important;font-weight:600;letter-spacing:.01em}
 .grid-gap{width:4rem!important;min-width:4rem!important;padding:3px 4px!important;color:#f0f6fc!important;background:#0b1016!important;
@@ -253,29 +288,30 @@ table.data-table tr:hover td{background:var(--bg3)}
 input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid rgba(0,212,212,.45);outline-offset:1px}
 
 @media(max-width:1100px){
-  #app{grid-template-columns:minmax(220px,250px) minmax(0,1fr)}
-  .builder{max-height:44%}
+  #app{grid-template-columns:minmax(0,min(var(--sidebar-width,240px),48vw)) 7px minmax(0,1fr)}
   .figure-toolbar{gap:7px 9px;padding:8px 12px}
 }
 @media(max-width:760px){
-  #app{grid-template-columns:minmax(190px,32vw) minmax(0,1fr);grid-template-rows:52px minmax(0,1fr)}
+  #app{grid-template-columns:minmax(0,min(var(--sidebar-width,220px),48vw)) 7px minmax(0,1fr);grid-template-rows:52px minmax(0,1fr)}
   #topbar{padding:0 8px;gap:7px}
   .logo{font-size:11px}
   .topbar-mid{gap:4px;padding:0 3px}
   .topbar-mid .btn{font-size:10px;padding:4px 7px}
   .docs-link{display:none}
-  .builder{max-height:42%;padding:8px}
+  .builder{padding:8px}
   .builder-inner{grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:8px}
   .b-col{padding:11px}
 }
 @media(max-width:560px){
   #app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
   #topbar{min-height:52px;height:auto;flex-wrap:wrap;padding:6px 8px}
-  #sidebar{display:none}
+  #sidebar,#sidebar-resizer{display:none}
+  #log-resizer{display:none}
+  #centre{grid-column:1}
   .topbar-mid{overflow-x:auto}
   .topbar-right{margin-left:auto}
   .figure-toolbar{align-items:flex-start}
-  .builder{max-height:48%}
+  .builder{flex-basis:40%}
   .builder-inner{grid-template-columns:minmax(0,1fr)}
   #log-panel.open{width:min(340px,100vw)}
 }
@@ -306,6 +342,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
     <button class="btn" id="btn-import-all" data-tip="Import a workspace JSON (replaces all tabs)">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="10" height="12" rx="1"/><path d="M5 2v12M14 6h-2V2"/></svg>Import workspace
     </button>
+    <button class="btn" id="btn-script-paths" data-tip="Configure Python import paths for user scripts">Script paths</button>
     <div style="display:inline-flex;align-items:center;gap:4px">
       <select id="export-format" data-tip="PNG is a raster image; SVG is a vector image" style="width:auto;padding:4px 6px;border-radius:4px">
         <option value="png">PNG</option>
@@ -385,6 +422,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
   </div>
 </div>
 
+<div id="sidebar-resizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize sidebar"></div>
+
 <div id="centre">
   <div id="plot-tabs-bar">
     <button id="btn-add-tab" data-tip="Add a new plot tab (clones the active one)">＋</button>
@@ -393,6 +432,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 </div>
 
 <div id="log-panel">
+  <div id="log-resizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Resize logs panel" title="Drag to resize logs"></div>
   <div id="log-header">
     <span>Logs</span>
     <button class="btn sm" id="log-clear">Clear</button>
@@ -403,6 +443,17 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 
 <input type="file" id="import-file-input"    accept=".json" style="display:none">
 <input type="file" id="import-ws-file-input" accept=".json" style="display:none">
+
+<dialog id="script-paths-dialog" class="script-paths-dialog">
+  <h2>Python script import paths</h2>
+  <p>Enter one directory per line. Python scripts in this web UI can import modules from these paths. Use <code>~</code> or environment variables such as <code>$HOME</code>; paths are expanded and saved globally for this user.</p>
+  <textarea id="script-paths-input" spellcheck="false" aria-label="Python script import paths" placeholder="~/python-libs&#10;$HOME/my-project/scripts"></textarea>
+  <p id="script-paths-file"></p>
+  <div class="dialog-actions">
+    <button type="button" class="btn" id="script-paths-cancel">Cancel</button>
+    <button type="button" class="btn primary" id="script-paths-save">Save paths</button>
+  </div>
+</dialog>
 
 </div>
 

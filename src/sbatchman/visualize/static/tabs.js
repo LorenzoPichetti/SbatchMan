@@ -31,11 +31,8 @@ export function resizePlot(id) {
 export function workspaceHTML(id) {
   return `
 <div class="figure-toolbar">
-  <label class="mode-toggle" id="mode-label-single-${id}">
-    <input type="radio" name="mode-${id}" value="single" checked> Single plot
-  </label>
   <label class="mode-toggle" id="mode-label-grid-${id}">
-    <input type="radio" name="mode-${id}" value="grid"> Subplot grid
+    <input type="radio" name="mode-${id}" value="grid" checked> Plot grid
   </label>
   <label class="mode-toggle" id="mode-label-facet-${id}">
     <input type="radio" name="mode-${id}" value="facet"> Data-driven grid
@@ -65,6 +62,7 @@ export function workspaceHTML(id) {
 <div class="builder" id="builder-wrap-${id}">
   <div class="builder-inner active" id="builder-inner-${id}">${window.builderColumnsHTML(id)}</div>
 </div>
+<div class="panel-resizer workspace-resizer" data-resize="builder" role="separator" aria-orientation="horizontal" aria-label="Resize plot controls" title="Drag to resize plot controls"></div>
 
 <div class="plot-area">
   <div class="plotly-wrap">
@@ -75,6 +73,7 @@ export function workspaceHTML(id) {
       <div>Write a SQL query, configure axes, then click <strong>Run</strong></div>
     </div>
   </div>
+  <div class="panel-resizer preview-resizer" data-resize="preview" role="separator" aria-orientation="horizontal" aria-label="Resize data preview" title="Drag to resize data preview"></div>
   <div class="data-preview" id="preview-${id}"></div>
   <div class="statusbar">
     <span id="status-${id}" class="s-ok">Ready</span>
@@ -92,6 +91,7 @@ function wireWorkspace(id) {
   // doesn't depend on that fallback, which a later local import here would
   // silently break by shadowing it.
   window.wireBuilderColumns(id);
+  wireWorkspaceResizers(id);
   const backend = document.getElementById(`renderer-backend-${id}`);
   if (backend) {
     backend.value = getState(id).rendererBackend || 'matplotlib';
@@ -105,6 +105,7 @@ function wireWorkspace(id) {
   document.getElementById(`preview-toggle-${id}`).addEventListener('click', () => {
     const pv = document.getElementById(`preview-${id}`);
     const open = pv.classList.toggle('open');
+    document.querySelector(`#ws-${id} .plot-area`)?.classList.toggle('preview-open', open);
     document.getElementById(`preview-toggle-${id}`).textContent = open ? 'Data ▴' : 'Data ▾';
     resizePlot(id);
   });
@@ -118,7 +119,9 @@ function wireWorkspace(id) {
 export function createTab(label, stateOverride) {
   const id = G.nextTabId++;
   const state = window.defaultNodeState(stateOverride);
-  if (!state.mode) state.mode = 'single';
+  // A single plot is represented by a 1×1 static grid so figure size and
+  // grid-level style controls are available from the start.
+  if (!state.mode || state.mode === 'single') state.mode = 'grid';
   const tab = { id, label: label || `Plot ${id}`, state };
   G.tabs.push(tab);
   G.nextPanelSeq[id] = 1;
@@ -149,6 +152,7 @@ export function createTab(label, stateOverride) {
   document.getElementById('workspaces').appendChild(ws);
 
   wireWorkspace(id);
+  if (window.setFigureMode) window.setFigureMode(id, state.mode);
   activateTab(id);
   return id;
 }
@@ -193,17 +197,121 @@ export function cloneTab(id) {
 }
 
 export function wireTabBar() {
+  restoreResizerPreferences();
+  wireGlobalResizers();
   document.getElementById('btn-add-tab').addEventListener('click', () => {
     const src = activeTabObj();
     const baseState = src ? JSON.parse(JSON.stringify(src.state)) : {};
     delete baseState.renderedImage;
     baseState.plotted = false;
-    baseState.mode = 'single'; baseState.grid = undefined;
+    baseState.mode = 'grid'; baseState.grid = undefined;
     const newId = createTab(`Plot ${G.nextTabId}`, baseState);
     clientLog(`New tab created (cloned from "${src?.label}")`);
   });
   window.addEventListener('resize', () => { if (G.activeTab) resizePlot(G.activeTab); });
 }
+
+const RESIZER_KEYS = {
+  sidebar: ['--sidebar-width', 'visualize.sidebarWidth'],
+  logs: ['--log-width', 'visualize.logWidth'],
+  builder: ['--builder-height', 'visualize.builderHeight'],
+  preview: ['--preview-height', 'visualize.previewHeight'],
+};
+
+function restoreResizerPreferences() {
+  for (const [property, key] of Object.values(RESIZER_KEYS)) {
+    const value = Number(localStorage.getItem(key));
+    if (Number.isFinite(value) && value > 0) document.documentElement.style.setProperty(property, `${value}px`);
+  }
+}
+
+function wireWorkspaceResizers(id) {
+  const workspace = document.getElementById(`ws-${id}`);
+  workspace?.querySelectorAll('[data-resize]').forEach(handle => {
+    const kind = handle.dataset.resize;
+    const target = kind === 'builder'
+      ? document.getElementById(`builder-wrap-${id}`)
+      : document.getElementById(`preview-${id}`);
+    if (!target) return;
+    bindResizer(handle, {
+      axis: 'y',
+      read: () => target.getBoundingClientRect().height,
+      move: (start, event, pointerStart) => {
+        const delta = event.clientY - pointerStart;
+        if (kind === 'builder') {
+          const available = workspace.getBoundingClientRect().bottom - target.getBoundingClientRect().top - 150;
+          return clamp(start + delta, 150, Math.max(150, available));
+        }
+        const available = target.parentElement.getBoundingClientRect().height - 150;
+        return clamp(start - delta, 90, Math.max(90, available));
+      },
+      write: value => document.documentElement.style.setProperty(RESIZER_KEYS[kind][0], `${value}px`),
+      key: RESIZER_KEYS[kind][1],
+      after: () => resizePlot(id),
+    });
+  });
+}
+
+function wireGlobalResizers() {
+  const sidebar = document.getElementById('sidebar');
+  const logPanel = document.getElementById('log-panel');
+  const sidebarHandle = document.getElementById('sidebar-resizer');
+  const logHandle = document.getElementById('log-resizer');
+  if (sidebar && sidebarHandle) bindResizer(sidebarHandle, {
+    axis: 'x', read: () => sidebar.getBoundingClientRect().width,
+    move: (_start, event) => clamp(event.clientX, 190, Math.min(520, window.innerWidth * .48)),
+    write: value => document.documentElement.style.setProperty(RESIZER_KEYS.sidebar[0], `${value}px`),
+    key: RESIZER_KEYS.sidebar[1], after: () => G.activeTab && resizePlot(G.activeTab),
+  });
+  if (logPanel && logHandle) bindResizer(logHandle, {
+    axis: 'x', read: () => logPanel.getBoundingClientRect().width,
+    move: (_start, event) => clamp(window.innerWidth - event.clientX, 260, Math.min(900, window.innerWidth * .85)),
+    write: value => document.documentElement.style.setProperty(RESIZER_KEYS.logs[0], `${value}px`),
+    key: RESIZER_KEYS.logs[1], after: () => G.activeTab && resizePlot(G.activeTab),
+  });
+}
+
+function bindResizer(handle, {axis, read, move, write, key, after}) {
+  let start = 0, pointerStart = 0, frame = 0;
+  const pointerDown = event => {
+    if (event.button !== undefined && event.button !== 0) return;
+    event.preventDefault();
+    start = read();
+    pointerStart = axis === 'x' ? event.clientX : event.clientY;
+    handle.classList.add('dragging');
+    document.body.classList.add('panel-resizing', axis === 'x' ? 'col-resize' : 'row-resize');
+    document.addEventListener('pointermove', pointerMove);
+    document.addEventListener('pointerup', pointerUp, {once:true});
+    document.addEventListener('pointercancel', pointerUp, {once:true});
+  };
+  const pointerMove = event => {
+    const size = move(start, event, pointerStart);
+    write(size);
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => { after?.(); });
+  };
+  const pointerUp = () => {
+    document.removeEventListener('pointermove', pointerMove);
+    document.removeEventListener('pointercancel', pointerUp);
+    handle.classList.remove('dragging');
+    document.body.classList.remove('panel-resizing', axis === 'x' ? 'col-resize' : 'row-resize');
+    const property = kindPropertyFromHandle(handle);
+    const propertyName = property && RESIZER_KEYS[property][0];
+    const current = propertyName && getComputedStyle(document.documentElement).getPropertyValue(propertyName).trim();
+    const currentNumber = parseFloat(current);
+    if (key && Number.isFinite(currentNumber)) localStorage.setItem(key, String(currentNumber));
+    after?.();
+  };
+  handle.addEventListener('pointerdown', pointerDown);
+}
+
+function kindPropertyFromHandle(handle) {
+  if (handle.id === 'sidebar-resizer') return 'sidebar';
+  if (handle.id === 'log-resizer') return 'logs';
+  return handle.dataset.resize;
+}
+
+function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 
 Object.assign(window, {
   activeTabObj, resizePlot, workspaceHTML, createTab, activateTab, closeTab, renameTab, cloneTab, wireTabBar,

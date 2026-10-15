@@ -361,7 +361,7 @@ def _axis_legend_handles(ax, right_ax=None):
 
 
 def render_matplotlib_plot(df, traces, config, style=None, title="",
-                           custom_plot_fn=None, layout_fn=None):
+                           custom_plot_fn=None, layout_fn=None, legend_fn=None):
     plt, _, np, sns = _modules()
     style = styles.resolve(style)
     sns.set_theme(style="whitegrid" if style.get("grid", True) else "white", context="paper",
@@ -391,15 +391,22 @@ def render_matplotlib_plot(df, traces, config, style=None, title="",
         handles = _axis_legend_handles(ax, right_ax)
     _legend(ax, handles, config, style)
     _call_custom_hook(layout_fn, plt, np, sns, fig, ax, config)
+    if callable(legend_fn):
+        _call_custom_hook(legend_fn, plt, np, sns, fig, np.asarray([[ax]], dtype=object), config,
+                          [{"df_data": {"columns": list(df.columns), "rows": df.values.tolist()},
+                            "traces": traces}])
     return _encode_figure(fig, int(style.get("dpi", 300)))
 
 
 def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_y=False,
-                           panel_labels=False, legend=None, xgap=.20, ygap=.24, share_legend=True):
+                           panel_labels=False, legend=None, xgap=.20, ygap=.24, share_legend=True,
+                           legend_fn=None, share_x_label=None, share_y_label=None):
     plt, Line2D, np, sns = _modules()
     style = styles.resolve(style)
     sns.set_theme(style="whitegrid" if style.get("grid", True) else "white", context="paper",
                   font=_font_family(style))
+    share_x_label = bool(share_x) if share_x_label is None else bool(share_x_label)
+    share_y_label = bool(share_y) if share_y_label is None else bool(share_y_label)
     width = float(style.get("width_in") or (4 * cols))
     height = float(style.get("height_in") or (3.3 * rows))
     fig, axes = plt.subplots(rows, cols, figsize=(width, height), squeeze=False,
@@ -440,15 +447,15 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
                     if name not in {n for _, n in all_handles}:
                         all_handles.append(result)
         _style_axes(ax, right_ax, config, style, config.get("title", ""))
-        if share_x and r < rows - 1:
+        if share_x_label and r < rows - 1:
             ax.set_xlabel("")
-        if share_y:
-            if c > 0:
-                ax.set_ylabel("")
-                ax.tick_params(axis="y", labelleft=False)
-            else:
-                ax.yaxis.set_label_position("left")
-                ax.tick_params(axis="y", labelleft=True)
+        if share_y and c > 0:
+            ax.tick_params(axis="y", labelleft=False)
+        if share_y_label and c > 0:
+            ax.set_ylabel("")
+        elif share_y_label:
+            ax.yaxis.set_label_position("left")
+            ax.tick_params(axis="y", labelleft=True)
         panel_legend_config = {**shared, **config}
         if independent:
             panel_legend_config = {
@@ -462,7 +469,6 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
             label = f"({chr(97 + i)})" if panel_labels is True else str(panel_labels[i]) if i < len(panel_labels) else ""
             if label:
                 ax.text(.02, .98, label, transform=ax.transAxes, ha="left", va="top", fontweight="bold")
-        _call_custom_hook(panel.get("_matplotlib_layout_fn"), plt, np, sns, fig, ax, config)
     for i in range(len(panels), rows * cols):
         axes[i // cols][i % cols].set_visible(False)
     if shared.get("show", True) and not independent and all_handles:
@@ -484,4 +490,14 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
     fig.tight_layout()
     if rows > 1 or cols > 1:
         fig.subplots_adjust(wspace=max(0, float(xgap)), hspace=max(0, float(ygap)))
+    # Run per-panel layout hooks last so axes edits win over default styling,
+    # and the optional figure-level legend hook can replace the shared legend.
+    for i, panel in enumerate(panels):
+        _call_custom_hook(panel.get("_matplotlib_layout_fn"), plt, np, sns,
+                          fig, axes[i // cols][i % cols], panel.get("config", {}))
+    if callable(legend_fn):
+        panel_data = [{"df_data": p.get("_df_data", {"columns": [], "rows": []}),
+                       "traces": p.get("_traces", [])} for p in panels]
+        _call_custom_hook(legend_fn, plt, np, sns, fig, axes,
+                          panels[0].get("config", {}) if panels else {}, panel_data)
     return _encode_figure(fig, int(style.get("dpi", 300)))

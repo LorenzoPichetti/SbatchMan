@@ -42,16 +42,15 @@ def run_pipeline(database, sql, transform_script=""):
     if transform_script and transform_script.strip():
         data = get_all_tables_as_dataframes(database)
         # The SQL projection is the base plotting dataset. Keep track of all
-        # source-table fields so assigning a whole table to data['result']
-        # cannot silently bring unselected columns into the figure.
+        # source-table fields so assigning a whole table to df cannot silently
+        # bring unselected columns into the figure.
         selected_columns = list(df_data["columns"])
         source_columns = {str(col) for table in data.values() for col in table.columns}
-        data["result"] = df_data_to_dataframe(df_data)
+        df = df_data_to_dataframe(df_data)
         script_log, entries = make_script_logger("transform")
-        data = run_transform_script(transform_script, data, script_log)
-        if data.get("result") is None:
-            raise ValueError("The transform script must leave a DataFrame in data['result'].")
-        result = data["result"]
+        result = run_transform_script(transform_script, df, script_log, data)
+        if not isinstance(result, type(df)):
+            raise ValueError("The transform script must leave a pandas DataFrame in df.")
         # Keep projected columns (including SQL aliases) and any genuinely
         # derived columns added by the transform. Existing database fields
         # omitted from the SELECT stay out of the data used to plot.
@@ -72,7 +71,7 @@ def compute_traces(df_data, plot_type, custom_script, config):
     return traces
 
 
-def _apply_matplotlib_layout_script(config, traces, style, source, scope="layout"):
+def _apply_matplotlib_layout_script(config, traces, style, source, scope="layout", df_data=None):
     """Run the existing Plotly layout snippet and translate common axis and
     legend edits into the Matplotlib config understood by the image renderer."""
     from copy import deepcopy
@@ -83,7 +82,8 @@ def _apply_matplotlib_layout_script(config, traces, style, source, scope="layout
     if scope.startswith("layout(panel"):
         layout = {"xaxis": layout["xaxis"], "yaxis": layout["yaxis"]}
     script_log, entries = make_script_logger(scope)
-    edited, matplotlib_layout_fn = run_layout_script_with_hooks(source, layout, config, script_log)
+    edited, matplotlib_layout_fn, matplotlib_legend_fn = run_layout_script_with_hooks(
+        source, layout, config, script_log, df_data, traces)
     for axis in ("x", "y"):
         spec = edited.get(f"{axis}axis") or {}
         title = spec.get("title")
@@ -116,7 +116,7 @@ def _apply_matplotlib_layout_script(config, traces, style, source, scope="layout
         config["legend_orientation"] = "horizontal" if legend["orientation"] == "h" else "vertical"
     if isinstance(legend.get("title"), dict) and legend["title"].get("text") is not None:
         config["legend_title"] = legend["title"]["text"]
-    return config, entries, matplotlib_layout_fn
+    return config, entries, matplotlib_layout_fn, matplotlib_legend_fn
 
 
 def preview_of(df_data, limit=500):
@@ -156,14 +156,15 @@ def render_plot(p):
                 traces = plot_fn(df, config)
         else:
             traces = compute_traces(df, p.get("plot_type", "line"), "", config)
-        matplotlib_layout_fn = None
+        matplotlib_layout_fn = matplotlib_legend_fn = None
         if p.get("layout_script", "").strip():
-            config, script_entries, matplotlib_layout_fn = _apply_matplotlib_layout_script(
-                config, traces, style, p["layout_script"], "layout")
+            config, script_entries, matplotlib_layout_fn, matplotlib_legend_fn = _apply_matplotlib_layout_script(
+                config, traces, style, p["layout_script"], "layout", df)
             entries += script_entries
         images = render_matplotlib_plot(
             df, traces, config, style,
             custom_plot_fn=custom_plot_fn, layout_fn=matplotlib_layout_fn,
+            legend_fn=matplotlib_legend_fn,
         )
         return {**images, "columns": df["columns"], "truncated": df.get("truncated", False),
                 "preview": preview_of(df), "log_entries": entries, "panel_count": 1}
@@ -182,7 +183,7 @@ def render_plot(p):
     dpi = layout.pop("_export_dpi", 300)
     if p.get("layout_script", "").strip():
         script_log, e = make_script_logger("layout")
-        layout = run_layout_script(p["layout_script"], layout, config, script_log); entries += e
+        layout = run_layout_script(p["layout_script"], layout, config, script_log, df, traces); entries += e
     return {"traces": traces, "layout": layout, "columns": df["columns"],
             "truncated": df.get("truncated", False), "preview": preview_of(df),
             "log_entries": entries, "export_dpi": dpi, **extras}
@@ -230,7 +231,8 @@ def _panel_label_annotations(panel_labels, doms, rows, cols):
 
 
 def render_grid(p):
-    """Subplot grid. Optional: share_x / share_y (per column / per row), xgap,
+    """Subplot grid. Optional: share_x / share_y (shared scale),
+    share_x_label / share_y_label (one shared axis label), xgap,
     ygap, panel_labels (True for automatic (a)/(b)/(c)..., or a list of
     custom strings), legend ({'position','title','show'} for the one legend
     the whole figure shares — duplicate-named entries are always deduped)."""
@@ -239,6 +241,10 @@ def render_grid(p):
         raise ValueError(f"Unknown plotting backend: {backend}")
     if backend == "matplotlib":
         return _render_matplotlib_grid(p)
+    share_x = bool(p.get("share_x", False))
+    share_y = bool(p.get("share_y", False))
+    share_x_label = bool(p.get("share_x_label", share_x))
+    share_y_label = bool(p.get("share_y_label", share_y))
     rows, cols = int(p.get("rows", 1)), int(p.get("cols", 1))
     if rows < 1 or cols < 1: raise ValueError("Grid rows/cols must be >= 1.")
     style = p.get("style")
@@ -368,16 +374,20 @@ def render_grid(p):
         # Put the right-hand column's primary y axis on the outside edge.
         # Its title otherwise sits in the center gutter and can intrude into
         # the left-hand panel when labels are long.
-        if cols > 1 and c > 0 and not has_y2 and not p.get("share_y"):
+        if cols > 1 and c > 0 and not has_y2 and not share_y_label:
             ya["side"] = "right"
-        if p.get("share_x") and r > 0:   # match the top panel of this column, hide inner tick labels
+        if share_x and r > 0:   # match the top panel of this column
             xa["matches"] = f"x{panel_xsfx[c]}"
-        if p.get("share_x") and r < rows - 1:
-            xa["showticklabels"] = False; xa["title"] = {"text": ""}
-        if p.get("share_y") and c > 0:   # match the leftmost panel of this row
+        if share_x and r < rows - 1:
+            xa["showticklabels"] = False
+        if share_x_label and r < rows - 1:
+            xa["title"] = {"text": ""}
+        if share_y and c > 0:   # match the leftmost panel of this row
             ya["matches"] = f"y{panel_ysfx[r * cols]}"
-        if p.get("share_y") and c > 0:
-            ya["showticklabels"] = False; ya["title"] = {"text": ""}
+        if share_y and c > 0:
+            ya["showticklabels"] = False
+        if share_y_label and c > 0:
+            ya["title"] = {"text": ""}
         layout[f"xaxis{xsfx}"], layout[f"yaxis{ysfx}"] = xa, ya
         if has_y2:
             # 'overlaying'/'anchor' must point at this panel's own renamed
@@ -391,7 +401,7 @@ def render_grid(p):
             layout["annotations"].append({"text": config["title"], "x": (x0 + x1) / 2, "y": y1 + .02,
                 "xref": "paper", "yref": "paper", "showarrow": False, "xanchor": "center", "yanchor": "bottom"})
         if panel.get("layout_script", "").strip():
-            scripts.append((xsfx, ysfx, i, panel["layout_script"], config))
+            scripts.append((xsfx, ysfx, i, panel["layout_script"], config, df, traces))
         previews.append(preview_of(df, 200))
 
     layout["annotations"] += _panel_label_annotations(p.get("panel_labels"), doms, rows, cols)
@@ -463,9 +473,10 @@ def render_grid(p):
         layout["height"] = round(figure_size[1] * 96)
         layout["autosize"] = False
     dpi = layout.pop("_export_dpi", 300)
-    for xsfx, ysfx, i, src, config in scripts:      # panel scripts run last so they win over the global style
+    for xsfx, ysfx, i, src, config, df, traces in scripts:      # panel scripts run last so they win over the global style
         script_log, e = make_script_logger(f"layout(panel {i + 1})")
-        sub = run_layout_script(src, {"xaxis": layout[f"xaxis{xsfx}"], "yaxis": layout[f"yaxis{ysfx}"]}, config, script_log)
+        sub = run_layout_script(src, {"xaxis": layout[f"xaxis{xsfx}"], "yaxis": layout[f"yaxis{ysfx}"]},
+                                config, script_log, df, traces)
         layout[f"xaxis{xsfx}"], layout[f"yaxis{ysfx}"] = sub.get("xaxis"), sub.get("yaxis"); entries += e
     return {"traces": all_traces, "layout": layout, "previews": previews, "log_entries": entries,
             "panel_count": count,
@@ -552,8 +563,10 @@ def _render_matplotlib_grid(p):
             panel_traces = compute_traces(df, panel.get("plot_type", "line"), "", panel_config)
         panel["_matplotlib_layout_fn"] = None
         if panel.get("layout_script", "").strip():
-            panel_config, script_entries, panel["_matplotlib_layout_fn"] = _apply_matplotlib_layout_script(
-                panel_config, panel_traces, p.get("style"), panel["layout_script"], f"layout(panel {len(previews) + 1})")
+            (panel_config, script_entries, panel["_matplotlib_layout_fn"],
+             panel["_matplotlib_legend_fn"]) = _apply_matplotlib_layout_script(
+                panel_config, panel_traces, p.get("style"), panel["layout_script"],
+                f"layout(panel {len(previews) + 1})", df)
             entries += script_entries
             panel["config"] = panel_config
         panel["_traces"] = panel_traces
@@ -564,6 +577,9 @@ def _render_matplotlib_grid(p):
     images = render_matplotlib_grid(
         panels, rows, cols, style, p.get("share_x", False), p.get("share_y", False),
         p.get("panel_labels", False), p.get("legend") or {},
-        p.get("xgap", .20), p.get("ygap", .24), p.get("share_legend", True))
+        p.get("xgap", .20), p.get("ygap", .24), p.get("share_legend", True),
+        legend_fn=(panels[0].get("_matplotlib_legend_fn") if panels else None),
+        share_x_label=p.get("share_x_label", p.get("share_x", False)),
+        share_y_label=p.get("share_y_label", p.get("share_y", False)))
     return {**images, "previews": previews, "log_entries": entries, "panel_count": len(panels),
             "grid_rows": rows, "grid_cols": cols}

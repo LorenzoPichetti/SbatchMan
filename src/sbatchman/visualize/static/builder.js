@@ -219,8 +219,8 @@ export function builderColumnsHTML(id) {
           <svg id="transform-arrow-${id}" width="9" height="9" viewBox="0 0 16 16" fill="currentColor" style="margin-left:auto;transition:transform .2s"><path d="M4 6l4 4 4-4"/></svg>
         </div>
         <div class="script-box" id="transform-box-${id}">
-          <div class="script-hint">Runs after the SQL query. <b>data['result']</b> starts with exactly the query's selected columns, including <code>AS</code> aliases. Source tables are available for lookups, but source columns omitted from SQL are removed before plotting; select any original fields you want to plot. New transform columns that are not existing source-table fields are kept. <b>agg</b> exposes summarize()/speedup()/efficiency() for collapsing repeated runs into mean+error rows. Call <b>log(msg)</b> to print to the Logs panel while you iterate.</div>
-          <textarea id="transform-${id}" class="code-editor python-editor" spellcheck="false" aria-label="Python pandas transform" placeholder="df = data['result']&#10;df['flags'] = df['flags'].map(map_compiler_flags_names)&#10;data['result'] = df"></textarea>
+          <div class="script-hint">Runs after the SQL query. <b>df</b> is a pandas DataFrame containing exactly the query's selected columns, including <code>AS</code> aliases. Modify <code>df</code> in place or reassign it (for example, <code>df = df.assign(...)</code>); the final DataFrame is plotted. Source tables remain available in <code>data</code> for lookups, but source columns omitted from SQL are removed before plotting; select any original fields you want to plot. New transform columns that are not existing source-table fields are kept. <b>agg</b> exposes summarize()/speedup()/efficiency() for collapsing repeated runs into mean+error rows. Call <b>log(msg)</b> to print to the Logs panel while you iterate.</div>
+          <textarea id="transform-${id}" class="code-editor python-editor" spellcheck="false" aria-label="Python pandas transform" placeholder="df['new_column'] = df['existing_column'].astype(str).str.lower()&#10;df = df[df['ncpus'] > 1]"></textarea>
         </div>
       </div>
 
@@ -319,20 +319,89 @@ export function builderColumnsHTML(id) {
       </label>
 
       <div style="margin-top:8px">
-        <div class="script-toggle" id="layout-toggle-${id}" data-tip="A short Python snippet to fine-tune this plot's appearance beyond the fields above">
+        <div class="script-toggle" id="layout-toggle-${id}" data-tip="Customize layout and build data-driven legends with Python">
           <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.8 3.6L14 5.2l-3 2.9.7 4.1L8 10.3l-3.7 1.9.7-4.1-3-2.9 4.2-.6z"/></svg>
           Layout script
           <svg id="layout-arrow-${id}" width="9" height="9" viewBox="0 0 16 16" fill="currentColor" style="margin-left:auto;transition:transform .2s"><path d="M4 6l4 4 4-4"/></svg>
         </div>
         <div class="script-box" id="layout-box-${id}">
           <div class="script-hint">
-            <b>Plotly:</b> edit the supplied <code>layout</code> dictionary, for example <code>layout['xaxis']['tickangle'] = 45</code>.<br>
-            <b>Matplotlib:</b> optionally define <code>customize_matplotlib(fig, ax, config)</code> to edit the figure or axes directly. In a subplot grid, <code>ax</code> is the current panel's axes. <code>log(msg)</code> writes to the Logs panel.
+            <b>Data-aware legend controls:</b> the script receives <code>df_data</code> (columns/rows), <code>df</code> (a pandas DataFrame), and <code>traces</code> (Plotly-style trace dictionaries). Use these to rename, rank, group, or hide legend entries.<br>
+            <b>Plotly:</b> edit <code>layout['legend']</code> and trace fields such as <code>name</code>, <code>legendrank</code>, <code>legendgroup</code>, and <code>showlegend</code>.<br>
+            <b>Matplotlib:</b> define <code>customize_matplotlib(fig, ax, config)</code> to edit an axes legend. For a custom shared grid legend, define <code>customize_matplotlib_legend(fig, axes, config, panel_data)</code> in Panel 1's script. See <a href="/docs#data-driven-legends" target="_blank" rel="noopener">data-driven legend examples</a>. <code>log(msg)</code> writes to the Logs panel.
           </div>
           <textarea id="layout-script-${id}" class="code-editor python-editor" spellcheck="false" aria-label="Python layout script" placeholder="layout['xaxis']['tickangle'] = 45&#10;&#10;def customize_matplotlib(fig, ax, config):&#10;    ax.grid(True, alpha=0.25)"></textarea>
         </div>
       </div>
     </div>`;
+}
+
+// Render syntax colors in a separate, inert layer. The textarea remains the
+// only editable/source value; this code never assigns to editor.value.
+const PY_KEYWORDS = new Set(('and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield True False None').split(' '));
+const PY_BUILTINS = new Set(('abs all any ascii bin bool bytearray bytes callable chr classmethod compile complex dict dir divmod enumerate eval filter float format frozenset getattr hasattr hash help hex id input int isinstance issubclass iter len list map max memoryview min next object oct open ord pow print property range repr reversed round set setattr slice sorted staticmethod str sum super tuple type vars zip').split(' '));
+const SQL_KEYWORDS = new Set(('select from where group by order having limit offset as distinct all and or not null is like ilike in between exists case when then else end join inner left right full outer cross on using union intersect except insert into values update set delete create table drop alter add column index view with recursive asc desc nulls first last count sum avg min max cast coalesce').split(' '));
+const PY_TOKEN = /#[^\n]*|(?:"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b|\b[A-Za-z_]\w*\b/g;
+const SQL_TOKEN = /--[^\n]*|\/\*[\s\S]*?\*\/|'(?:''|[^'])*'|"(?:""|[^"])*"|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b/gi;
+function escapeCodeHTML(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightCode(text, language) {
+  const regex = language === 'sql' ? SQL_TOKEN : PY_TOKEN;
+  const chunks = [];
+  let cursor = 0;
+  for (const match of text.matchAll(regex)) {
+    const token = match[0];
+    const start = match.index;
+    chunks.push(escapeCodeHTML(text.slice(cursor, start)));
+    let kind = '';
+    if (language === 'sql') {
+      if (token.startsWith('--') || token.startsWith('/*')) kind = 'comment';
+      else if (token.startsWith("'") || token.startsWith('"')) kind = 'string';
+      else if (/^\d/.test(token)) kind = 'number';
+      else if (SQL_KEYWORDS.has(token.toLowerCase())) kind = 'keyword';
+      else kind = 'identifier';
+    } else {
+      if (token.startsWith('#')) kind = 'comment';
+      else if (token.startsWith("'") || token.startsWith('"')) kind = 'string';
+      else if (/^\d/.test(token)) kind = 'number';
+      else if (PY_KEYWORDS.has(token)) kind = 'keyword';
+      else if (PY_BUILTINS.has(token)) kind = 'builtin';
+      else if (/\b[A-Za-z_]\w*\b/.test(token) && /^\s*\(/.test(text.slice(start + token.length))) kind = 'function';
+      else kind = 'identifier';
+    }
+    chunks.push(`<span class="tok-${kind}">${escapeCodeHTML(token)}</span>`);
+    cursor = start + token.length;
+  }
+  chunks.push(escapeCodeHTML(text.slice(cursor)));
+  // Preserve the final line box when the editor ends with a newline.
+  return chunks.join('') + (text.endsWith('\n') ? ' ' : '');
+}
+export function enhanceCodeEditors(root = document) {
+  const editors = root.matches?.('textarea.code-editor') ? [root] : root.querySelectorAll?.('textarea.code-editor') || [];
+  for (const editor of editors) {
+    let layer = editor._codeHighlightLayer;
+    if (!layer) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'code-editor-wrap';
+      editor.parentNode.insertBefore(wrapper, editor);
+      wrapper.appendChild(editor);
+      layer = document.createElement('pre');
+      layer.className = 'code-highlight';
+      layer.setAttribute('aria-hidden', 'true');
+      wrapper.insertBefore(layer, editor);
+      editor._codeHighlightLayer = layer;
+      editor.classList.add('highlight-ready');
+      editor.addEventListener('input', () => enhanceCodeEditors(editor));
+      editor.addEventListener('scroll', () => {
+        layer.scrollTop = editor.scrollTop;
+        layer.scrollLeft = editor.scrollLeft;
+      }, { passive: true });
+    }
+    layer.innerHTML = highlightCode(editor.value, editor.classList.contains('sql-editor') ? 'sql' : 'python');
+    layer.scrollTop = editor.scrollTop;
+    layer.scrollLeft = editor.scrollLeft;
+  }
 }
 
 // --- Wire up a single builder's controls (shared by tabs and panels) -----
@@ -365,6 +434,7 @@ export function wireBuilderColumns(id) {
   f(`script-${id}`, st.customScript);
   f(`transform-${id}`, st.transformScript);
   f(`layout-script-${id}`, st.layoutScript);
+  enhanceCodeEditors(document.getElementById(`builder-inner-${id}`) || document);
 
   const dbWrap = document.getElementById(`db-select-wrap-${id}`);
   if (dbWrap) dbWrap.style.display = G.singleDb ? 'none' : 'block';
@@ -456,11 +526,13 @@ document.addEventListener('keydown', event => {
     const spaces = currentLine.match(/^ {1,4}/)?.[0].length || 0;
     if (spaces) editor.setRangeText('', lineStart, lineStart + spaces, 'end');
     if (spaces && start > lineStart + spaces) editor.setSelectionRange(start - spaces, start - spaces);
+    enhanceCodeEditors(editor);
     return;
   }
 
   if (!event.shiftKey && start === end) {
     editor.setRangeText('    ', start, end, 'end');
+    enhanceCodeEditors(editor);
     return;
   }
 
@@ -469,6 +541,7 @@ document.addEventListener('keydown', event => {
     const indented = selectedLines.map(line => `    ${line}`).join('\n');
     editor.setRangeText(indented, lineStart, lineEnd, 'select');
     editor.setSelectionRange(start + 4, end + selectedLines.length * 4);
+    enhanceCodeEditors(editor);
     return;
   }
 
@@ -484,9 +557,10 @@ document.addEventListener('keydown', event => {
   }).join('\n');
   editor.setRangeText(unindented, lineStart, lineEnd, 'select');
   editor.setSelectionRange(Math.max(lineStart, start - removedBeforeStart), Math.max(lineStart, end - removedBeforeEnd));
+  enhanceCodeEditors(editor);
 });
 
 Object.assign(window, {
   renderDataTable, renderMultiPreview, renderPlotChips, renderExtraOpts, renderPlotSpecificFields,
-  updateAxisControls, builderColumnsHTML, wireBuilderColumns, runShow,
+  updateAxisControls, builderColumnsHTML, wireBuilderColumns, runShow, enhanceCodeEditors,
 });

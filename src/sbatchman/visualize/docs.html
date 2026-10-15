@@ -12,6 +12,13 @@
     li{padding:16px 18px;background:var(--panel);border:1px solid var(--border);border-radius:8px}
     li p{margin-top:4px}strong{color:var(--text)}code{color:#79c0ff;background:#21262d;padding:1px 5px;border-radius:4px;font-size:.92em}
     .tip{border-left:3px solid var(--accent);padding:10px 14px;background:var(--panel);color:var(--muted)}
+    pre{overflow:auto;padding:14px 16px;background:#090d12;border:1px solid var(--border);border-radius:8px;line-height:1.5}
+    pre code{padding:0;background:transparent;color:#c9d1d9;white-space:pre}
+    ul{padding-left:24px;color:var(--muted)}li+li{margin-top:4px}
+    #data-driven-legends ul{display:block;margin:8px 0 14px}
+    #data-driven-legends li{padding:0;background:none;border:0;border-radius:0;list-style:disc}
+    #data-driven-legends p{margin:8px 0}
+    #data-driven-legends pre{margin:12px 0 16px}
     a{color:var(--accent)}
   </style>
 </head>
@@ -44,6 +51,88 @@
     </ol>
 
     <div class="tip">To save the result, choose PNG or SVG in the top bar and click <strong>Save image</strong>.</div>
+
+    <section id="data-transform" style="margin-top:36px">
+      <h1>Transform query data with Python</h1>
+      <p>Open <strong>Data transform (pandas)</strong> to change the SQL result before plotting. The result is provided as the pandas DataFrame <code>df</code>. Edit it in place or assign a new DataFrame to <code>df</code>; the final value of <code>df</code> is used for plotting.</p>
+      <pre><code>df['new_column'] = df['existing_column'].astype(str).str.lower()
+df = df[df['ncpus'] > 1]</code></pre>
+      <p>Only the columns selected by SQL (including aliases) and columns created by the transform are plotted. Source tables are also available through <code>data</code> for lookups. The <code>pd</code> pandas module, <code>agg</code> helpers, and <code>log(msg)</code> are available in the script.</p>
+      <p>Use <strong>Script paths</strong> in the top bar to add directories containing your own Python modules. They are saved in your user config directory and are available to every Python script field; import them normally, for example <code>from my_helpers import clean_flags</code>. Workspace JSON exports include the configured paths and add any missing entries to the global path config.</p>
+    </section>
+
+    <section id="data-driven-legends" style="margin-top:36px">
+      <h1>Customize legends from data</h1>
+      <p>The <strong>Layout script</strong> runs after the plot data and traces are prepared. It can inspect the query result and change each trace's legend name, order, group, or visibility. The same context is available with either renderer. Only columns selected by SQL or created by the transform are available in <code>df</code>.</p>
+
+      <h2 style="margin-top:22px">Script context</h2>
+      <ul>
+        <li><code>df</code>: the result as a pandas DataFrame after SQL and the pandas transform.</li>
+        <li><code>df_data</code>: the same data in <code>{'columns': [...], 'rows': [...]}</code> form.</li>
+        <li><code>traces</code>: the current list of Plotly-style trace dictionaries.</li>
+        <li><code>layout</code>, <code>config</code>, <code>pd</code>, and <code>log(msg)</code> are also available.</li>
+      </ul>
+
+      <h2 style="margin-top:22px">Plotly: data-driven labels and order</h2>
+      <p>This example assumes one Y column, the trace name is the compiler value, and the query includes <code>compiler</code> and <code>rate</code>. Higher mean rates appear first and the mean is added to each label.</p>
+      <pre><code>mean_rate = df.groupby('compiler')['rate'].mean().to_dict()
+order = sorted(mean_rate, key=mean_rate.get, reverse=True)
+rank = {name: i for i, name in enumerate(order)}
+
+for trace in traces:
+    name = trace.get('name', '')
+    if name in mean_rate:
+        trace['name'] = f"{name} — {mean_rate[name]:.1f}"
+        trace['legendrank'] = rank[name]
+        trace['legendgroup'] = name
+
+layout.setdefault('legend', {}).update(
+    title={'text': 'Compiler · mean rate'},
+    orientation='h',
+    traceorder='normal',
+)</code></pre>
+      <p>Other useful trace fields are <code>showlegend</code> to hide selected entries and <code>legendgroup</code> to link entries. Set the same <code>legendgroup</code> for traces that should toggle together. Plotly uses the lower <code>legendrank</code> first.</p>
+      <p>Trace names are generated from the selected group columns and Y columns. If you use multiple Y columns, names often include both the group and Y column; inspect <code>traces</code> or log the names first, then adapt the lookup in the example.</p>
+
+      <h2 style="margin-top:22px">Matplotlib: custom per-panel legend</h2>
+      <p>Define <code>customize_matplotlib</code> in the same script. It runs after the default legend is created; calling <code>ax.legend</code> replaces that axes' legend. In a grid, this hook runs once per panel, and its global <code>df</code>/<code>traces</code> belong to that panel. For independent panel legends, turn off <strong>share legend</strong>.</p>
+      <pre><code>mean_rate = df.groupby('compiler')['rate'].mean().to_dict()
+
+def customize_matplotlib(fig, ax, config):
+    handles, labels = ax.get_legend_handles_labels()
+    pairs = [(mean_rate[label], handle, label)
+             for handle, label in zip(handles, labels)
+             if label in mean_rate]
+    pairs.sort(reverse=True, key=lambda item: item[0])
+    ax.legend(
+        [handle for _, handle, _ in pairs],
+        [f'{label} — {score:.1f}' for score, _, label in pairs],
+        title='Compiler · mean rate', ncol=2, frameon=False,
+    )</code></pre>
+
+      <h2 style="margin-top:22px">Matplotlib: custom shared legend for a grid</h2>
+      <p>Put this hook in Panel 1's Layout script. It runs once after all panels and the default shared legend are drawn. <code>axes</code> is a 2D NumPy array; <code>panel_data</code> contains one <code>{'df_data': ..., 'traces': ...}</code> object per rendered panel.</p>
+      <pre><code>def customize_matplotlib_legend(fig, axes, config, panel_data):
+    handles_by_name = {}
+    for ax in axes.flat:
+        handles, labels = ax.get_legend_handles_labels()
+        for handle, label in zip(handles, labels):
+            if label and not label.startswith('_'):
+                handles_by_name.setdefault(label, handle)
+
+    # Remove the default shared legend before creating the custom one.
+    fig.legends.clear()
+    labels = sorted(handles_by_name)
+  if not labels:
+      return
+    fig.legend(
+        [handles_by_name[label] for label in labels], labels,
+        title='All panels', loc='upper center', ncol=min(4, len(labels)),
+        frameon=False,
+    )</code></pre>
+
+      <p>Legend options in the Appearance section still set defaults. A layout script runs after those options, so its edits take precedence. For a grid with a shared legend, use the Panel 1 hook when you need to replace the single figure-level legend.</p>
+    </section>
   </main>
 </body>
 </html>

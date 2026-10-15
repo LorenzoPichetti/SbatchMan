@@ -92,9 +92,11 @@
   };
   document.querySelector('.topbar-mid').append(focusBtn);
   const css = document.createElement('style');
-  css.textContent = `.plotly-wrap{min-height:0;min-width:0;overflow:hidden}.builder{max-height:40%}
+  css.textContent = `.plotly-wrap{min-height:0;min-width:0;overflow:hidden}.builder{max-height:none}
     body.focus .builder,body.focus .panel-tabs{display:none}body.focus #sidebar{display:none}
-    body.focus #app{grid-template-columns:minmax(0,1fr)}`;
+    body.focus #sidebar-resizer{display:none}
+    body.focus #app{grid-template-columns:0 0 minmax(0,1fr)}
+    body.focus #centre{grid-column:3}`;
   document.head.append(css);
 
   // Sync panels: copy the active panel's settings to every other panel in the grid
@@ -143,6 +145,18 @@
   window.applyWorkspace = function (ws, label) {
     if (ws && ws.style) { G_STYLE = ws.style; fill(); save(); }
     return _applyWorkspace(ws, label);
+  };
+
+  // Standalone tab-config JSON files also carry the active style profile.
+  // Restore it on import just as workspace import restores workspace.style.
+  const _applyTabConfig = window.applyTabConfig;
+  window.applyTabConfig = function (tabId, cfg) {
+    if (cfg && cfg.style && typeof cfg.style === 'object') {
+      G_STYLE = cfg.style;
+      fill();
+      save();
+    }
+    return _applyTabConfig(tabId, cfg);
   };
 
   // Boot

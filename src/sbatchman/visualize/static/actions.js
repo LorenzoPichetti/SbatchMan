@@ -39,6 +39,7 @@ async function onReparseClick() {
   document.getElementById('reparse-result').textContent = res.message || res.error;
   if (res.databases) {
     G.databases = res.databases;
+    G.tableCounts = res.table_counts || {};
     G.singleDb = !!res.single_db;
     G.defaultDb = res.default_database || '';
     window.renderSchemaTree(); populateReparseSel(); populateAllDbSelects();
@@ -89,6 +90,7 @@ export async function runFetch() {
   document.getElementById('fetch-result').textContent = res.message || res.error;
   if (res.databases) {
     G.databases = res.databases;
+    G.tableCounts = res.table_counts || {};
     G.singleDb = !!res.single_db;
     G.defaultDb = res.default_database || '';
     window.renderSchemaTree(); populateReparseSel(); populateAllDbSelects();

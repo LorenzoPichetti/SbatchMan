@@ -9,8 +9,10 @@
     if (!tab) return null;
     tab.state.grid = tab.state.grid || {};
     const g = tab.state.grid;
-    if (g.shareX === undefined) g.shareX = false;
-    if (g.shareY === undefined) g.shareY = false;
+    if (g.shareXMode === undefined) g.shareXMode = g.shareX ? 'both' : 'none';
+    if (g.shareYMode === undefined) g.shareYMode = g.shareY ? 'both' : 'none';
+    g.shareX = g.shareXMode === 'scale' || g.shareXMode === 'both';
+    g.shareY = g.shareYMode === 'scale' || g.shareYMode === 'both';
     if (g.xgap === undefined) g.xgap = 0.20;
     if (g.ygap === undefined) g.ygap = 0.24;
     if (g.panelLabels === undefined) g.panelLabels = false;
@@ -42,7 +44,8 @@
     if (!cfg || !cfg.grid) return cfg;
     const g = gridState(tabId);
     Object.assign(cfg.grid, {
-      shareX: !!g.shareX, shareY: !!g.shareY, xgap: g.xgap, ygap: g.ygap,
+      shareX: !!g.shareX, shareY: !!g.shareY,
+      shareXMode: g.shareXMode, shareYMode: g.shareYMode, xgap: g.xgap, ygap: g.ygap,
       panelLabels: !!g.panelLabels, facetByGroup: !!g.facetByGroup, legendPosition: g.legendPosition,
       legendTitle: g.legendTitle, showLegend: g.showLegend !== false,
       shareLegend: g.shareLegend !== false,
@@ -60,7 +63,10 @@
     if (!cfg || !cfg.grid) return;
     const g = gridState(tabId);
     Object.assign(g, {
-      shareX: !!cfg.grid.shareX, shareY: !!cfg.grid.shareY,
+      shareXMode: ['none', 'label', 'scale', 'both'].includes(cfg.grid.shareXMode)
+        ? cfg.grid.shareXMode : (cfg.grid.shareX ? 'both' : 'none'),
+      shareYMode: ['none', 'label', 'scale', 'both'].includes(cfg.grid.shareYMode)
+        ? cfg.grid.shareYMode : (cfg.grid.shareY ? 'both' : 'none'),
       xgap: cfg.grid.xgap ?? g.xgap, ygap: cfg.grid.ygap ?? g.ygap,
       panelLabels: !!cfg.grid.panelLabels, facetByGroup: !!cfg.grid.facetByGroup,
       legendPosition: cfg.grid.legendPosition || 'right',
@@ -76,12 +82,14 @@
       subplotHeight: Math.max(.5, Number(cfg.grid.subplotHeight) || 3.3),
       facetLabelFormat: cfg.grid.facetLabelFormat || '{column}={value}',
     });
+    g.shareX = g.shareXMode === 'scale' || g.shareXMode === 'both';
+    g.shareY = g.shareYMode === 'scale' || g.shareYMode === 'both';
     // applyGrid() (called by applyTabConfig -> setFigureMode -> applyGrid)
     // already ran and built the controls with the OLD (default) state, since
     // this assignment happens after; push the restored values into the DOM.
     const f = (id, val, isCheckbox) => { const el = document.getElementById(id); if (!el) return;
       isCheckbox ? (el.checked = val) : (el.value = val); };
-    f(`grid-share-x-${tabId}`, g.shareX, true); f(`grid-share-y-${tabId}`, g.shareY, true);
+    f(`grid-share-x-${tabId}`, g.shareXMode); f(`grid-share-y-${tabId}`, g.shareYMode);
     f(`grid-panel-labels-${tabId}`, g.panelLabels, true);
     f(`grid-share-legend-${tabId}`, g.shareLegend, true);
     f(`grid-xgap-${tabId}`, g.xgap); f(`grid-ygap-${tabId}`, g.ygap);
@@ -104,8 +112,18 @@
     box.className = 'grid-extra';
     box.style.cssText = 'display:inline-flex;gap:10px;align-items:center;margin-left:10px';
     box.innerHTML = `
-      <label style="display:flex;gap:3px;align-items:center;font-size:10px"><input type="checkbox" id="grid-share-x-${tabId}" style="width:auto"> share x</label>
-      <label style="display:flex;gap:3px;align-items:center;font-size:10px"><input type="checkbox" id="grid-share-y-${tabId}" style="width:auto"> share y</label>
+      <label style="display:flex;gap:3px;align-items:center;font-size:10px">Shared X axes
+        <select id="grid-share-x-${tabId}" title="Choose which X axis properties to share" style="width:8rem">
+          <option value="none">none</option><option value="label">label</option>
+          <option value="scale">scale</option><option value="both">label + scale</option>
+        </select>
+      </label>
+      <label style="display:flex;gap:3px;align-items:center;font-size:10px">Shared Y axes
+        <select id="grid-share-y-${tabId}" title="Choose which Y axis properties to share" style="width:8rem">
+          <option value="none">none</option><option value="label">label</option>
+          <option value="scale">scale</option><option value="both">label + scale</option>
+        </select>
+      </label>
       <label style="display:flex;gap:3px;align-items:center;font-size:10px" title="Use one deduplicated legend for the whole grid"><input type="checkbox" id="grid-share-legend-${tabId}" style="width:auto"> share legend</label>
       <label style="display:flex;gap:3px;align-items:center;font-size:10px"><input type="checkbox" id="grid-panel-labels-${tabId}" style="width:auto">(a)(b)... labels</label>
       <span style="font-size:10px">Figure W/H (in)</span>
@@ -130,8 +148,17 @@
       isCheckbox && (el.checked = !!g[key]);
       el.addEventListener('change', () => { g[key] = isCheckbox ? el.checked : el.value; });
     };
-    bind(`grid-share-x-${tabId}`, 'shareX', true);
-    bind(`grid-share-y-${tabId}`, 'shareY', true);
+    const bindAxisSharing = (id, axis) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.value = g[`share${axis}Mode`];
+      el.addEventListener('change', () => {
+        g[`share${axis}Mode`] = el.value;
+        g[`share${axis}`] = el.value === 'scale' || el.value === 'both';
+      });
+    };
+    bindAxisSharing(`grid-share-x-${tabId}`, 'X');
+    bindAxisSharing(`grid-share-y-${tabId}`, 'Y');
     bind(`grid-share-legend-${tabId}`, 'shareLegend', true);
     bind(`grid-panel-labels-${tabId}`, 'panelLabels', true);
     bind(`grid-figure-width-${tabId}`, 'figureWidth', false);
@@ -207,6 +234,8 @@
         b = {
           ...b,
           share_x: !!g.shareX, share_y: !!g.shareY,
+          share_x_label: g.shareXMode === 'label' || g.shareXMode === 'both',
+          share_y_label: g.shareYMode === 'label' || g.shareYMode === 'both',
           share_legend: g.shareLegend !== false,
           xgap: g.xgap !== undefined ? +g.xgap : undefined,
           ygap: g.ygap !== undefined ? +g.ygap : undefined,

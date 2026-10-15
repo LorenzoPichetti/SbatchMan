@@ -4,6 +4,7 @@
 
 export const G = {
   databases:  {},
+  tableCounts: {}, // database -> table -> row count
   plotTypes:  {},
   plotFields: {}, // plot type -> XML-declared UI field definitions
   remoteSystems: {},

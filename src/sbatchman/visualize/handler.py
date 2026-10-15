@@ -68,7 +68,10 @@ def load_remote_systems():
 
 
 def db_status() -> dict:
-    return {"databases": db.all_schemas(), "single_db": db.is_single_db(), "default_database": db.only_db_name()}
+    schemas = db.all_schemas()
+    return {"databases": schemas,
+            "table_counts": {name: db.table_counts(name) for name in db.DB_REGISTRY},
+            "single_db": db.is_single_db(), "default_database": db.only_db_name()}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -142,6 +145,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"plot_types": plots.plot_type_catalog()})
         elif path == "/api/remote_systems":
             self.send_json({"systems": REMOTE_SYSTEMS})
+        elif path == "/api/script_paths":
+            from sbatchman.visualize.utils.script_paths import SCRIPT_PATHS_FILE, get_script_paths
+            try:
+                self.send_json({"paths": get_script_paths(), "config_file": str(SCRIPT_PATHS_FILE)})
+            except Exception as e:
+                self.send_json({"error": str(e), "config_file": str(SCRIPT_PATHS_FILE)}, 500)
         elif path == "/api/logs":
             self.send_json({"logs": SERVER_LOG[-200:]})
         elif path == "/api/initial_workspace":
@@ -174,6 +183,10 @@ class Handler(BaseHTTPRequestHandler):
             self.guarded_json(self._fetch_remote, payload)
         elif path == "/api/reload_plugins":
             self.guarded_json(self._reload_plugins, payload)
+        elif path == "/api/script_paths":
+            self.guarded_json(self._save_script_paths, payload)
+        elif path == "/api/script_paths/merge":
+            self.guarded_json(self._merge_script_paths, payload)
         elif path == "/api/log":
             entry = log(payload.get("message", ""), payload.get("level", "info"))
             self.send_json({"log_entry": entry})
@@ -210,6 +223,16 @@ class Handler(BaseHTTPRequestHandler):
         entry = log(f"Plugins reloaded: {list(plots.PLUGIN_PLOTS.keys()) or 'none'}")
         return {"reloaded": list(plots.PLUGIN_PLOTS.keys()), "plot_types": plots.plot_type_catalog(),
                 "log_entry": entry}
+
+    def _save_script_paths(self, payload):
+        from sbatchman.visualize.utils.script_paths import SCRIPT_PATHS_FILE, set_script_paths
+        paths = set_script_paths(payload.get("paths", []))
+        return {"ok": True, "paths": paths, "config_file": str(SCRIPT_PATHS_FILE)}
+
+    def _merge_script_paths(self, payload):
+        from sbatchman.visualize.utils.script_paths import SCRIPT_PATHS_FILE, merge_script_paths
+        paths = merge_script_paths(payload.get("paths", []))
+        return {"ok": True, "paths": paths, "config_file": str(SCRIPT_PATHS_FILE)}
 
 
 def launch_visualize_web_server(parser, presets, port=8765, plugins=None, csv_files=False,

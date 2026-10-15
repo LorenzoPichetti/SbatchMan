@@ -45,5 +45,8 @@ Great, you now have `SbatchMan` installed! You can check out the available comma
 sbatchman --help
 ```
 
+!!! tip 
+    To ensure all sbatchman features work (e.g., visualize command), install with `pip install 'sbatchman[visualization]'`
+
 !!! warning 
     Before using SbatchMan, make sure to complete the initial setup. Please, read the [Setup](setup.md) page.

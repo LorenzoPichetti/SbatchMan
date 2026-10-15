@@ -3,8 +3,7 @@ Benchmark-specific aggregation helpers. These are exposed inside transform
 scripts as `agg` (see core.py's exec namespace), so a transform script can
 do e.g.:
 
-    df = agg.summarize(data['result'], group=['algorithm', 'nodes'], value='time')
-    data['result'] = df
+    df = agg.summarize(df, group=['algorithm', 'nodes'], value='time')
 
 which collapses repeated runs into one row per group with mean/median and an
 error column, ready to feed straight into a line/bar/scatter plot's
