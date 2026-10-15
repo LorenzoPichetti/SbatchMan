@@ -161,7 +161,9 @@ textarea{resize:vertical}
   flex:0 0 var(--preview-height,25%)}
 .plot-area>.data-preview.open{display:block}
 .preview-section-label{font-size:9px;color:var(--text3);padding:5px 10px;background:var(--bg3);
-  text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0}
+  text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0;display:block;width:100%;border:0;
+  text-align:left;font-family:var(--sans);cursor:pointer}
+.preview-section-label:hover{color:var(--accent2)}
 table.data-table{border-collapse:collapse;font-family:var(--mono);font-size:10px;width:max-content;min-width:100%}
 table.data-table th{position:sticky;top:0;background:var(--bg4);color:var(--accent2);text-align:left;
   padding:4px 8px;border-bottom:1px solid var(--border2);white-space:nowrap}
@@ -267,6 +269,7 @@ table.data-table tr:hover td{background:var(--bg3)}
 .script-paths-dialog textarea{min-height:220px;resize:vertical}
 .script-paths-dialog .dialog-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:10px}
 .code-editor-wrap{position:relative;display:grid;width:100%;min-width:0;min-height:150px;background:#0b1016;border:1px solid #46515e;border-radius:var(--radius);overflow:hidden}
+.code-editor-wrap.tick-formatter-wrap{min-height:88px}
 .code-highlight{position:absolute;inset:0;margin:0;padding:9px 10px;overflow:hidden;pointer-events:none;
   color:#e6edf3;font-family:var(--mono);font-size:12px;line-height:1.5;tab-size:4;white-space:pre}
 .code-editor{position:relative;z-index:1;grid-area:1/1;display:block;width:100%;height:190px;min-height:150px;padding:9px 10px;
@@ -280,7 +283,7 @@ table.data-table tr:hover td{background:var(--bg3)}
 .code-editor-wrap:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,212,212,.12)}
 .sql-editor{height:145px;min-height:110px}
 .python-editor{height:175px;min-height:120px}
-.python-editor.tick-formatter-editor{height:88px;min-height:70px}
+.python-editor.tick-formatter-editor{height:88px;min-height:88px;resize:vertical;overflow:auto}
 .grid-dimension{width:4rem!important;min-width:4rem!important;padding:3px 4px!important;color:#f0f6fc!important;background:#0b1016!important;
   border-color:#66717f!important;font-size:12px!important;font-weight:600;letter-spacing:.01em}
 .grid-gap{width:4rem!important;min-width:4rem!important;padding:3px 4px!important;color:#f0f6fc!important;background:#0b1016!important;

@@ -3,7 +3,7 @@
 // needs help with that it won't do on its own.
 import { G, getState, tabEl, currentDb } from './state.js';
 import { api, addLogEntries, clientLog } from './log.js';
-import { renderDataTable, renderMultiPreview } from './builder.js';
+import { renderDataTable, renderMultiPreview, deferDataPreview } from './builder.js';
 // updateAxisControls is deliberately NOT imported here: axis_addon.js wraps
 // window.updateAxisControls to refresh the y2/error-column selects whenever
 // fresh columns arrive, and a static import would bypass that wrap (see the
@@ -122,7 +122,8 @@ export async function runPlot() {
       const hint = res.truncated ? ' (truncated to 10k rows)' : '';
       setStatus(tabId, `OK — Matplotlib rendered${hint}`, 'ok');
       clientLog(`Matplotlib plot rendered: "${tab.label}"${hint}`);
-      renderDataTable(document.getElementById(`preview-${tabId}`), res.preview);
+      const preview = document.getElementById(`preview-${tabId}`);
+      deferDataPreview(preview, () => renderDataTable(preview, res.preview));
       return;
     }
     showPlotlyFigure(tabId);
@@ -143,7 +144,8 @@ export async function runPlot() {
     const hint = res.truncated ? ' (truncated to 10k rows)' : '';
     setStatus(tabId, `OK — ${res.traces.length} trace(s), ${res.columns?.length || 0} column(s)${hint}`, 'ok');
     clientLog(`Plot rendered: "${tab.label}" — ${res.traces.length} trace(s)${hint}`);
-    renderDataTable(document.getElementById(`preview-${tabId}`), res.preview);
+    const preview = document.getElementById(`preview-${tabId}`);
+    deferDataPreview(preview, () => renderDataTable(preview, res.preview));
   } catch (e) {
     document.getElementById('btn-run').disabled = false;
     setStatus(tabId, e.message, 'err');
@@ -185,7 +187,8 @@ export async function runGridPlot(tabId) {
       setStatus(tabId, `OK — ${res.panel_count || panels.length} panel(s), Matplotlib rendered`, 'ok');
       clientLog(`Matplotlib grid rendered: "${tab.label}" — ${res.panel_count || panels.length} panel(s)`);
       const labeled = (res.previews || []).map((df, i) => ({ label: `Panel ${i + 1}`, df }));
-      renderMultiPreview(document.getElementById(`preview-${tabId}`), labeled);
+      const preview = document.getElementById(`preview-${tabId}`);
+      deferDataPreview(preview, () => renderMultiPreview(preview, labeled));
       return;
     }
     showPlotlyFigure(tabId);
@@ -214,7 +217,8 @@ export async function runGridPlot(tabId) {
     clientLog(`Grid figure rendered: "${tab.label}" — ${panelCount} panel(s)`);
 
     const labeled = (res.previews || []).map((df, i) => ({ label: `Panel ${i + 1}`, df }));
-    renderMultiPreview(document.getElementById(`preview-${tabId}`), labeled);
+    const preview = document.getElementById(`preview-${tabId}`);
+    deferDataPreview(preview, () => renderMultiPreview(preview, labeled));
   } catch (e) {
     document.getElementById('btn-run').disabled = false;
     setStatus(tabId, e.message, 'err');

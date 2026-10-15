@@ -105,6 +105,7 @@ function wireWorkspace(id) {
   document.getElementById(`preview-toggle-${id}`).addEventListener('click', () => {
     const pv = document.getElementById(`preview-${id}`);
     const open = pv.classList.toggle('open');
+    if (open) window.renderPendingDataPreview?.(pv);
     document.querySelector(`#ws-${id} .plot-area`)?.classList.toggle('preview-open', open);
     document.getElementById(`preview-toggle-${id}`).textContent = open ? 'Data ▴' : 'Data ▾';
     resizePlot(id);

@@ -410,6 +410,7 @@ export function wireConfigControls() {
   });
 
   document.getElementById('btn-export-all').addEventListener('click', async event => {
+    const exportButton = event.currentTarget;
     // window.getTabConfig here too, and for the same reason: this is a
     // *workspace* export, exactly the shape style_addon.js's window.download
     // wrap looks for to inject the global style.
@@ -423,7 +424,7 @@ export function wireConfigControls() {
       return;
     }
     const json = JSON.stringify(ws, null, 2);
-    openWorkspaceExportMenu(event.currentTarget, json, `workspace-${Date.now()}.json`);
+    openWorkspaceExportMenu(exportButton, json, `workspace-${Date.now()}.json`);
   });
   document.getElementById('btn-import-all').addEventListener('click', () => document.getElementById('import-ws-file-input').click());
   document.getElementById('import-ws-file-input').addEventListener('change', e => {

@@ -24,16 +24,44 @@ export function renderDataTable(container, dfData, emptyMsg) {
 }
 
 export function renderMultiPreview(container, labeledTables) {
-  container.innerHTML = '';
-  labeledTables.forEach(({ label, df }) => {
-    const lbl = document.createElement('div');
+  container.replaceChildren();
+  labeledTables.forEach(({ label, df }, index) => {
+    const lbl = document.createElement('button');
+    lbl.type = 'button';
     lbl.className = 'preview-section-label';
     lbl.textContent = label;
-    container.appendChild(lbl);
     const box = document.createElement('div');
-    renderDataTable(box, df);
-    container.appendChild(box);
+    box.hidden = index !== 0;
+    let rendered = false;
+    const render = () => {
+      if (rendered) return;
+      renderDataTable(box, df);
+      rendered = true;
+    };
+    lbl.setAttribute('aria-expanded', String(index === 0));
+    lbl.addEventListener('click', () => {
+      const open = box.hidden;
+      box.hidden = !open;
+      lbl.setAttribute('aria-expanded', String(open));
+      if (open) render();
+    });
+    container.append(lbl, box);
+    if (index === 0) render();
   });
+}
+
+export function deferDataPreview(container, render) {
+  if (!container) return;
+  container._pendingPreviewRender = render;
+  container.replaceChildren();
+  if (container.classList.contains('open')) renderPendingDataPreview(container);
+}
+
+export function renderPendingDataPreview(container) {
+  if (!container?._pendingPreviewRender) return;
+  const render = container._pendingPreviewRender;
+  container._pendingPreviewRender = null;
+  render();
 }
 
 // --- Plot type chips / extra options ----------------------------------
@@ -384,6 +412,7 @@ export function enhanceCodeEditors(root = document) {
     if (!layer) {
       const wrapper = document.createElement('div');
       wrapper.className = 'code-editor-wrap';
+      if (editor.classList.contains('tick-formatter-editor')) wrapper.classList.add('tick-formatter-wrap');
       editor.parentNode.insertBefore(wrapper, editor);
       wrapper.appendChild(editor);
       layer = document.createElement('pre');
@@ -392,7 +421,13 @@ export function enhanceCodeEditors(root = document) {
       wrapper.insertBefore(layer, editor);
       editor._codeHighlightLayer = layer;
       editor.classList.add('highlight-ready');
-      editor.addEventListener('input', () => enhanceCodeEditors(editor));
+      editor.addEventListener('input', () => {
+        if (editor._highlightFrame) return;
+        editor._highlightFrame = requestAnimationFrame(() => {
+          editor._highlightFrame = 0;
+          enhanceCodeEditors(editor);
+        });
+      });
       editor.addEventListener('scroll', () => {
         layer.scrollTop = editor.scrollTop;
         layer.scrollLeft = editor.scrollLeft;
@@ -561,6 +596,7 @@ document.addEventListener('keydown', event => {
 });
 
 Object.assign(window, {
-  renderDataTable, renderMultiPreview, renderPlotChips, renderExtraOpts, renderPlotSpecificFields,
+  renderDataTable, renderMultiPreview, deferDataPreview, renderPendingDataPreview,
+  renderPlotChips, renderExtraOpts, renderPlotSpecificFields,
   updateAxisControls, builderColumnsHTML, wireBuilderColumns, runShow, enhanceCodeEditors,
 });

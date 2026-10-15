@@ -15,6 +15,8 @@ export function addLogEntry(e) {
   div.className = `log-entry ${e.level}`;
   div.innerHTML = `<span class="log-ts">${e.ts}</span><span class="log-msg">${escHtml(e.msg)}</span>`;
   body.appendChild(div);
+  // Keep long sessions responsive instead of retaining every log row forever.
+  while (body.childElementCount > 500) body.firstElementChild.remove();
   body.scrollTop = body.scrollHeight;
   G.logCount++;
   const badge = document.getElementById('log-badge');
