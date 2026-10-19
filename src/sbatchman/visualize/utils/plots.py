@@ -111,9 +111,9 @@ def _xy(df, cfg, kind):
         # error_y would use, so it's a pure presentation switch.
         hi = [v + d for v, d in zip(yv, err["array"])]
         lo = [v - d for v, d in zip(yv, err.get("arrayminus", err["array"]))]
-        band_lower = {"type": "scatter", "x": xs, "y": lo, "mode": "lines", "line": {"width": 0},
+        band_lower = {"type": "scatter", "x": xs, "y": lo, "_ycol": y, "mode": "lines", "line": {"width": 0},
                      "showlegend": False, "hoverinfo": "skip", "name": name + " (band)"}
-        band_upper = {"type": "scatter", "x": xs, "y": hi, "mode": "lines", "line": {"width": 0},
+        band_upper = {"type": "scatter", "x": xs, "y": hi, "_ycol": y, "mode": "lines", "line": {"width": 0},
                      "fill": "tonexty", "fillcolor": with_alpha(color, 0.2),
                      "showlegend": False, "hoverinfo": "skip", "name": name + " (band)"}
         return [band_lower, band_upper, t]

@@ -216,50 +216,91 @@ export function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export async function exportActiveFigure() {
+async function activeFigureBlob(format) {
   const tab = window.activeTabObj();
-  if (!tab?.state?.plotted) { clientLog('No plot rendered yet', 'warn'); return; }
-  const format = document.getElementById('export-format')?.value || 'png';
+  if (!tab?.state?.plotted) throw new Error('No plot rendered yet.');
   const plotDiv = document.getElementById(`plot-${G.activeTab}`);
-  if (!plotDiv) { clientLog('Plot element not found', 'warn'); return; }
+  if (!plotDiv) throw new Error('Plot element not found.');
+  if (tab.state.rendererBackend === 'matplotlib') {
+    const encoded = tab.state.renderedImage?.[`image_${format}`];
+    if (!encoded) throw new Error(`No ${format.toUpperCase()} image is available; render the figure again first.`);
+    const binary = atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: format === 'svg' ? 'image/svg+xml' : 'image/png' });
+  }
+  const svgClone = buildCombinedSvgClone(plotDiv);
+  if (!svgClone) throw new Error("Could not find the plot's SVG to export.");
+  const legendPosition = document.getElementById(`legend-position-${G.activeTab}`)?.value || 'right';
+  widenLegendBoxToFitText(plotDiv, svgClone, legendPosition);
+  if (format === 'svg') {
+    const svgStr = '<?xml version="1.0" standalone="no"?>\r\n' + new XMLSerializer().serializeToString(svgClone);
+    return new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+  }
+  return svgCloneToPngBlob(svgClone, 2); // 2x for a crisp PNG
+}
 
+export async function exportActiveFigure(selectedFormat) {
+  const tab = window.activeTabObj();
+  if (!tab) { clientLog('No active figure', 'warn'); return; }
+  const format = selectedFormat || document.getElementById('export-format')?.value || 'png';
   const filename = `hpc-plot-${tab.label.replace(/\s+/g, '-')}`;
   try {
-    if (tab.state.rendererBackend === 'matplotlib') {
-      const image = tab.state.renderedImage;
-      const encoded = image && image[`image_${format}`];
-      if (!encoded) { clientLog(`No ${format.toUpperCase()} image is available; render the figure again first.`, 'warn'); return; }
-      const binary = atob(encoded);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const mime = format === 'svg' ? 'image/svg+xml' : 'image/png';
-      downloadBlob(new Blob([bytes], { type: mime }), `${filename}.${format}`);
-      clientLog(`${format.toUpperCase()} saved for tab "${tab.label}"`);
-      return;
-    }
-    const svgClone = buildCombinedSvgClone(plotDiv);
-    if (!svgClone) { clientLog("Could not find the plot's SVG to export", 'error'); return; }
+    const blob = await activeFigureBlob(format);
+    downloadBlob(blob, `${filename}.${format}`);
+    clientLog(`${format.toUpperCase()} saved for tab "${tab.label}"`);
+  } catch (err) { clientLog(`Export failed: ${err.message || err}`, 'error'); }
+}
 
-    const legendPosition = document.getElementById(`legend-position-${G.activeTab}`)?.value || 'right';
-    widenLegendBoxToFitText(plotDiv, svgClone, legendPosition);
-
-    if (format === 'svg') {
-      const svgStr = '<?xml version="1.0" standalone="no"?>\r\n' + new XMLSerializer().serializeToString(svgClone);
-      downloadBlob(new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }), `${filename}.svg`);
-      clientLog(`SVG saved for tab "${tab.label}" — exact copy of the on-screen plot`);
-    } else {
-      const scale = 2; // render at 2x for a crisp PNG
-      const pngBlob = await svgCloneToPngBlob(svgClone, scale);
-      downloadBlob(pngBlob, `${filename}.png`);
-      clientLog(`PNG saved for tab "${tab.label}" @2x — exact copy of the on-screen plot`);
+async function copyActiveFigure() {
+  const tab = window.activeTabObj();
+  try {
+    if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+      throw new Error('Image clipboard access is unavailable. Use a secure browser context and try again.');
     }
+    const png = await activeFigureBlob('png');
+    await navigator.clipboard.write([new ClipboardItem({'image/png': png})]);
+    clientLog(`PNG copied to clipboard for tab "${tab?.label || ''}"`);
   } catch (err) {
-    clientLog(`Export failed: ${err.message || err}`, 'error');
+    clientLog(`Copy image failed: ${err.message || err}`, 'error');
   }
 }
 
 export function wireImageExport() {
-  document.getElementById('btn-export-png').addEventListener('click', exportActiveFigure);
+  const button = document.getElementById('btn-export-png');
+  button.addEventListener('click', event => {
+    event.stopPropagation();
+    const old = document.getElementById('image-export-menu');
+    if (old) { old._close?.(); return; }
+    const menu = document.createElement('div');
+    menu.id = 'image-export-menu'; menu.setAttribute('role', 'menu');
+    menu.style.cssText = 'position:fixed;z-index:1000;display:flex;flex-direction:column;gap:4px;padding:6px;background:var(--bg2);color:var(--text);border:1px solid var(--border2);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:190px';
+    const rect = button.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 205))}px`;
+    menu.style.top = `${rect.bottom + 4}px`;
+    let dismiss;
+    menu._close = () => {
+      menu.remove();
+      if (dismiss) document.removeEventListener('pointerdown', dismiss);
+    };
+    const add = (label, action) => {
+      const choice = document.createElement('button');
+      choice.type = 'button'; choice.className = 'btn'; choice.textContent = label;
+      choice.style.cssText = 'justify-content:flex-start;width:100%;padding:7px 9px';
+      choice.addEventListener('click', async () => { menu._close(); await action(); });
+      menu.appendChild(choice);
+    };
+    const format = document.getElementById('export-format')?.value || 'png';
+    add(`Download ${format.toUpperCase()}`, () => exportActiveFigure(format));
+    add('Copy PNG to clipboard', copyActiveFigure);
+    document.body.appendChild(menu);
+    dismiss = e => {
+      if (!menu.contains(e.target) && e.target !== button) {
+        menu._close();
+      }
+    };
+    setTimeout(() => document.addEventListener('pointerdown', dismiss), 0);
+  });
 }
 
 Object.assign(window, { downloadBlob, exportActiveFigure, wireImageExport });

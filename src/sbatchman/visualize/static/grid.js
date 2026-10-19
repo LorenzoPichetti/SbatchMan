@@ -35,8 +35,8 @@ export function renderPanelTabs(tabId) {
     clone.type = 'button';
     clone.className = 'panel-clone-btn';
     clone.textContent = '⧉';
-    clone.title = `Clone Panel ${i + 1}`;
-    clone.setAttribute('aria-label', `Clone Panel ${i + 1}`);
+    clone.title = `Clone Panel ${i + 1} into a new panel`;
+    clone.setAttribute('aria-label', `Clone Panel ${i + 1} into a new panel`);
     clone.addEventListener('click', event => {
       event.stopPropagation();
       clonePanel(tabId, pid);
@@ -54,6 +54,10 @@ export function clonePanel(tabId, sourceId) {
     clientLog('Cannot clone this panel: the subplot grid is already at its 6×6 limit.', 'warn');
     return;
   }
+
+  const sourceIndex = grid.panelIds.indexOf(sourceId) + 1;
+  const targetIndex = grid.panelIds.length + 1;
+  if (!confirm(`Clone Panel ${sourceIndex} into new Panel ${targetIndex}?\n\nThe new panel copies the source database, SQL and transform, plot type, data mappings, appearance, axis settings, plot-specific fields, and custom plot/layout scripts. Existing panels are not overwritten.`)) return;
 
   const config = window.getNodeConfig(sourceId);
   if (grid.cols < 6) grid.cols += 1;

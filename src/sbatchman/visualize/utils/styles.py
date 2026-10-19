@@ -117,7 +117,8 @@ def apply(layout, traces, style=None):
                     bt["fillcolor"] = with_alpha(c, 0.2)
             pending_band = []
     for t in traces:
-        if isinstance(t.get("line"), dict) and "width" in t["line"] and t.get("type") != "bar":
+        if (not _is_band_helper(t) and isinstance(t.get("line"), dict)
+                and "width" in t["line"] and t.get("type") != "bar"):
             t["line"]["width"] = s["line_width"]
         panel_marker_size = t.pop("_panel_marker_size", None)
         m = t.get("marker")

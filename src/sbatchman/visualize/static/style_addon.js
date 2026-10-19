@@ -99,34 +99,51 @@
     body.focus #centre{grid-column:3}`;
   document.head.append(css);
 
-  // Sync panels: copy the active panel's settings to every other panel in the grid
+  // Sync panels: copy the active panel's complete saved config to all others.
   const _apply = window.applyGrid;
   window.applyGrid = function (tabId) {
     _apply(tabId);
     const wrap = document.getElementById(`grid-controls-wrap-${tabId}`);
     if (wrap && !wrap.querySelector('.sync-btn')) {
       const b = document.createElement('button'); b.className = 'btn sm sync-btn';
-      b.textContent = 'Sync panels'; b.title = 'Copy settings of the current panel to all others';
+      b.textContent = 'Sync from Panel 1…';
       b.onclick = () => syncPanels(tabId); wrap.append(b);
     }
-  };
-  async function syncPanels(tabId) {
-    const g = getState(tabId).grid, src = g.activePanel;
-    const withSql = confirm('Also copy SQL / transform scripts? (Cancel = keep each panel\'s own query)');
-    const ids = ['x-label', 'y-label', 'x-scale', 'y-scale', 'x-tickfmt', 'y-tickfmt', 'tick-formatter', 'legend-position', 'legend-title',
-      'marker-by', 'dash-by', 'layout-script', 'script', ...(withSql ? ['sql-input', 'transform'] : [])];
-    const s0 = getState(src);
-    for (const pid of g.panelIds.filter(p => p !== src)) {
-      const st = getState(pid);
-      ids.forEach(i => { const a = document.getElementById(`${i}-${src}`), b = document.getElementById(`${i}-${pid}`); if (a && b) b.value = a.value; });
-      const c = document.getElementById(`show-legend-${pid}`); if (c) c.checked = document.getElementById(`show-legend-${src}`).checked;
-      Object.assign(st, {plotType: s0.plotType, yCols: [...s0.yCols], groupCols: [...s0.groupCols], extra: {...s0.extra}});
-      renderPlotChips(pid); renderExtraOpts(pid);
-      window.renderPlotSpecificFields(pid);
-      const x = document.getElementById(`x-col-${src}`).value;
-      await runShow(pid); const xs = document.getElementById(`x-col-${pid}`); if (xs) xs.value = x;
+    const chips = document.getElementById(`panel-tabs-${tabId}`);
+    if (chips && !chips._syncSourceListener) {
+      chips._syncSourceListener = true;
+      chips.addEventListener('click', () => requestAnimationFrame(() => refreshSyncButton(tabId)));
     }
-    clientLog(`Synced settings from panel to ${g.panelIds.length - 1} other panel(s)`);
+    refreshSyncButton(tabId);
+  };
+  function refreshSyncButton(tabId) {
+    const grid = getState(tabId)?.grid;
+    const button = document.querySelector(`#grid-controls-wrap-${tabId} .sync-btn`);
+    if (!grid || !button) return;
+    const source = Math.max(0, grid.panelIds.indexOf(grid.activePanel));
+    const targets = grid.panelIds.map((_, i) => i + 1).filter(n => n !== source + 1);
+    button.textContent = `Sync from Panel ${source + 1}…`;
+    button.title = targets.length
+      ? `Copy Panel ${source + 1} settings to Panels ${targets.join(', ')}`
+      : 'Add another panel to enable syncing';
+    button.disabled = targets.length === 0;
+  }
+  function syncPanels(tabId) {
+    const grid = getState(tabId)?.grid;
+    if (!grid || grid.panelIds.length < 2) return;
+    const sourceId = grid.activePanel;
+    const sourceIndex = grid.panelIds.indexOf(sourceId) + 1;
+    const targets = grid.panelIds.map((id, index) => ({id, index: index + 1}))
+      .filter(panel => panel.id !== sourceId);
+    const targetLabels = targets.map(panel => `Panel ${panel.index}`).join(', ');
+    const confirmed = confirm(
+      `Sync from Panel ${sourceIndex} to ${targetLabels}?\n\n` +
+      `This overwrites each target's database, SQL query, transform script, plot type, data mappings, appearance and legend, axis settings, plot-specific fields, and custom plot/layout scripts. The source panel is unchanged.`
+    );
+    if (!confirmed) return;
+    const sourceConfig = window.getNodeConfig(sourceId);
+    targets.forEach(panel => window.applyNodeConfig(panel.id, sourceConfig));
+    clientLog(`Copied all settings from Panel ${sourceIndex} to ${targetLabels}`);
   }
 
   // Persist G_STYLE inside the workspace JSON itself (not just localStorage)

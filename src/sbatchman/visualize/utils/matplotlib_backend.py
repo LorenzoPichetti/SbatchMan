@@ -99,9 +99,8 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
     plt, Line2D, np, sns = _modules()
     kind = trace.get("type", "scatter")
     name = str(trace.get("name", ""))
-    if name.endswith(" (band)") and trace.get("showlegend") is False:
-        return None
-    if trace.get("showlegend") is False or (name.endswith(" (band)") and trace.get("hoverinfo") == "skip"):
+    is_band_helper = name.endswith(" (band)")
+    if trace.get("showlegend") is False or (is_band_helper and trace.get("hoverinfo") == "skip"):
         show_legend = False
     else:
         show_legend = True
@@ -121,14 +120,30 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
     color = color or line.get("color") or marker.get("color")
     handle = None
 
+    # Plotly represents a filled band as a lower boundary followed by an
+    # upper boundary with fill='tonexty'. Consume that pair directly here;
+    # the helper traces intentionally do not appear in the legend.
+    if is_band_helper:
+        if trace.get("fill") == "tonexty":
+            lower = getattr(axis, "_sbatchman_band_lower", None)
+            if lower is not None:
+                from matplotlib.colors import to_rgba
+                _, lower_y = lower
+                axis.xaxis.update_units(x or [])
+                x_values = axis.convert_xunits(x or [])
+                band_color = color if style.get("recolor", True) else trace.get("fillcolor") or color
+                try: band_color = to_rgba(band_color, alpha=.2 if style.get("recolor", True) else None)
+                except (TypeError, ValueError): band_color = to_rgba(color, alpha=.2)
+                axis.fill_between(x_values, lower_y, y or [],
+                                  color=band_color, linewidth=0,
+                                  interpolate=True, zorder=1)
+            axis._sbatchman_band_lower = None
+        else:
+            axis._sbatchman_band_lower = (x or [], y or [])
+        return None
+
     if kind == "scatter":
         mode = trace.get("mode", "markers")
-        if config.get("error_style") == "band" and (trace.get("error_y") or {}).get("visible"):
-            err = trace["error_y"]
-            low = err.get("arrayminus", err["array"])
-            axis.fill_between(x or [], [v - e for v, e in zip(y or [], low)],
-                              [v + e for v, e in zip(y or [], err["array"])],
-                              color=color, alpha=.2, linewidth=0)
         if "lines" in mode:
             linestyle = _DASHES.get(line.get("dash", "solid"), "-")
             if _has_errorbars(trace, config) and not marker_values:
@@ -405,7 +420,8 @@ def render_matplotlib_plot(df, traces, config, style=None, title="",
     y2_cols = {y2_cols} if isinstance(y2_cols, str) else set(y2_cols)
     right_ax = ax.twinx() if y2_cols else None
     colors = style.get("palette") if isinstance(style.get("palette"), list) else styles.OKABE_ITO
-    names = list(dict.fromkeys(t.get("name") for t in traces if t.get("name")))
+    names = list(dict.fromkeys(t.get("name") for t in traces
+                               if t.get("name") and not str(t.get("name")).endswith(" (band)")))
     color_map = {name: colors[i % len(colors)] for i, name in enumerate(names)}
     bar_traces = [t for t in traces if t.get("type") == "bar"]
     bar_indexes = {id(t): i for i, t in enumerate(bar_traces)}
@@ -415,7 +431,9 @@ def render_matplotlib_plot(df, traces, config, style=None, title="",
     else:
         for t in traces:
             trace_color = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color")
-            color = color_map.get(t.get("name"), colors[len(handles) % len(colors)]) if style.get("recolor", True) else trace_color
+            name = str(t.get("name", ""))
+            color_key = name[:-7] if name.endswith(" (band)") else name
+            color = color_map.get(color_key, colors[len(handles) % len(colors)]) if style.get("recolor", True) else trace_color
             result = _draw_trace(ax, right_ax, t, config, style, color,
                                  bar_indexes.get(id(t), 0), len(bar_traces) or 1)
             if result: handles.append(result)
@@ -470,11 +488,12 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
         else:
             for t in traces:
                 name = t.get("name")
-                if name not in color_map:
-                    color_map[name] = colors[len(color_map) % len(colors)]
+                color_key = str(name)[:-7] if str(name).endswith(" (band)") else name
+                if color_key not in color_map:
+                    color_map[color_key] = colors[len(color_map) % len(colors)]
                 if not style.get("recolor", True):
-                    color_map[name] = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color") or colors[0]
-                result = _draw_trace(ax, right_ax, t, config, style, color_map[name],
+                    color_map[color_key] = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color") or colors[0]
+                result = _draw_trace(ax, right_ax, t, config, style, color_map[color_key],
                                      bar_indexes.get(id(t), 0), len(bar_traces) or 1)
                 if result:
                     handles.append(result)

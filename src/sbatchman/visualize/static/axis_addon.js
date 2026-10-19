@@ -69,9 +69,10 @@
       <div id="reference-x-lines-${id}"></div>
       <button type="button" class="btn sm" id="reference-x-add-${id}">Add vertical line</button>
 
-      <div class="b-col-title" style="margin-top:10px" data-tip="Requires a column with the error magnitude, e.g. from agg.summarize() in a transform script">Error bars / band</div>
+      <div class="b-col-title" style="margin-top:10px" data-tip="For agg.summarize(df, ..., 'gflops'), select gflops_err; minmax produces gflops_err_low and gflops_err_high">Error bars / band</div>
       <label>Symmetric error column</label>
       <select id="error-y-${id}"><option value="">— none —</option></select>
+      <div style="font-size:9px;color:var(--text3);margin:2px 0">For summarize(), choose &lt;Y column&gt;_err; minmax uses the low/high columns below.</div>
       <div style="font-size:9px;color:var(--text3);margin:3px 0">— or, for asymmetric error (e.g. min/max) —</div>
       <select id="error-y-low-${id}"><option value="">— low bound col —</option></select>
       <select id="error-y-high-${id}" style="margin-top:3px"><option value="">— high bound col —</option></select>
