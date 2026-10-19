@@ -159,6 +159,17 @@
     return _applyTabConfig(tabId, cfg);
   };
 
+  // A standalone tab-config export is also a JSON handoff, so include the
+  // current global style there just as workspace exports do. Without this,
+  // importing a tab config into another browser/session silently falls back
+  // to that session's local style even though the source figure was styled.
+  const _getTabConfig = window.getTabConfig;
+  window.getTabConfig = function (tabId) {
+    const cfg = _getTabConfig(tabId);
+    if (cfg) cfg.style = {...G_STYLE};
+    return cfg;
+  };
+
   // Boot
   fetch('/api/style_presets').then(r => r.json()).then(r => {
     presets = r.presets;

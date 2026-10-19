@@ -206,9 +206,48 @@ def build_layout(config, overrides=None, traces=None, style=None):
             legend.update(entrywidth=1 / ncols, entrywidthmode="fraction")
     if config.get("legend_title"):
         legend["title"] = {"text": config["legend_title"]}
+    shapes, annotations = [], []
+    for axis, items in (("y", config.get("y_lines") or []), ("x", config.get("x_lines") or [])):
+        for item in items:
+            line = item if isinstance(item, dict) else {"value": item}
+            try: value = float(line.get("value"))
+            except (TypeError, ValueError): continue
+            color = line.get("color") or ("#d62728" if axis == "y" else "#1f77b4")
+            try: width = max(0.1, float(line.get("width") or 1.5))
+            except (TypeError, ValueError): width = 1.5
+            dash = line.get("linestyle", "dash")
+            if dash not in ("solid", "dash", "dot", "dashdot"): dash = "dash"
+            if axis == "y":
+                shape = {"type": "line", "xref": "x domain", "x0": 0, "x1": 1,
+                         "yref": "y", "y0": value, "y1": value}
+            else:
+                shape = {"type": "line", "xref": "x", "x0": value, "x1": value,
+                         "yref": "y domain", "y0": 0, "y1": 1}
+            shapes.append({**shape, "line": {"color": color, "width": width, "dash": dash}})
+            label = str(line.get("label") or "").strip()
+            if label:
+                position = line.get("label_position", "end")
+                fraction = {"start": 0.02, "center": 0.5, "end": 0.98}.get(position, 0.98)
+                orientation = line.get("label_orientation", "auto")
+                if orientation == "auto": orientation = "horizontal" if axis == "y" else "vertical"
+                angle = 90 if orientation == "vertical" else (45 if orientation == "diagonal" else 0)
+                annotation = {"_reference_line": True, "text": label, "showarrow": False,
+                              "textangle": angle, "font": {"color": color},
+                              "xanchor": "center", "yanchor": "middle"}
+                if axis == "y":
+                    annotation.update(x=fraction, xref="x domain",
+                                      xanchor={"start": "left", "center": "center", "end": "right"}.get(position, "right"),
+                                      y=value, yref="y",
+                                      yshift=8 if position != "start" else -8)
+                else:
+                    annotation.update(x=value, xref="x", y=fraction, yref="y domain",
+                                      yanchor={"start": "bottom", "center": "middle", "end": "top"}.get(position, "top"),
+                                      xshift=8 if position != "start" else -8)
+                annotations.append(annotation)
     layout = {"title": {"text": config.get("title", ""), "x": 0.02, "xanchor": "left", "pad": {"t": 8, "b": 8}},
               "xaxis": xaxis, "yaxis": yaxis, "barmode": config.get("barmode", "group"),
               "paper_bgcolor": "#fff", "plot_bgcolor": "#fff", "showlegend": show, "legend": legend,
+              "shapes": shapes, "annotations": annotations,
               "margin": {"l": 80, "r": mr, "t": mt, "b": mb, "pad": 4},
               "_legend_extra_height": extra_h, "_legend_extra_width": extra_w,
               "_legend_center_required_width": center_w}

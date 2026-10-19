@@ -360,6 +360,39 @@ def _axis_legend_handles(ax, right_ax=None):
             if label and not label.startswith("_")]
 
 
+def _draw_reference_lines(ax, config):
+    styles = {"solid": "-", "dash": "--", "dot": ":", "dashdot": "-."}
+    positions = {"start": .02, "center": .5, "end": .98}
+    for axis, items in (("y", config.get("y_lines") or []), ("x", config.get("x_lines") or [])):
+        for item in items:
+            line = item if isinstance(item, dict) else {"value": item}
+            try: value = float(line.get("value"))
+            except (TypeError, ValueError): continue
+            color = line.get("color") or ("#d62728" if axis == "y" else "#1f77b4")
+            try: width = max(.1, float(line.get("width") or 1.5))
+            except (TypeError, ValueError): width = 1.5
+            linestyle = styles.get(line.get("linestyle", "dash"), "--")
+            if axis == "y":
+                ax.axhline(value, color=color, linewidth=width, linestyle=linestyle)
+            else:
+                ax.axvline(value, color=color, linewidth=width, linestyle=linestyle)
+            label = str(line.get("label") or "").strip()
+            if not label: continue
+            position = line.get("label_position", "end")
+            fraction = positions.get(position, .98)
+            orientation = line.get("label_orientation", "auto")
+            if orientation == "auto": orientation = "horizontal" if axis == "y" else "vertical"
+            rotation = 90 if orientation == "vertical" else (45 if orientation == "diagonal" else 0)
+            if axis == "y":
+                ax.text(fraction, value, label, transform=ax.get_yaxis_transform(), color=color,
+                        rotation=rotation, ha={"start":"left", "center":"center", "end":"right"}.get(position, "right"),
+                        va="bottom", clip_on=True)
+            else:
+                ax.text(value, fraction, label, transform=ax.get_xaxis_transform(), color=color,
+                        rotation=rotation, ha="left", va={"start":"bottom", "center":"center", "end":"top"}.get(position, "top"),
+                        clip_on=True)
+
+
 def render_matplotlib_plot(df, traces, config, style=None, title="",
                            custom_plot_fn=None, layout_fn=None, legend_fn=None):
     plt, _, np, sns = _modules()
@@ -387,6 +420,7 @@ def render_matplotlib_plot(df, traces, config, style=None, title="",
                                  bar_indexes.get(id(t), 0), len(bar_traces) or 1)
             if result: handles.append(result)
     _style_axes(ax, right_ax, config, style, title)
+    _draw_reference_lines(ax, config)
     if callable(custom_plot_fn):
         handles = _axis_legend_handles(ax, right_ax)
     _legend(ax, handles, config, style)
@@ -447,6 +481,7 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
                     if name not in {n for _, n in all_handles}:
                         all_handles.append(result)
         _style_axes(ax, right_ax, config, style, config.get("title", ""))
+        _draw_reference_lines(ax, config)
         if share_x_label and r < rows - 1:
             ax.set_xlabel("")
         if share_y and c > 0:

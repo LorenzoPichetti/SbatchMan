@@ -14,6 +14,7 @@ class LogScreen(Screen):
     Binding("n", "next_page", "Next page"),
     Binding("p", "prev_page", "Previous page"),
     Binding("tab", "toggle_focus", "Switch log"),
+    Binding("c", "copy_path", "Copy log path"),
   ]
 
   PAGE_SIZE = 50       # Number of lines per page
@@ -104,6 +105,16 @@ class LogScreen(Screen):
   def action_toggle_focus(self):
     self.focused_log = "stderr" if self.focused_log == "stdout" else "stdout"
     self.display_page()
+
+  def action_copy_path(self) -> None:
+    """Copy the full path of the currently focused log file."""
+    path = (
+      self.job.get_stdout_path()
+      if self.focused_log == "stdout"
+      else self.job.get_stderr_path()
+    ).resolve()
+    self.app.copy_to_clipboard(str(path))
+    self.notify(f"Copied {self.focused_log.upper()} path: {path}")
 
   def on_mouse_down(self, event: MouseDown) -> None:
     # FIXME doesn't work...

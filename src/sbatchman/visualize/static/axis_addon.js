@@ -10,6 +10,7 @@
   const BOOL_FIELDS = ['xReversed', 'yReversed'];
   const SEL_FIELDS = ['errorY', 'errorYLow', 'errorYHigh'];   // column pickers, populated from st.columns
   const TEXT_FIELDS = ['y2Label'];
+  const LINE_FIELDS = ['xLines', 'yLines'];
 
   // --- state defaults --------------------------------------------------
   // defaultNodeState() (in app.js) is called once per new tab/panel; wrap it
@@ -21,6 +22,7 @@
     BOOL_FIELDS.forEach(k => { if (!(k in st)) st[k] = false; });
     SEL_FIELDS.forEach(k => { if (!(k in st)) st[k] = ''; });
     TEXT_FIELDS.forEach(k => { if (!(k in st)) st[k] = ''; });
+    LINE_FIELDS.forEach(k => { if (!Array.isArray(st[k])) st[k] = []; });
     if (!('y2Cols' in st)) st.y2Cols = [];
     if (!('errorStyle' in st)) st.errorStyle = 'bars';
     return st;
@@ -59,6 +61,14 @@
         <input type="text" id="y2-max-${id}" placeholder="y2 max">
       </div>
 
+      <div class="b-col-title" style="margin-top:10px" data-tip="Add reference lines at data coordinates">Reference lines</div>
+      <label>Horizontal lines (Y values)</label>
+      <div id="reference-y-lines-${id}"></div>
+      <button type="button" class="btn sm" id="reference-y-add-${id}">Add horizontal line</button>
+      <label style="margin-top:5px">Vertical lines (X values)</label>
+      <div id="reference-x-lines-${id}"></div>
+      <button type="button" class="btn sm" id="reference-x-add-${id}">Add vertical line</button>
+
       <div class="b-col-title" style="margin-top:10px" data-tip="Requires a column with the error magnitude, e.g. from agg.summarize() in a transform script">Error bars / band</div>
       <label>Symmetric error column</label>
       <select id="error-y-${id}"><option value="">— none —</option></select>
@@ -87,6 +97,17 @@
     f(`x-min-${id}`, st.xMin); f(`x-max-${id}`, st.xMax);
     f(`y-min-${id}`, st.yMin); f(`y-max-${id}`, st.yMax);
     f(`y2-min-${id}`, st.y2Min); f(`y2-max-${id}`, st.y2Max); f(`y2-label-${id}`, st.y2Label);
+    st.yLines = normalizeLines(st.yLines, 'y');
+    st.xLines = normalizeLines(st.xLines, 'x');
+    renderReferenceLines(id, 'y');
+    renderReferenceLines(id, 'x');
+    ['x', 'y'].forEach(axis => {
+      document.getElementById(`reference-${axis}-add-${id}`)?.addEventListener('click', () => {
+        st[axis + 'Lines'] = readReferenceLines(id, axis);
+        st[axis + 'Lines'].push(defaultLine(axis));
+        renderReferenceLines(id, axis);
+      });
+    });
     const xr = document.getElementById(`x-reversed-${id}`); if (xr) xr.checked = !!st.xReversed;
     const yr = document.getElementById(`y-reversed-${id}`); if (yr) yr.checked = !!st.yReversed;
     const styleRadio = document.querySelector(`input[name="error-style-${id}"][value="${st.errorStyle || 'bars'}"]`);
@@ -164,6 +185,10 @@
     const st = getState(id);
     const g = sid => document.getElementById(`${sid}-${id}`);
     const numOrUndef = el => (el && el.value !== '' ? el.value : undefined);
+    if (st) {
+      st.xLines = readReferenceLines(id, 'x').filter(line => Number.isFinite(line.value));
+      st.yLines = readReferenceLines(id, 'y').filter(line => Number.isFinite(line.value));
+    }
     Object.assign(payload.config, {
       x_min: numOrUndef(g('x-min')), x_max: numOrUndef(g('x-max')),
       y_min: numOrUndef(g('y-min')), y_max: numOrUndef(g('y-max')),
@@ -171,6 +196,7 @@
       y_reversed: !!(g('y-reversed') && g('y-reversed').checked),
       y2: st && st.y2Cols && st.y2Cols.length ? st.y2Cols : undefined,
       y2_label: numOrUndef(g('y2-label')), y2_min: numOrUndef(g('y2-min')), y2_max: numOrUndef(g('y2-max')),
+      x_lines: st?.xLines || [], y_lines: st?.yLines || [],
       error_y: numOrUndef(g('error-y')), error_y_low: numOrUndef(g('error-y-low')), error_y_high: numOrUndef(g('error-y-high')),
       error_style: (document.querySelector(`input[name="error-style-${id}"]:checked`) || {}).value || 'bars',
     });
@@ -193,12 +219,83 @@
       yReversed: (g('y-reversed') && g('y-reversed').checked) || undefined,
       y2Cols: st && st.y2Cols && st.y2Cols.length ? st.y2Cols : undefined,
       y2Label: v(g('y2-label')), y2Min: v(g('y2-min')), y2Max: v(g('y2-max')),
+      xLines: readReferenceLines(id, 'x').filter(line => Number.isFinite(line.value)),
+      yLines: readReferenceLines(id, 'y').filter(line => Number.isFinite(line.value)),
       errorY: v(g('error-y')), errorYLow: v(g('error-y-low')), errorYHigh: v(g('error-y-high')),
       errorStyle: (document.querySelector(`input[name="error-style-${id}"]:checked`) || {}).value,
     };
+    if (!extra.xLines.length) delete extra.xLines;
+    if (!extra.yLines.length) delete extra.yLines;
     Object.entries(extra).forEach(([k, val]) => { if (val !== undefined) cfg[k] = val; });
     return cfg;
   };
+
+  const LINE_STYLES = ['solid', 'dash', 'dot', 'dashdot'];
+  const LINE_POSITIONS = ['start', 'center', 'end'];
+  function defaultLine(axis) {
+    return {value: '', color: axis === 'y' ? '#d62728' : '#1f77b4', linestyle: 'dash',
+      width: 1.5, label: '', label_orientation: 'auto', label_position: 'end'};
+  }
+  function normalizeLines(lines, axis) {
+    return (Array.isArray(lines) ? lines : []).map(line => {
+      const base = defaultLine(axis);
+      return line && typeof line === 'object' ? {...base, ...line} : {...base, value: line};
+    });
+  }
+  function renderReferenceLines(id, axis) {
+    const st = getState(id), host = document.getElementById(`reference-${axis}-lines-${id}`);
+    if (!st || !host) return;
+    const key = axis + 'Lines';
+    st[key] = normalizeLines(st[key], axis);
+    host.replaceChildren();
+    st[key].forEach((line, index) => {
+      const row = document.createElement('div');
+      row.dataset.referenceLine = String(index);
+      row.style.cssText = 'display:grid;grid-template-columns:1fr 30px 1fr;gap:3px;margin:4px 0;padding:4px;border:1px solid var(--border);border-radius:4px';
+      const input = (field, placeholder, type='text') => {
+        const el = document.createElement('input'); el.type = type; el.dataset.field = field;
+        el.placeholder = placeholder; el.value = line[field] ?? ''; el.style.minWidth = '0';
+        if (field === 'width') { el.min = '0.1'; el.step = '0.1'; }
+        return el;
+      };
+      const coord = input('value', axis === 'y' ? 'Y value' : 'X value', 'number');
+      const color = input('color', 'color', 'color');
+      const width = input('width', 'width', 'number');
+      const style = document.createElement('select'); style.dataset.field = 'linestyle';
+      LINE_STYLES.forEach(value => style.add(new Option(value, value))); style.value = line.linestyle;
+      const label = input('label', 'label');
+      const orient = document.createElement('select'); orient.dataset.field = 'label_orientation';
+      [['auto','auto'],['horizontal','horizontal'],['vertical','vertical'],['diagonal','diagonal']].forEach(([v,l]) => orient.add(new Option(l,v)));
+      orient.value = line.label_orientation;
+      const position = document.createElement('select'); position.dataset.field = 'label_position';
+      LINE_POSITIONS.forEach(value => position.add(new Option(value, value))); position.value = line.label_position;
+      const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '×';
+      remove.className = 'btn sm'; remove.title = 'Remove reference line';
+      remove.addEventListener('click', () => {
+        row.remove();
+        st[key] = readReferenceLines(id, axis);
+        renderReferenceLines(id, axis);
+      });
+      [[coord, 'Coordinate'], [color, 'Line color'], [style, 'Line style'], [width, 'Line width'],
+        [label, 'Label'], [orient, 'Label orientation'], [position, 'Label position']].forEach(([el, title]) => {
+        el.title = title; el.addEventListener('input', () => { st[key] = readReferenceLines(id, axis); });
+        el.addEventListener('change', () => { st[key] = readReferenceLines(id, axis); });
+      });
+      row.append(coord, color, remove, style, width, label, orient, position);
+      host.appendChild(row);
+    });
+  }
+  function readReferenceLines(id, axis) {
+    const host = document.getElementById(`reference-${axis}-lines-${id}`);
+    if (!host) return [];
+    return [...host.querySelectorAll('[data-reference-line]')].map(row => {
+      const value = {};
+      row.querySelectorAll('[data-field]').forEach(el => { value[el.dataset.field] = el.value; });
+      value.value = value.value === '' ? '' : Number(value.value);
+      value.width = Number(value.width) || 1.5;
+      return value;
+    });
+  }
 
   // applyNodeConfig(id, cfg) (app.js) is the inverse of getNodeConfig, run on
   // import; restore our fields into both the state object and the DOM.
@@ -211,9 +308,12 @@
       .forEach(k => { st[k] = cfg[k] ?? st[k]; });
     st.xReversed = !!cfg.xReversed; st.yReversed = !!cfg.yReversed;
     st.y2Cols = cfg.y2Cols || [];
+    st.xLines = normalizeLines(cfg.xLines, 'x');
+    st.yLines = normalizeLines(cfg.yLines, 'y');
     const f = (sid, val) => { const el = document.getElementById(`${sid}-${id}`); if (el && val !== undefined) el.value = val; };
     f('x-min', cfg.xMin || ''); f('x-max', cfg.xMax || ''); f('y-min', cfg.yMin || ''); f('y-max', cfg.yMax || '');
     f('y2-label', cfg.y2Label || ''); f('y2-min', cfg.y2Min || ''); f('y2-max', cfg.y2Max || '');
+    renderReferenceLines(id, 'x'); renderReferenceLines(id, 'y');
     const xr = document.getElementById(`x-reversed-${id}`); if (xr) xr.checked = !!cfg.xReversed;
     const yr = document.getElementById(`y-reversed-${id}`); if (yr) yr.checked = !!cfg.yReversed;
     const styleRadio = document.querySelector(`input[name="error-style-${id}"][value="${cfg.errorStyle || 'bars'}"]`);

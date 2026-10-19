@@ -93,7 +93,13 @@ export function renderTableList(container, dbName, tables) {
         const st = getState(id);
         if (st) st.database = dbName;
         const sql = tabEl(id, 'sql-input');
-        if (sql && !sql.value.trim()) sql.value = `SELECT * FROM ${tname}`;
+        if (sql && !sql.value.trim()) {
+          sql.value = `SELECT * FROM ${tname}`;
+          // The textarea is visually transparent when syntax highlighting is
+          // active; refresh its overlay after programmatic edits so the
+          // default query appears before the next keystroke.
+          window.enhanceCodeEditors?.(sql);
+        }
       }
     });
     container.appendChild(ti);

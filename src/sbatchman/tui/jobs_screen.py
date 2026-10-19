@@ -716,6 +716,107 @@ class ArchiveScreen(Screen):
 # JobsScreen
 # ---------------------------------------------------------------------------
 
+class ColumnScreen(Screen):
+    """Choose which job columns appear in the status tables."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("ctrl+s", "apply", "Apply"),
+    ]
+
+    def __init__(self, current_columns: List[str], **kwargs):
+        super().__init__(**kwargs)
+        self.column_order = list(current_columns)
+        self.unselected_columns = [key for key in COLUMN_REGISTRY if key not in self.column_order]
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with ScrollableContainer():
+            yield Label("Choose columns and adjust their order:", id="columns-title")
+            for key in self.column_order + self.unselected_columns:
+                label = COLUMN_REGISTRY[key][0]
+                selected = key in self.column_order
+                position = self.column_order.index(key) + 1 if selected else "–"
+                with Horizontal(classes="column-row"):
+                    yield Button(
+                        f"{position}. {'✓' if selected else '☐'} {label}",
+                        id=f"column-{key}",
+                        variant="primary" if selected else "default",
+                        classes="column-toggle",
+                    )
+                    yield Button("↑", id=f"up-{key}", disabled=not selected or position == 1, compact=True)
+                    yield Button("↓", id=f"down-{key}", disabled=not selected or position == len(self.column_order), compact=True)
+            with Horizontal(id="columns-buttons"):
+                yield Button("Apply", variant="success", id="columns-apply")
+                yield Button("Cancel", variant="default", id="columns-cancel")
+        yield Footer()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id or ""
+        if button_id == "columns-apply":
+            self.action_apply()
+        elif button_id == "columns-cancel":
+            self.action_cancel()
+        elif button_id.startswith("column-"):
+            key = button_id[len("column-"):]
+            if key in self.column_order:
+                self.column_order.remove(key)
+                self.unselected_columns.append(key)
+            else:
+                self.unselected_columns.remove(key)
+                self.column_order.append(key)
+            self._refresh_column_rows()
+        elif button_id.startswith("up-") or button_id.startswith("down-"):
+            direction, key = button_id.split("-", 1)
+            index = self.column_order.index(key)
+            target = index - 1 if direction == "up" else index + 1
+            self.column_order[index], self.column_order[target] = self.column_order[target], self.column_order[index]
+            self._refresh_column_rows()
+
+    def _refresh_column_rows(self) -> None:
+        for key, (label, _) in COLUMN_REGISTRY.items():
+            selected = key in self.column_order
+            position = self.column_order.index(key) + 1 if selected else "–"
+            toggle = self.query_one(f"#column-{key}", Button)
+            toggle.label = f"{position}. {'✓' if selected else '☐'} {label}"
+            toggle.variant = "primary" if selected else "default"
+            self.query_one(f"#up-{key}", Button).disabled = not selected or position == 1
+            self.query_one(f"#down-{key}", Button).disabled = not selected or position == len(self.column_order)
+
+    def action_apply(self) -> None:
+        if not self.column_order:
+            self.notify("Select at least one column.", severity="warning")
+            return
+        self.dismiss(self.column_order)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    CSS = """
+    #columns-title {
+        padding: 1;
+        text-style: bold;
+    }
+    .column-row {
+        height: 3;
+        width: 100%;
+    }
+    .column-toggle {
+        width: 1fr;
+        min-width: 1;
+    }
+    .column-row Button {
+        margin: 0 1;
+    }
+    #columns-buttons {
+        align: center middle;
+        height: 3;
+    }
+    #columns-buttons Button {
+        margin: 0 2;
+    }
+    """
+
 class JobsScreen(Screen):
     """The main screen with job tables."""
 
@@ -733,6 +834,7 @@ class JobsScreen(Screen):
         Binding("x", "delete_job", "Delete Job"),
         Binding("v", "archive_job", "Archive Job"),
         Binding("u", "unarchive_job", "Unarchive Job"),
+        Binding("l", "open_columns", "Columns"),
     ]
 
     CSS = """
@@ -928,6 +1030,23 @@ class JobsScreen(Screen):
             ArchiveScreen(self.archives_dir, self.archive_selection),
             handle_archive_result,
         )
+
+    def action_open_columns(self) -> None:
+        def handle_columns(columns: Optional[List[str]]) -> None:
+            if columns is None:
+                return
+            self._columns = columns
+            if self._sort_key not in columns:
+                self._sort_key = columns[0]
+            for table_id in ["#queued-table", "#running-table", "#finished-table"]:
+                table = self.query_one(table_id, DataTable)
+                table.clear(columns=True)
+                for col in self._columns:
+                    label, _ = COLUMN_REGISTRY[col]
+                    table.add_column(label, key=col)
+            self.update_tables()
+
+        self.app.push_screen(ColumnScreen(self._columns), handle_columns)
 
     def action_clear_filter(self) -> None:
         self.filter = None

@@ -178,6 +178,10 @@ def render_plot(p):
     # to grow a fixed-size canvas correctly, so read them before popping.
     extras = {k.lstrip("_"): layout.get(k, 0) for k in _EXTRA}
     layout, traces = styles.apply(layout, traces, style)
+    layout["annotations"] = [
+        {key: value for key, value in annotation.items() if key != "_reference_line"}
+        for annotation in layout.get("annotations", [])
+    ]
     for k in _EXTRA:
         layout.pop(k, None)
     dpi = layout.pop("_export_dpi", 300)
@@ -351,6 +355,22 @@ def render_grid(p):
         # tag has to be read before we overwrite it with this panel's real
         # (possibly renumbered) axis names below.
         sub = build_layout(config, {}, traces, style)
+        for shape in sub.get("shapes", []):
+            shape = dict(shape)
+            if shape.get("xref") == "x": shape["xref"] = f"x{xsfx}"
+            elif shape.get("xref") == "x domain": shape["xref"] = f"x{xsfx} domain"
+            if shape.get("yref") == "y": shape["yref"] = f"y{ysfx}"
+            elif shape.get("yref") == "y domain": shape["yref"] = f"y{ysfx} domain"
+            layout.setdefault("shapes", []).append(shape)
+        for annotation in sub.get("annotations", []):
+            if not annotation.get("_reference_line"):
+                continue
+            annotation = {key: value for key, value in annotation.items() if key != "_reference_line"}
+            if annotation.get("xref") == "x": annotation["xref"] = f"x{xsfx}"
+            elif annotation.get("xref") == "x domain": annotation["xref"] = f"x{xsfx} domain"
+            if annotation.get("yref") == "y": annotation["yref"] = f"y{ysfx}"
+            elif annotation.get("yref") == "y domain": annotation["yref"] = f"y{ysfx} domain"
+            layout["annotations"].append(annotation)
         if per_panel_legends:
             legend_key = "legend" if i == 0 else f"legend{i + 1}"
             panel_legend_keys.append((legend_key, sub["legend"], config))

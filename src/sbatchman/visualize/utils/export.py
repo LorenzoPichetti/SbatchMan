@@ -46,6 +46,7 @@ def _panel_payload(node_cfg: dict, style: dict | None) -> dict:
         "x_reversed": node_cfg.get("xReversed", False), "y_reversed": node_cfg.get("yReversed", False),
         "y2": node_cfg.get("y2Cols", []), "y2_label": node_cfg.get("y2Label", ""),
         "y2_min": node_cfg.get("y2Min", ""), "y2_max": node_cfg.get("y2Max", ""),
+        "x_lines": node_cfg.get("xLines", []), "y_lines": node_cfg.get("yLines", []),
         "error_y": node_cfg.get("errorY", ""), "error_y_low": node_cfg.get("errorYLow", ""),
         "error_y_high": node_cfg.get("errorYHigh", ""), "error_style": node_cfg.get("errorStyle") or "bars",
         **extra,
