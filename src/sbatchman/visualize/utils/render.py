@@ -37,8 +37,8 @@ def _facet_title(group_by, values, template):
     return ", ".join(parts)
 
 
-def run_pipeline(database, sql, transform_script=""):
-    df_data, entries = run_query(database, sql), []
+def run_pipeline(database, sql, transform_script="", full=False):
+    df_data, entries = run_query(database, sql, limit=None if full else 10000), []
     if transform_script and transform_script.strip():
         data = get_all_tables_as_dataframes(database)
         # The SQL projection is the base plotting dataset. Keep track of all
@@ -56,7 +56,7 @@ def run_pipeline(database, sql, transform_script=""):
         # omitted from the SELECT stay out of the data used to plot.
         keep = [c for c in selected_columns if c in result.columns]
         keep += [c for c in result.columns if c not in source_columns and c not in keep]
-        df_data = dataframe_to_df_data(result.loc[:, keep])
+        df_data = dataframe_to_df_data(result.loc[:, keep], limit=None if full else 10000)
     return df_data, entries
 
 
@@ -125,9 +125,10 @@ def preview_of(df_data, limit=500):
 
 
 def run_preview(p):
-    df, entries = run_pipeline(p["database"], p["sql"], p.get("transform_script", ""))
+    df, entries = run_pipeline(p["database"], p["sql"], p.get("transform_script", ""), full=p.get("full", False))
     log(f"Preview on '{p['database']}': {len(df['rows'])} row(s)")
-    return {"ok": True, "preview": preview_of(df), "columns": df["columns"], "log_entries": entries}
+    preview = df if p.get("full", False) else preview_of(df)
+    return {"ok": True, "preview": preview, "columns": df["columns"], "log_entries": entries}
 
 
 def render_plot(p):

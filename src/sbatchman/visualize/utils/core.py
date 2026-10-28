@@ -31,6 +31,57 @@ def _exec(source, name, ns):
     return ns
 
 
+def add_zoom_inset(ax, zoom_region, inset_position=(0.6, 0.6, 0.3, 0.3),
+                   draw_rect=True, rect_kwargs=None, zoom_ax_kwargs=None,
+                   rect_scaling=1.0, rect_region=None):
+    """Add a Matplotlib inset showing a zoomed region of an axes' lines."""
+    from matplotlib.patches import Rectangle
+    from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+    rect_kwargs = rect_kwargs or {
+        "edgecolor": "black", "linestyle": "dashed", "linewidth": 1,
+    }
+    zoom_ax_kwargs = zoom_ax_kwargs or {}
+    axins = inset_axes(
+        ax, width="100%", height="100%", bbox_to_anchor=inset_position,
+        bbox_transform=ax.transAxes, loc="lower left", borderpad=0,
+    )
+    x1, x2, y1, y2 = zoom_region
+    for line in ax.get_lines():
+        axins.plot(
+            line.get_xdata(), line.get_ydata(), color=line.get_color(),
+            linestyle=line.get_linestyle(), linewidth=line.get_linewidth(),
+            marker=line.get_marker(), markersize=line.get_markersize(),
+            markeredgecolor=line.get_markeredgecolor(),
+            markerfacecolor=line.get_markerfacecolor(), alpha=line.get_alpha(),
+            label=line.get_label(), zorder=line.get_zorder(),
+        )
+
+    # Plotting the copied lines can autoscale the inset, so apply the requested
+    # view window afterward.
+    axins.set_xlim(x1, x2)
+    axins.set_ylim(y1, y2)
+
+    for method, args in zoom_ax_kwargs.items():
+        if isinstance(args, dict):
+            getattr(axins, method)(**args)
+        elif isinstance(args, tuple):
+            getattr(axins, method)(*args)
+        else:
+            getattr(axins, method)(args)
+
+    if draw_rect:
+        if rect_region:
+            x, y, width, height = rect_region
+        else:
+            x_center, y_center = (x1 + x2) / 2, (y1 + y2) / 2
+            width = (x2 - x1) * rect_scaling
+            height = (y2 - y1) * rect_scaling
+            x, y = x_center - width / 2, y_center - height / 2
+        ax.add_patch(Rectangle((x, y), width, height, fill=False, **rect_kwargs))
+    return axins
+
+
 def run_custom_plot_script(source, df_data, config):
     ns = load_custom_plot_script(source)
     plot = ns.get("plot")
@@ -44,7 +95,8 @@ def run_custom_plot_script(source, df_data, config):
 
 def load_custom_plot_script(source):
     """Execute a custom plot script and return its namespace for either backend."""
-    return _exec(source, "<custom_plot>", {"pd": pd, "log": log, "agg": agg})
+    return _exec(source, "<custom_plot>", {"pd": pd, "log": log, "agg": agg,
+                                             "add_zoom_inset": add_zoom_inset})
 
 
 def run_transform_script(source, df, log_fn, data=None):
@@ -73,7 +125,8 @@ def _layout_script_namespace(layout, config, log_fn, df_data=None, traces=None):
                  if isinstance(df_data, dict) else pd.DataFrame())
     return {"layout": layout, "config": config, "log": log_fn,
             "df_data": df_data or {"columns": [], "rows": []}, "df": dataframe,
-            "traces": traces if traces is not None else [], "pd": pd}
+            "traces": traces if traces is not None else [], "pd": pd,
+            "add_zoom_inset": add_zoom_inset}
 
 
 def run_layout_script(source, layout, config, log_fn, df_data=None, traces=None):

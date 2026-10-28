@@ -96,8 +96,73 @@
     body.focus .builder,body.focus .panel-tabs{display:none}body.focus #sidebar{display:none}
     body.focus #sidebar-resizer{display:none}
     body.focus #app{grid-template-columns:0 0 minmax(0,1fr)}
-    body.focus #centre{grid-column:3}`;
+    body.focus #centre{grid-column:3}
+    body.focus .rendered-image{cursor:grab;touch-action:none}
+    body.focus .rendered-image.is-panning{cursor:grabbing}`;
   document.head.append(css);
+
+  // Matplotlib is shown as a raster image, so provide wheel zoom in Focus
+  // mode for that backend too. Plotly handles its own wheel zoom.
+  document.addEventListener('wheel', event => {
+    const image = event.target.closest?.('.rendered-image');
+    if (!image || !document.body.classList.contains('focus') || image.style.display === 'none') return;
+    event.preventDefault();
+    const current = Number(image.dataset.zoom || 1);
+    const next = Math.max(1, Math.min(8, current * (event.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    const wrap = image.parentElement.getBoundingClientRect();
+    const pointerX = event.clientX - wrap.left;
+    const pointerY = event.clientY - wrap.top;
+    const oldX = Number(image.dataset.panX || 0), oldY = Number(image.dataset.panY || 0);
+    const ratio = next / current;
+    image.dataset.zoom = String(next);
+    image.dataset.panX = String(next === 1 ? 0 : pointerX - (pointerX - oldX) * ratio);
+    image.dataset.panY = String(next === 1 ? 0 : pointerY - (pointerY - oldY) * ratio);
+    applyImageView(image);
+  }, {passive: false});
+  document.addEventListener('pointerdown', event => {
+    const image = event.target.closest?.('.rendered-image');
+    if (!image || !document.body.classList.contains('focus') || Number(image.dataset.zoom || 1) <= 1) return;
+    if (event.button !== 0) return;
+    event.preventDefault();
+    image.classList.add('is-panning');
+    image.setPointerCapture(event.pointerId);
+    image._panPointer = {id: event.pointerId, x: event.clientX, y: event.clientY};
+  });
+  document.addEventListener('pointermove', event => {
+    const image = event.target.closest?.('.rendered-image');
+    if (!image || image._panPointer?.id !== event.pointerId) return;
+    const pan = image._panPointer;
+    image.dataset.panX = String(Number(image.dataset.panX || 0) + event.clientX - pan.x);
+    image.dataset.panY = String(Number(image.dataset.panY || 0) + event.clientY - pan.y);
+    pan.x = event.clientX; pan.y = event.clientY;
+    applyImageView(image);
+  });
+  const stopImagePan = event => {
+    const image = event.target.closest?.('.rendered-image');
+    if (!image || image._panPointer?.id !== event.pointerId) return;
+    image._panPointer = null;
+    image.classList.remove('is-panning');
+    if (image.hasPointerCapture(event.pointerId)) image.releasePointerCapture(event.pointerId);
+  };
+  document.addEventListener('pointerup', stopImagePan);
+  document.addEventListener('pointercancel', stopImagePan);
+  document.addEventListener('dblclick', event => {
+    const image = event.target.closest?.('.rendered-image');
+    if (!image || !document.body.classList.contains('focus')) return;
+    image.dataset.zoom = '1';
+    image.dataset.panX = image.dataset.panY = '0';
+    applyImageView(image);
+  });
+
+  function applyImageView(image) {
+    const zoom = Number(image.dataset.zoom || 1);
+    const bounds = image.parentElement.getBoundingClientRect();
+    const x = Math.max(bounds.width * (1 - zoom), Math.min(0, Number(image.dataset.panX || 0)));
+    const y = Math.max(bounds.height * (1 - zoom), Math.min(0, Number(image.dataset.panY || 0)));
+    image.dataset.panX = String(x); image.dataset.panY = String(y);
+    image.style.transformOrigin = 'top left';
+    image.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+  }
 
   // Sync panels: copy the active panel's complete saved config to all others.
   const _apply = window.applyGrid;

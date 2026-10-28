@@ -110,6 +110,21 @@ def customize_matplotlib(fig, ax, config):
         title='Compiler · mean rate', ncol=2, frameon=False,
     )</code></pre>
 
+      <h2 id="zoom-insets" style="margin-top:22px">Matplotlib: zoom insets</h2>
+      <p>The layout script and custom plot script expose <code>add_zoom_inset</code>. Call it from <code>customize_matplotlib</code> after the main plot has been drawn. The helper copies line plots into the inset; call it more than once to add multiple zooms.</p>
+      <pre><code>def customize_matplotlib(fig, ax, config):
+    add_zoom_inset(
+        ax,
+        zoom_region=(1.0, 2.0, 3.0, 4.0),  # x1, x2, y1, y2
+        inset_position=(0.58, 0.58, 0.35, 0.35),  # x, y, width, height
+        draw_rect=True,
+        rect_scaling=1.0,
+        zoom_ax_kwargs={
+            'grid': {'visible': True, 'alpha': 0.25},
+            'tick_params': {'labelsize': 7},
+        },
+    )</code></pre>
+
       <h2 style="margin-top:22px">Matplotlib: custom shared legend for a grid</h2>
       <p>Put this hook in Panel 1's Layout script. It runs once after all panels and the default shared legend are drawn. <code>axes</code> is a 2D NumPy array; <code>panel_data</code> contains one <code>{'df_data': ..., 'traces': ...}</code> object per rendered panel.</p>
       <pre><code>def customize_matplotlib_legend(fig, axes, config, panel_data):

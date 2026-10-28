@@ -123,6 +123,7 @@ export async function runPlot() {
       setStatus(tabId, `OK — Matplotlib rendered${hint}`, 'ok');
       clientLog(`Matplotlib plot rendered: "${tab.label}"${hint}`);
       const preview = document.getElementById(`preview-${tabId}`);
+      preview._csvExportPayload = {database: payload.database, sql: payload.sql, transform_script: payload.transform_script};
       deferDataPreview(preview, () => renderDataTable(preview, res.preview));
       return;
     }
@@ -135,7 +136,8 @@ export async function runPlot() {
     const viewLayout = { ...res.layout, autosize: true };
     delete viewLayout.width;
     delete viewLayout.height;
-    Plotly.react(`plot-${tabId}`, res.traces, viewLayout, { responsive: true, displaylogo: false, modeBarButtonsToRemove: ['sendDataToCloud'] });
+    viewLayout.dragmode = 'pan';
+    Plotly.react(`plot-${tabId}`, res.traces, viewLayout, { responsive: true, scrollZoom: true, displaylogo: false, modeBarButtonsToRemove: ['sendDataToCloud'] });
     resizeAfterRender(tabId);
     tab.state.plotted = true;
     tab.state.legendExtraHeight = res.legend_extra_height || 0;
@@ -145,6 +147,7 @@ export async function runPlot() {
     setStatus(tabId, `OK — ${res.traces.length} trace(s), ${res.columns?.length || 0} column(s)${hint}`, 'ok');
     clientLog(`Plot rendered: "${tab.label}" — ${res.traces.length} trace(s)${hint}`);
     const preview = document.getElementById(`preview-${tabId}`);
+    preview._csvExportPayload = {database: payload.database, sql: payload.sql, transform_script: payload.transform_script};
     deferDataPreview(preview, () => renderDataTable(preview, res.preview));
   } catch (e) {
     document.getElementById('btn-run').disabled = false;
@@ -186,7 +189,7 @@ export async function runGridPlot(tabId) {
       tab.state.plotted = true;
       setStatus(tabId, `OK — ${res.panel_count || panels.length} panel(s), Matplotlib rendered`, 'ok');
       clientLog(`Matplotlib grid rendered: "${tab.label}" — ${res.panel_count || panels.length} panel(s)`);
-      const labeled = (res.previews || []).map((df, i) => ({ label: `Panel ${i + 1}`, df }));
+      const labeled = (res.previews || []).map((df, i) => ({ label: `Panel ${i + 1}`, df, exportPayload: {database: panels[i].database, sql: panels[i].sql, transform_script: panels[i].transform_script} }));
       const preview = document.getElementById(`preview-${tabId}`);
       deferDataPreview(preview, () => renderMultiPreview(preview, labeled));
       return;
@@ -206,7 +209,8 @@ export async function runGridPlot(tabId) {
     const viewLayout = { ...res.layout, autosize: true };
     delete viewLayout.width;
     delete viewLayout.height;
-    Plotly.react(`plot-${tabId}`, res.traces, viewLayout, { responsive: true, displaylogo: false, modeBarButtonsToRemove: ['sendDataToCloud'] });
+    viewLayout.dragmode = 'pan';
+    Plotly.react(`plot-${tabId}`, res.traces, viewLayout, { responsive: true, scrollZoom: true, displaylogo: false, modeBarButtonsToRemove: ['sendDataToCloud'] });
     resizeAfterRender(tabId);
     tab.state.plotted = true;
     tab.state.legendExtraHeight = 0;
@@ -216,7 +220,7 @@ export async function runGridPlot(tabId) {
     setStatus(tabId, `OK — ${panelCount} panel(s), ${res.traces.length} trace(s) total`, 'ok');
     clientLog(`Grid figure rendered: "${tab.label}" — ${panelCount} panel(s)`);
 
-    const labeled = (res.previews || []).map((df, i) => ({ label: `Panel ${i + 1}`, df }));
+    const labeled = (res.previews || []).map((df, i) => ({ label: `Panel ${i + 1}`, df, exportPayload: {database: panels[i].database, sql: panels[i].sql, transform_script: panels[i].transform_script} }));
     const preview = document.getElementById(`preview-${tabId}`);
     deferDataPreview(preview, () => renderMultiPreview(preview, labeled));
   } catch (e) {
@@ -236,6 +240,10 @@ function showMatplotlibImage(tabId, result, rows) {
   const image = document.getElementById(`plot-image-${tabId}`);
   if (!plot || !image) return;
   plot.style.display = 'none';
+  image.dataset.zoom = '1';
+  image.dataset.panX = image.dataset.panY = '0';
+  image.style.transform = '';
+  image.style.transformOrigin = '';
   image.src = `data:image/png;base64,${result.image_png}`;
   image.style.display = 'block';
   const wrap = plot.parentElement;

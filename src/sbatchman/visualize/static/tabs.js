@@ -48,7 +48,7 @@ export function workspaceHTML(id) {
      <button class="btn sm" id="grid-apply-${id}">Apply grid</button>
   </span>
   <span id="facet-controls-${id}" style="display:none;align-items:center;gap:6px;margin-left:8px">
-    <span>Group by</span><div id="facet-group-columns-${id}" class="multi-col-list" style="max-width:220px;max-height:54px;overflow:auto"></div>
+    <span>Group by</span><div id="facet-group-columns-${id}" class="multi-col-list"></div>
     <span>Arrange by</span><select id="facet-axis-${id}" style="width:auto;padding:3px 6px"><option value="cols">columns</option><option value="rows">rows</option></select>
     <input type="number" id="facet-count-${id}" min="1" max="6" value="2" title="Number of grid rows or columns" style="width:52px">
     <label style="display:flex;align-items:center;gap:4px;margin:0">Title format

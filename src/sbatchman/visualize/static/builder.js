@@ -13,7 +13,7 @@ export function renderDataTable(container, dfData, emptyMsg) {
     return;
   }
   let html = '<table class="data-table"><thead><tr>';
-  dfData.columns.forEach(c => html += `<th>${escHtml(c)}</th>`);
+  dfData.columns.forEach((c, i) => html += `<th>${escHtml(c)}${i === 0 ? ' <button type="button" class="btn sm csv-copy" title="Copy the full query result as CSV">CSV</button>' : ''}</th>`);
   html += '</tr></thead><tbody>';
   for (const row of dfData.rows) {
     html += '<tr>' + row.map(v => `<td>${v === null || v === undefined ? '' : escHtml(v)}</td>`).join('') + '</tr>';
@@ -21,16 +21,48 @@ export function renderDataTable(container, dfData, emptyMsg) {
   html += '</tbody></table>';
   if (dfData.truncated) html += `<div style="font-size:9px;color:var(--text3);padding:4px 8px">Preview truncated — showing first ${dfData.rows.length} row(s)</div>`;
   container.innerHTML = html;
+  container.querySelector('.csv-copy')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    const payload = container._csvExportPayload;
+    if (!payload) { clientLog('CSV export is unavailable for this table.', 'warn'); return; }
+    button.disabled = true;
+    try {
+      const res = await api('POST', '/api/preview', {...payload, full: true});
+      if (!res.ok) throw new Error(res.error || 'Could not retrieve full table data');
+      const cell = value => {
+        const text = value === null || value === undefined ? '' : String(value);
+        return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+      };
+      const csv = [res.preview.columns, ...res.preview.rows].map(row => row.map(cell).join(',')).join('\r\n');
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(csv);
+      else {
+        const field = document.createElement('textarea');
+        field.value = csv;
+        field.style.cssText = 'position:fixed;left:-9999px;top:0';
+        document.body.appendChild(field);
+        field.select();
+        const copied = document.execCommand('copy');
+        field.remove();
+        if (!copied) throw new Error('Clipboard access was denied by the browser.');
+      }
+      button.textContent = 'Copied';
+      clientLog(`Copied ${res.preview.rows.length} row(s) as CSV.`);
+      setTimeout(() => { if (button.isConnected) button.textContent = 'CSV'; }, 1300);
+    } catch (error) {
+      clientLog(`CSV export failed: ${error.message}`, 'error');
+    } finally { button.disabled = false; }
+  });
 }
 
 export function renderMultiPreview(container, labeledTables) {
   container.replaceChildren();
-  labeledTables.forEach(({ label, df }, index) => {
+  labeledTables.forEach(({ label, df, exportPayload }, index) => {
     const lbl = document.createElement('button');
     lbl.type = 'button';
     lbl.className = 'preview-section-label';
     lbl.textContent = label;
     const box = document.createElement('div');
+    box._csvExportPayload = exportPayload;
     box.hidden = index !== 0;
     let rendered = false;
     const render = () => {
@@ -256,7 +288,7 @@ export function builderColumnsHTML(id) {
         <button class="btn sm" id="run-show-${id}" data-tip="Run the SQL query + transform and show the resulting table below">Run &amp; show</button>
         <span id="preview-status-${id}" style="font-size:9px;color:var(--text3)"></span>
       </div>
-      <div class="data-preview" id="inline-preview-${id}" style="max-height:160px;margin-top:5px;border:1px solid var(--border);border-radius:var(--radius)"></div>
+      <div class="data-preview" id="inline-preview-${id}" style="margin-top:5px;border:1px solid var(--border);border-radius:var(--radius)"></div>
     </div>
 
     <div class="b-col" style="grid-column:1 / -1;min-width:200px;max-width:240px">
@@ -356,9 +388,9 @@ export function builderColumnsHTML(id) {
           <div class="script-hint">
             <b>Data-aware legend controls:</b> the script receives <code>df_data</code> (columns/rows), <code>df</code> (a pandas DataFrame), and <code>traces</code> (Plotly-style trace dictionaries). Use these to rename, rank, group, or hide legend entries.<br>
             <b>Plotly:</b> edit <code>layout['legend']</code> and trace fields such as <code>name</code>, <code>legendrank</code>, <code>legendgroup</code>, and <code>showlegend</code>.<br>
-            <b>Matplotlib:</b> define <code>customize_matplotlib(fig, ax, config)</code> to edit an axes legend. For a custom shared grid legend, define <code>customize_matplotlib_legend(fig, axes, config, panel_data)</code> in Panel 1's script. See <a href="/docs#data-driven-legends" target="_blank" rel="noopener">data-driven legend examples</a>. <code>log(msg)</code> writes to the Logs panel.
+            <b>Matplotlib:</b> define <code>customize_matplotlib(fig, ax, config)</code> to edit an axes legend or call the built-in <code>add_zoom_inset(ax, zoom_region, inset_position)</code> helper. It is also available in custom plot scripts. For a custom shared grid legend, define <code>customize_matplotlib_legend(fig, axes, config, panel_data)</code> in Panel 1's script. See <a href="/docs#data-driven-legends" target="_blank" rel="noopener">data-driven legend examples</a> and the <a href="/docs#zoom-insets" target="_blank" rel="noopener">zoom inset example</a>. <code>log(msg)</code> writes to the Logs panel.
           </div>
-          <textarea id="layout-script-${id}" class="code-editor python-editor" spellcheck="false" aria-label="Python layout script" placeholder="layout['xaxis']['tickangle'] = 45&#10;&#10;def customize_matplotlib(fig, ax, config):&#10;    ax.grid(True, alpha=0.25)"></textarea>
+          <textarea id="layout-script-${id}" class="code-editor python-editor" spellcheck="false" aria-label="Python layout script" placeholder="layout['xaxis']['tickangle'] = 45&#10;&#10;def customize_matplotlib(fig, ax, config):&#10;    ax.grid(True, alpha=0.25)&#10;    add_zoom_inset(ax, (1, 2, 3, 4), inset_position=(0.58, 0.58, 0.35, 0.35))"></textarea>
         </div>
       </div>
     </div>`;
@@ -535,7 +567,7 @@ export async function runShow(id) {
     window.updateAxisControls(id, res.columns);
     window.updateFacetGroupColumns?.(id, res.columns);
     if (statusEl) statusEl.textContent = `OK — ${res.preview.rows.length} row(s), ${res.columns.length} column(s)`;
-    if (previewEl) renderDataTable(previewEl, res.preview);
+    if (previewEl) { previewEl._csvExportPayload = {database: db, sql, transform_script: transformScript}; renderDataTable(previewEl, res.preview); }
     clientLog(`Run & show: ${res.preview.rows.length} row(s)`);
   } catch (e) {
     if (statusEl) statusEl.textContent = e.message;

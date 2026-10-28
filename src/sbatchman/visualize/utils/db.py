@@ -92,8 +92,8 @@ def run_query(db, sql, limit=10000):
     conn = _connect(db)
     try:
         cur = conn.execute(sql)
-        rows = [list(r) for r in cur.fetchmany(limit)]
-        return {"columns": [d[0] for d in cur.description], "rows": rows, "truncated": len(rows) == limit}
+        rows = [list(r) for r in (cur.fetchall() if limit is None else cur.fetchmany(limit))]
+        return {"columns": [d[0] for d in cur.description], "rows": rows, "truncated": limit is not None and len(rows) == limit}
     finally:
         conn.close()
 
@@ -103,7 +103,7 @@ def df_data_to_dataframe(d: dict) -> pd.DataFrame:
 
 
 def dataframe_to_df_data(df: pd.DataFrame, limit=10000) -> dict:
-    truncated = len(df) > limit
+    truncated = limit is not None and len(df) > limit
     df = df.head(limit) if truncated else df
     safe = df.astype(object).where(pd.notnull(df), None)
     return {"columns": [str(c) for c in df.columns], "rows": safe.values.tolist(), "truncated": truncated}
