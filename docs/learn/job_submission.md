@@ -33,7 +33,7 @@ The batch submission file is a YAML file that defines global variables and a lis
 The file has the following main top-level keys:
 
 -   `sequential`: If set to `true`, will ensure that jobs are scheduled sequentially.
--   `configs`: (optional) Path(s) to configuration file(s). If set, it is equivalent to run `sbatchman configure -f <file> --overwrite` before the job submission. **Note:** absolute paths will remain unchanged. Realative paths will use as base directory the location of the file that includes it.
+-   `configs`: (optional) Either path(s) to configuration file(s), or an inline configuration mapping using the same cluster-based format as a configuration file. Configurations are created with overwrite enabled before job submission. Relative file references in either form are resolved from the jobs file's directory.
 -   `variables`: Defines global variables applicable to all jobs.
 -   `include_variables`(optional) Path(s) to file(s) containing a block of variables (without `variables:` top-level key). Variable values are overwritten according to the order in which they are included. The current file `variables` block will always be the last one to be merged. **Note:** absolute paths will remain unchanged. Realative paths will use as base directory the location of the file that includes it.
 -   `cluster_name`: Optional parameter that defines the cluster configuration to use.
@@ -52,6 +52,28 @@ This is a list where each item defines a job template. Each template can have th
 -   `config_jobs`: A list of variations for this job template. Each variation will generate one or more jobs.
 
 *`command`, `preprocess` and `postprocess` can be also set at top-level.*
+
+You can define configurations inline instead of including a separate config file:
+
+```yaml
+configs:
+  my_cluster:
+    scheduler: slurm
+    configs:
+      - name: gpu_small
+        partition: gpu
+        cpus_per_task: 4
+        mem: 16G
+        time: "01:00:00"
+
+jobs:
+  - config: gpu_small
+    command: python train.py
+    config_jobs:
+      - tag: trial_1
+```
+
+The inline `configs` mapping uses the same structure as a standalone configuration file, including `variables` and `default_conf`. The cluster name must match the cluster selected in SbatchMan.
 
 !!! tip
     In general, higher-level variables and blocks can be overwritten by redeclaring them for more specific scopes.

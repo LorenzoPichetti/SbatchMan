@@ -4,6 +4,7 @@ from textual.containers import Vertical
 from textual.binding import Binding
 from textual.screen import Screen
 from textual.events import MouseDown
+from textual.message import Message
 
 from sbatchman.core.job import Job
 
@@ -20,6 +21,14 @@ class LogScreen(Screen):
   PAGE_SIZE = 50       # Number of lines per page
   MAX_LINE_LEN = 600  # Max chars per line
 
+  class LogsChanged(Message):
+    def __init__(self, stdout, stderr, stdout_signature, stderr_signature):
+      super().__init__()
+      self.stdout = stdout
+      self.stderr = stderr
+      self.stdout_signature = stdout_signature
+      self.stderr_signature = stderr_signature
+
   def __init__(self, job: Job, **kwargs):
     super().__init__(**kwargs)
     self.job = job
@@ -28,6 +37,8 @@ class LogScreen(Screen):
     self.stdout_page = 0
     self.stderr_page = 0
     self.focused_log = "stdout"
+    self._log_signatures = None
+    self._log_worker = None
 
   def compose(self) -> ComposeResult:
     yield Vertical(
@@ -38,18 +49,57 @@ class LogScreen(Screen):
     yield Footer()
 
   def on_mount(self) -> None:
-    stdout = self.job.get_stdout()
-    stderr = self.job.get_stderr()
-
-    self.stdout_lines = stdout.splitlines() if stdout else ["No stdout log file found."]
-    self.stderr_lines = stderr.splitlines() if stderr else ["No stderr log file found."]
-    self.stdout_lines = [l if len(l) < self.MAX_LINE_LEN else l[:self.MAX_LINE_LEN] + " ...truncated line..." for l in self.stdout_lines]
-    self.stderr_lines = [l if len(l) < self.MAX_LINE_LEN else l[:self.MAX_LINE_LEN] + " ...truncated line..." for l in self.stderr_lines]
     self.stdout_page = 0
     self.stderr_page = 0
     self.focused_log = "stdout"
     self.query_one("#stdout_log", Log).border_title = "STDOUT (active)"
 
+    self.display_page()
+    # The first read uses the same background path as subsequent refreshes.
+    self._log_signatures = None
+    self.set_interval(1.0, self._check_logs)
+    self._check_logs()
+
+  @staticmethod
+  def _file_signature(path):
+    try:
+      stat = path.stat()
+      return (stat.st_mtime_ns, stat.st_size, stat.st_ino)
+    except OSError:
+      return None
+
+  def _check_logs(self) -> None:
+    # Filesystem access can block (for example on a network mount), so keep
+    # both the checks and reads off the UI thread. Never queue overlapping scans.
+    if self._log_worker is None or not self._log_worker.is_running:
+      self._log_worker = self.run_worker(self._read_changed_logs, thread=True, name="read-job-logs")
+
+  def _read_changed_logs(self) -> None:
+    paths = (self.job.get_stdout_path(), self.job.get_stderr_path())
+    signatures = tuple(self._file_signature(path) for path in paths)
+    if self._log_signatures is not None and signatures == self._log_signatures:
+      return
+
+    contents = []
+    for path in paths:
+      try:
+        contents.append(path.read_text())
+      except (OSError, UnicodeError):
+        contents.append(None)
+    lines = []
+    for content, label in zip(contents, ("stdout", "stderr")):
+      split = content.splitlines() if content else [f"No {label} log file found."]
+      lines.append([line if len(line) < self.MAX_LINE_LEN else line[:self.MAX_LINE_LEN] + " ...truncated line..." for line in split])
+    self.post_message(self.LogsChanged(lines[0], lines[1], *signatures))
+
+  # Textual includes the enclosing class in handler names for nested message
+  # classes, so LogsChanged dispatches to on_log_screen_logs_changed.
+  def on_log_screen_logs_changed(self, message: "LogScreen.LogsChanged") -> None:
+    self._log_signatures = (message.stdout_signature, message.stderr_signature)
+    self.stdout_lines = message.stdout
+    self.stderr_lines = message.stderr
+    self.stdout_page = min(self.stdout_page, max(0, (len(self.stdout_lines) - 1) // self.PAGE_SIZE))
+    self.stderr_page = min(self.stderr_page, max(0, (len(self.stderr_lines) - 1) // self.PAGE_SIZE))
     self.display_page()
 
   def display_page(self):

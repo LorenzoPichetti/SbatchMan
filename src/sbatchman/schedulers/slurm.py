@@ -119,6 +119,9 @@ class SlurmConfig(BaseConfig):
   def get_scheduler_name() -> str:
     """Returns the name of the scheduler this parameters class is associated with."""
     return "slurm"
+
+  def cancel_job(self, job_id: Union[str, int]) -> None:
+    subprocess.run(["scancel", str(job_id)], check=True, capture_output=True, text=True)
   
 def slurm_submit(script_path: Path, exp_dir: Path, previous_job_id: Optional[int] = None) -> int:
   """Submits the job to SLURM."""

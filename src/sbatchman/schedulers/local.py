@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
+import os
+import signal
 import subprocess
 import datetime
 from typing import List, Optional, Tuple, Union
@@ -29,6 +31,19 @@ class LocalConfig(BaseConfig):
   def get_scheduler_name() -> str:
     """Returns the name of the scheduler this parameters class is associated with."""
     return "local"
+
+  def cancel_job(self, job_id: Union[str, int]) -> None:
+    pid = int(job_id)
+    try:
+      # New local jobs run in their own session so their shell and child
+      # processes can all be stopped together. Fall back to the shell PID for
+      # jobs started by older SbatchMan versions.
+      if os.getpgid(pid) == pid:
+        os.killpg(pid, signal.SIGTERM)
+      else:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+      return  # The process finished between status refresh and cancellation.
   
   def local_submit(self, script_path: Path, exp_dir: Path) -> Tuple[int, bool]:
     """Runs the job in the background on the local machine, with optional time limit.
@@ -58,6 +73,7 @@ class LocalConfig(BaseConfig):
         command_list,
         stdout=out,
         stderr=err,
+        start_new_session=True,
       )
       process.wait()
       # If timeout was used, check if process exited with 124 (timeout exit code)

@@ -1,4 +1,5 @@
 import re
+import warnings
 from pathlib import Path
 from copy import deepcopy
 
@@ -227,3 +228,27 @@ def extract_used_vars(*templates):
         if match[1]:  # If there's a key variable
           var_names.add(match[1])  # Add the key variable
   return var_names
+
+
+def warn_undereferenced_map_variables(templates, map_names, context: str = "") -> None:
+  """Warn when templates use a map variable without selecting a map key."""
+  if isinstance(templates, str):
+    templates = [templates]
+
+  text_templates = []
+  for template in templates:
+    if isinstance(template, str):
+      text_templates.append(template)
+    elif isinstance(template, (list, tuple)):
+      text_templates.extend(value for value in template if isinstance(value, str))
+
+  for name in map_names:
+    bare_reference = re.compile(r"\{" + re.escape(str(name)) + r"\}")
+    if any(bare_reference.search(template) for template in text_templates):
+      location = f" in {context}" if context else ""
+      warnings.warn(
+        f"Map variable '{name}' is used without dereferencing it{location}; "
+        f"use '{{{name}[key_variable]}}' to select a value.",
+        UserWarning,
+        stacklevel=2,
+      )

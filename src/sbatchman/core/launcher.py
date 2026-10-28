@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from rich.console import Console
 
-from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, resolve_map_variable, map_info_to_vars, get_var_path_filename
-from sbatchman.core.config_manager import load_local_config, create_configs_from_file
+from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, resolve_map_variable, map_info_to_vars, get_var_path_filename, warn_undereferenced_map_variables
+from sbatchman.core.config_manager import load_local_config, create_configs_from_file, create_configs_from_data
 from sbatchman.core.job import Job, Status
 from sbatchman.core.jobs_manager import job_exists, register_job, count_active_jobs
 from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError, SbatchManError
@@ -527,7 +527,16 @@ def launch_jobs_from_file(
   
   if not skip_configs_load:
     global_configs = []
-    if global_configs_file:
+    if isinstance(global_configs_file, dict):
+      console.print('[cyan]Loading inline configs from jobs file[/cyan]')
+      try:
+        for c in create_configs_from_data(global_configs_file, jobs_file_path.parent, True):
+          console.print(f"✅ Configuration '[bold cyan]{c.name}[/bold cyan]' saved to {c.template_path}")
+        console.print("✅ Inline configurations loaded successfully.")
+      except SbatchManError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(1)
+    elif global_configs_file:
       if isinstance(global_configs_file, list):
         global_configs = [str(f) for f in global_configs_file]
       elif isinstance(global_configs_file, str):
@@ -709,6 +718,16 @@ def _launch_job_combinations(
     
     # Determine which variables are actually used in the templates
     used_vars = extract_used_vars(config_template, command_template, tag, preprocess_template, postprocess_template, check_template)
+
+    map_names = [
+      name for name, value in variables.items()
+      if isinstance(value, dict) and '__map__' in value
+    ]
+    warn_undereferenced_map_variables(
+      [config_template, command_template, tag, preprocess_template, postprocess_template, check_template],
+      map_names,
+      context=f"job configuration '{config_template}'",
+    )
     
     # Find map variables and their key variables
     map_info = {}  # map_name -> (map_dict, key_var_name)

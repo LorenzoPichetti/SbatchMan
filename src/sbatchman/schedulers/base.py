@@ -153,6 +153,10 @@ class BaseConfig(ABC):
     """
     pass
 
+  def cancel_job(self, job_id: Union[str, int]) -> None:
+    """Cancel a submitted job. Scheduler configs should implement this."""
+    raise NotImplementedError(f"Job cancellation is not supported for scheduler '{self.get_scheduler_name()}'.")
+
   def _update_main_config(self, overwrite: bool = False):
     """Reads, updates, and writes to the central configurations.yaml file."""
     config_path = get_project_configs_file_path()

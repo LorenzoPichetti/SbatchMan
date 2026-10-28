@@ -143,6 +143,7 @@ class ConfirmDeleteScreen(Screen):
                 f"  Job ID  : {self.job.job_id}\n"
                 f"  Status  : {self.job.status}\n"
                 + (f"  Archive : {self.job.archive_name}\n" if self.job.archive_name else "")
+                + ("\nThe scheduler job will be cancelled before its files are deleted.\n" if self.job.status in (Status.QUEUED.value, Status.RUNNING.value) else "")
                 + "\nThis action cannot be undone.",
                 id="confirm-body",
             )
@@ -191,6 +192,41 @@ class ConfirmDeleteScreen(Screen):
     """
 
 
+class ConfirmBulkDeleteScreen(Screen):
+    """Confirmation dialog for deleting the filtered ended-job batch."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("q", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, count: int, **kwargs):
+        super().__init__(**kwargs)
+        self.count = count
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Vertical(id="confirm-container"):
+            yield Static("⚠  Delete Ended Jobs", id="confirm-title")
+            yield Static(
+                f"Permanently delete all {self.count} ended jobs matching the current filters?\n\n"
+                "This action cannot be undone.",
+                id="confirm-body",
+            )
+            with Horizontal(id="confirm-buttons"):
+                yield Button("Delete All", variant="error", id="confirm-yes")
+                yield Button("Cancel", variant="default", id="confirm-no")
+        yield Footer()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "confirm-yes")
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+    CSS = ConfirmDeleteScreen.CSS
+
+
 # ---------------------------------------------------------------------------
 # ArchivePickerScreen
 # ---------------------------------------------------------------------------
@@ -206,10 +242,11 @@ class ArchivePickerScreen(Screen):
         Binding("q", "cancel", "Cancel"),
     ]
 
-    def __init__(self, job: Job, archives_dir: Path, **kwargs):
+    def __init__(self, job: Job, archives_dir: Path, job_count: int = 1, **kwargs):
         super().__init__(**kwargs)
         self.job = job
         self.archives_dir = archives_dir
+        self.job_count = job_count
         self.existing_archives = self._get_archives()
 
     def _get_archives(self) -> List[str]:
@@ -223,9 +260,13 @@ class ArchivePickerScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical(id="picker-container"):
-            yield Static("Archive Job", id="picker-title")
+            yield Static("Archive Jobs" if self.job_count > 1 else "Archive Job", id="picker-title")
             yield Static(
-                f"Config: {self.job.config_name}  |  Tag: {self.job.tag}  |  ID: {self.job.job_id}",
+                (
+                    f"Archive {self.job_count} filtered ended jobs"
+                    if self.job_count > 1
+                    else f"Config: {self.job.config_name}  |  Tag: {self.job.tag}  |  ID: {self.job.job_id}"
+                ),
                 id="picker-job-info",
             )
 
@@ -240,7 +281,7 @@ class ArchivePickerScreen(Screen):
             yield Label("— or create a new archive —", classes="picker-label", id="new-label")
             yield Input(placeholder="New archive name…", id="new-archive-input")
             with Horizontal(id="picker-buttons"):
-                yield Button("Archive", variant="primary", id="picker-confirm")
+                yield Button("Archive All" if self.job_count > 1 else "Archive", variant="primary", id="picker-confirm")
                 yield Button("Cancel", variant="default", id="picker-cancel")
         yield Footer()
 
@@ -340,6 +381,7 @@ class FilterScreen(Screen):
         "RUNNING",
         "COMPLETED",
         "FAILED",
+        "CHECK_FAILED",
         "CANCELLED",
         "TIMEOUT",
         "OTHER",
@@ -833,6 +875,8 @@ class JobsScreen(Screen):
         Binding("s", "view_script", "View Script"),
         Binding("x", "delete_job", "Delete Job"),
         Binding("v", "archive_job", "Archive Job"),
+        Binding("ctrl+x", "delete_ended_jobs", "Delete Filtered Ended Jobs"),
+        Binding("ctrl+v", "archive_ended_jobs", "Archive Filtered Ended Jobs"),
         Binding("u", "unarchive_job", "Unarchive Job"),
         Binding("l", "open_columns", "Columns"),
     ]
@@ -910,12 +954,18 @@ class JobsScreen(Screen):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _get_selected_finished_job(self) -> Optional[Job]:
-        """Return the Job currently selected in the Ended table, or None."""
+    def _get_selected_job(self) -> Optional[Job]:
+        """Return the job selected in the active status table, if any."""
         active_tab_id = self.query_one(TabbedContent).active
-        if active_tab_id != "finished-tab":
+        table_ids = {
+            "queued-tab": "#queued-table",
+            "running-tab": "#running-table",
+            "finished-tab": "#finished-table",
+        }
+        table_id = table_ids.get(active_tab_id)
+        if table_id is None:
             return None
-        table = self.query_one("#finished-table", DataTable)
+        table = self.query_one(table_id, DataTable)
         if table.row_count == 0:
             return None
         try:
@@ -925,20 +975,43 @@ class JobsScreen(Screen):
         except Exception:
             return None
 
+    def _get_selected_finished_job(self) -> Optional[Job]:
+        """Keep archive actions restricted to the finished jobs tab."""
+        if self.query_one(TabbedContent).active != "finished-tab":
+            return None
+        return self._get_selected_job()
+
+    def _get_filtered_ended_jobs(self) -> List[Job]:
+        """Jobs currently represented in the Ended tab after applying filters."""
+        jobs = self.filter_jobs(self.filter) if self.filter else self.all_jobs
+        return [
+            job for job in jobs
+            if job.exp_dir and job.status not in (
+                Status.SUBMITTING.value, Status.QUEUED.value, Status.RUNNING.value
+            )
+        ]
+
     # ------------------------------------------------------------------
     # Delete action
     # ------------------------------------------------------------------
 
     def action_delete_job(self) -> None:
-        """Prompt the user and delete the selected finished job."""
-        job = self._get_selected_finished_job()
+        """Prompt before deleting a job, cancelling active submissions first."""
+        job = self._get_selected_job()
         if job is None:
+            return
+        if job.status == Status.SUBMITTING.value:
+            self.notify("Cannot delete while the job is still being submitted. Wait for its scheduler ID to appear.", severity="warning")
             return
 
         def handle_confirm(confirmed: bool) -> None:
             if not confirmed:
                 return
             try:
+                if job.status in (Status.QUEUED.value, Status.RUNNING.value):
+                    if not job.job_id:
+                        raise RuntimeError("Cannot cancel this job because it has no scheduler job ID yet.")
+                    job.get_job_config().cancel_job(job.job_id)
                 if job.job_id:
                     delete_jobs(id=int(job.job_id), archived=True, not_archived=True)
                 else:
@@ -951,6 +1024,38 @@ class JobsScreen(Screen):
                 self.notify(f"Delete failed: {exc}", severity="error")
 
         self.app.push_screen(ConfirmDeleteScreen(job=job), handle_confirm)
+
+    def action_delete_ended_jobs(self) -> None:
+        """Delete every ended job matching the current filters."""
+        if self.query_one(TabbedContent).active != "finished-tab":
+            self.notify("Switch to the Ended tab to delete filtered jobs.", severity="warning")
+            return
+        jobs = self._get_filtered_ended_jobs()
+        if not jobs:
+            self.notify("No ended jobs match the current filters.", severity="warning")
+            return
+
+        def handle_confirm(confirmed: bool) -> None:
+            if not confirmed:
+                return
+            import shutil
+            deleted = 0
+            errors = []
+            for job in jobs:
+                path = job.get_job_base_path()
+                try:
+                    if path.exists():
+                        shutil.rmtree(path)
+                    deleted += 1
+                except Exception as exc:
+                    errors.append(f"{job.exp_dir}: {exc}")
+            self.load_and_update_jobs()
+            if errors:
+                self.notify(f"Deleted {deleted}/{len(jobs)} jobs; errors: {'; '.join(errors[:3])}", severity="error")
+            else:
+                self.notify(f"Deleted {deleted} ended jobs.", severity="information")
+
+        self.app.push_screen(ConfirmBulkDeleteScreen(count=len(jobs)), handle_confirm)
 
     # ------------------------------------------------------------------
     # Archive action  (active jobs only)
@@ -981,6 +1086,41 @@ class JobsScreen(Screen):
 
         self.app.push_screen(
             ArchivePickerScreen(job=job, archives_dir=self.archives_dir),
+            handle_archive_name,
+        )
+
+    def action_archive_ended_jobs(self) -> None:
+        """Archive all active ended jobs matching the current filters."""
+        if self.query_one(TabbedContent).active != "finished-tab":
+            self.notify("Switch to the Ended tab to archive filtered jobs.", severity="warning")
+            return
+        jobs = self._get_filtered_ended_jobs()
+        active_jobs = [job for job in jobs if not job.archive_name]
+        archived_count = len(jobs) - len(active_jobs)
+        if not active_jobs:
+            self.notify("No unarchived ended jobs match the current filters.", severity="warning")
+            return
+
+        def handle_archive_name(archive_name: Optional[str]) -> None:
+            if not archive_name:
+                return
+            archived = 0
+            errors = []
+            for job in active_jobs:
+                try:
+                    archive_job(job, archive_name)
+                    archived += 1
+                except Exception as exc:
+                    errors.append(f"{job.exp_dir}: {exc}")
+            self.load_and_update_jobs()
+            skipped = f" {archived_count} already archived job(s) skipped." if archived_count else ""
+            if errors:
+                self.notify(f"Archived {archived}/{len(active_jobs)} jobs.{skipped} Errors: {'; '.join(errors[:3])}", severity="error")
+            else:
+                self.notify(f"Archived {archived} ended jobs to '{archive_name}'.{skipped}", severity="information")
+
+        self.app.push_screen(
+            ArchivePickerScreen(job=active_jobs[0], archives_dir=self.archives_dir, job_count=len(active_jobs)),
             handle_archive_name,
         )
 
@@ -1215,6 +1355,10 @@ class JobsScreen(Screen):
                 if key == "status":
                     allowed_statuses = [s.strip().upper() for s in val.split(",")]
                     job_status = getattr(job, "status", "").upper()
+                    # Older metadata and the scheduler use CHECK_FAIL; expose
+                    # the clearer CHECK_FAILED name in the filter UI as well.
+                    if "CHECK_FAILED" in allowed_statuses:
+                        allowed_statuses.append(Status.CHECK_FAIL.value)
                     if not any(status in job_status for status in allowed_statuses):
                         return False
                 elif key == "config":

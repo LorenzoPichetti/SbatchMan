@@ -5,7 +5,7 @@ import re
 import yaml
 import itertools
 
-from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, map_info_to_vars, resolve_map_variable, get_var_path_filename
+from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, map_info_to_vars, resolve_map_variable, get_var_path_filename, warn_undereferenced_map_variables
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.config.project_config import get_project_configs_file_path
 from sbatchman.exceptions import ConfigurationError, SyntaxError
@@ -56,8 +56,6 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
       or does not adhere to the required structure (e.g., missing
       'scheduler' key, root is not a dictionary).
   """
-  created_configs = []
- 
   try:
     with open(file_path, 'r') as f:
       data = yaml.safe_load(f)
@@ -65,7 +63,18 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
     raise ConfigurationError(f"Configuration file not found at: {file_path}")
   except yaml.YAMLError as e:
     raise ConfigurationError(f"Error parsing YAML file: {e}")
- 
+
+  return create_configs_from_data(data, Path(file_path).parent, overwrite)
+
+
+def create_configs_from_data(data: dict, base_dir: Path, overwrite: bool = False) -> List[BaseConfig]:
+  """Create configurations from an in-memory configuration document.
+
+  Relative files referenced by ``include_variables`` are resolved from
+  ``base_dir``.
+  """
+  created_configs = []
+
   # Handle variables at the top level
   variables = data.pop("variables", {})
   global_vars_file = data.get("include_variables")
@@ -83,7 +92,7 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
     for vars_file in global_vars_file_list:
       vars_file = Path(vars_file)
       if not vars_file.is_absolute():
-        vars_file = file_path.parent / vars_file
+        vars_file = base_dir / vars_file
       if not Path(vars_file).exists():
         raise ConfigurationError(f'Variables file {vars_file} does NOT exist')
     
@@ -127,6 +136,17 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
           for lv in v:
             if isinstance(lv, str):
               used_vars |= extract_used_vars(lv)
+
+      config_templates = [config_name_template] + [
+        value for value in config_params.values() if isinstance(value, (str, list))
+      ]
+      map_names = [
+        name for name, value in expanded_vars.items()
+        if isinstance(value, dict) and '__map__' in value
+      ]
+      warn_undereferenced_map_variables(
+        config_templates, map_names, context=f"configuration '{config_name_template}'"
+      )
       
       # Identify map variables and their key variables
       map_info = {}  # map_name -> (map_dict, key_var_name)
@@ -221,6 +241,7 @@ def create_configs_from_file(file_path: Path, overwrite: bool = False) -> List[B
   
   return created_configs
  
+
  
 def _create_config_from_params_helper(
   config_params: dict,

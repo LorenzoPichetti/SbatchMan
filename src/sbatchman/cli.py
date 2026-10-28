@@ -4,6 +4,7 @@ import typer
 from enum import Enum
 from typing import List, Optional
 from rich.console import Console
+from rich.table import Table
 from pathlib import Path
 
 import sbatchman as sbm
@@ -383,8 +384,9 @@ def delete_jobs(
   tag: Optional[str] = typer.Option(None, "--tag", help="Delete jobs with this tag."),
   archive_name: Optional[str] = typer.Option(None, "--archive", help="Delete jobs from this archive."),
   archived: bool = typer.Option(False, "--archived", "-a", help="Delete only archived jobs."), 
-  not_archived: bool = typer.Option(False, "--not-archived", "-na", help="Delete only active jobs."),
+  not_archived: bool = typer.Option(False, "--not-archived", "-na", help="Delete only active jobs (the default target)."),
   all: bool = typer.Option(False, "--all", help="Delete jobs from both active and archive directories."),
+  yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
   status_list: Optional[List[str]] = typer.Option(None, "--status", "-s", help="Filter jobs by status. Can be used multiple times (e.g., --status FAILED --status TIMEOUT)."),
   variable_list: Optional[List[str]] = typer.Option(None, "--variable", "-v", help="Filter jobs by variable value (e.g. perm=rabbit)."),
 ):
@@ -393,10 +395,14 @@ def delete_jobs(
   if all:
     archived = True
     not_archived = True
+  elif archive_name and not archived:
+    # Naming an archive implies an archived target; don't let the active-only
+    # default broaden this into deleting every active job.
+    archived = True
+    not_archived = False
 
   if not archived and not not_archived:
-    console.print("[bold red]You must specify at least one of: --archived (-a) or --not-archived (-na) [/bold red]")
-    raise typer.Exit(1)
+    not_archived = True
   
   try:
     casted_status_list: Optional[List[Status]] = None
@@ -412,6 +418,54 @@ def delete_jobs(
         key, value = var.split("=", 1)
         variables_dict[key] = value
         
+    jobs_to_delete = sbm.jobs_list(
+      cluster_name=cluster_name,
+      config_name=config_name,
+      tag=tag,
+      archive_name=archive_name,
+      from_active=not_archived,
+      from_archived=archived,
+      update_jobs=False,
+      status=casted_status_list,
+      variables=variables_dict if variables_dict else None,
+    )
+
+    if not jobs_to_delete:
+      console.print("[yellow]No jobs to delete[/yellow]")
+      return
+
+    preview_limit = 20
+    preview_jobs = jobs_to_delete[:preview_limit]
+    preview = Table(title=f"Jobs to delete (sample of {len(jobs_to_delete)})")
+    for column in ("Cluster", "Config", "Tag", "Job ID", "Status", "Archive", "Experiment"):
+      preview.add_column(column)
+    for job in preview_jobs:
+      preview.add_row(
+        str(job.cluster_name), str(job.config_name), str(job.tag), str(job.job_id),
+        str(job.status), job.archive_name or "—", str(job.exp_dir),
+      )
+    console.print(preview)
+
+    status_counts = {}
+    for job in jobs_to_delete:
+      status_counts[job.status] = status_counts.get(job.status, 0) + 1
+    status_summary = ", ".join(
+      f"{status}: {count}" for status, count in sorted(status_counts.items())
+    )
+    active_count = sum(1 for job in jobs_to_delete if not job.archive_name)
+    archived_count = len(jobs_to_delete) - active_count
+    console.print(
+      f"Summary: {len(jobs_to_delete)} jobs total "
+      f"({active_count} active, {archived_count} archived). "
+      f"Statuses: {status_summary}."
+    )
+    if len(jobs_to_delete) > len(preview_jobs):
+      console.print(f"Showing {len(preview_jobs)} of {len(jobs_to_delete)} jobs.")
+
+    if not yes and not typer.confirm(f"Permanently delete these {len(jobs_to_delete)} jobs?", default=False):
+      console.print("[yellow]Deletion cancelled[/yellow]")
+      return
+
     deleted_count = sbm.delete_jobs(
       cluster_name=cluster_name,
       config_name=config_name,
