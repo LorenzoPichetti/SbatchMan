@@ -2,7 +2,7 @@
 campaign_tui.py
 ================
 
-Interactive terminal UI (Textual) for managing and monitoring benchmark
+Interactive terminal UI (Textual) for managing and monitoring application
 campaigns built on top of `campaign.py`.
 
 Usage
@@ -84,6 +84,7 @@ STATUS_STYLES = {
     "failed": "bold red",
     "skipped": "dim cyan",
     "cancelled": "bold magenta",
+    "needs attention": "bold red on yellow",
 }
 
 
@@ -140,6 +141,7 @@ class RunScreen(Screen):
         self.control = CampaignControl()
         self.success: Optional[bool] = None
         self.finished = False
+        self.awaiting_resolution = False
 
         # row key -> row data
         self.rows: Dict[str, Dict[str, Any]] = {}
@@ -154,8 +156,11 @@ class RunScreen(Screen):
         yield ProgressBar(id="job_progress", show_eta=False)
         yield RichLog(id="log_view", markup=True, highlight=False, wrap=True)
         with Horizontal(id="controls"):
-            # yield Button("Pause", id="pause_btn")
-            yield Button("Cancel", id="cancel_btn", variant="error")
+            yield Button("Pause", id="pause_btn")
+            yield Button("Retry Step", id="retry_btn", disabled=True)
+            yield Button("Continue", id="continue_btn", disabled=True)
+            yield Button("Skip Step", id="skip_btn", disabled=True)
+            yield Button("Stop Campaign", id="cancel_btn", variant="error")
             yield Button("Back", id="back_btn", disabled=True)
         yield Footer()
 
@@ -225,6 +230,9 @@ class RunScreen(Screen):
         if event.state in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
             self.finished = True
             self.query_one("#pause_btn", Button).disabled = True
+            self.query_one("#retry_btn", Button).disabled = True
+            self.query_one("#continue_btn", Button).disabled = True
+            self.query_one("#skip_btn", Button).disabled = True
             self.query_one("#cancel_btn", Button).disabled = True
             self.query_one("#back_btn", Button).disabled = False
             log = self.query_one("#log_view", RichLog)
@@ -305,6 +313,26 @@ class RunScreen(Screen):
                     self.rows[key]["duration"] = f"{duration:.1f}s"
                 table_dirty = True
 
+            elif event.type == EventType.STEP_NEEDS_ATTENTION:
+                key = self._row_key(event.data)
+                self._ensure_row(key, event.data, status="needs attention")
+                table_dirty = True
+                self.awaiting_resolution = True
+                self.query_one("#pause_btn", Button).disabled = True
+                self.query_one("#retry_btn", Button).disabled = False
+                self.query_one("#continue_btn", Button).disabled = False
+                self.query_one("#skip_btn", Button).disabled = False
+                log.write(
+                    f"[bold yellow]Needs attention: {event.data.get('app')}/"
+                    f"{event.data.get('step')} on {event.data.get('cluster')}[/bold yellow]\n"
+                    f"{event.data.get('error', '')}"
+                )
+                for job in event.data.get("jobs", []):
+                    log.write(
+                        f"  Job {job.get('job_id')} [{job.get('status')}]: "
+                        f"{job.get('tag')} ({job.get('exp_dir')})"
+                    )
+
             elif event.type == EventType.PAUSED:
                 self.query_one("#pause_btn", Button).label = "Resume"
                 log.write("[yellow]Paused.[/yellow]")
@@ -371,7 +399,25 @@ class RunScreen(Screen):
             self.control.request_cancel()
             event.button.disabled = True
             self.query_one("#pause_btn", Button).disabled = True
+            self.query_one("#retry_btn", Button).disabled = True
+            self.query_one("#continue_btn", Button).disabled = True
+            self.query_one("#skip_btn", Button).disabled = True
             self.query_one("#log_view", RichLog).write("[bold magenta]Cancellation requested…[/bold magenta]")
+
+        elif event.button.id in ("retry_btn", "continue_btn", "skip_btn"):
+            resolution = {
+                "retry_btn": "retry",
+                "continue_btn": "continue",
+                "skip_btn": "skip",
+            }[event.button.id]
+            self.control.request_resolution(resolution)
+            self.awaiting_resolution = False
+            self.query_one("#pause_btn", Button).disabled = False
+            for button_id in ("#retry_btn", "#continue_btn", "#skip_btn"):
+                self.query_one(button_id, Button).disabled = True
+            self.query_one("#log_view", RichLog).write(
+                f"[cyan]{resolution.capitalize()} selected; campaign resuming…[/cyan]"
+            )
 
         elif event.button.id == "back_btn":
             if self.finished:
@@ -421,7 +467,7 @@ class HistoryScreen(Screen):
         yield ListView(id="history_list")
         yield Static("Select a run to see details.", id="detail_panel")
         with Horizontal(id="history_controls"):
-            yield Button("Resume (skip completed)", id="resume_btn", disabled=True)
+            yield Button("Resume / apply edits", id="resume_btn", disabled=True)
             yield Button("Re-run failed apps only", id="rerun_failed_btn", disabled=True)
             yield Button("Back", id="back_btn")
         yield Footer()
@@ -455,11 +501,16 @@ class HistoryScreen(Screen):
         detail = self.query_one("#detail_panel", Static)
         s = self.selected
         failed_apps = ", ".join(s["failed_apps"]) if s["failed_apps"] else "(none)"
+        project_lines = "\n".join(
+            f"  {name}: {path}"
+            for name, path in s.get("application_projects", {}).items()
+        ) or "  (none recorded)"
         detail.update(
             f"Campaign: {s['campaign_id']}\n"
             f"Started: {s['campaign_start']}   Ended: {s['campaign_end']}\n"
             f"Steps: {s['completed_steps']} completed / {s['failed_steps']} failed / {s['total_steps']} total\n"
             f"Failed apps: {failed_apps}\n"
+            f"Application projects:\n{project_lines}\n"
             f"Log file: {s['log_file']}"
         )
 
@@ -677,7 +728,7 @@ class CampaignTUIApp(App):
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Interactive TUI for managing benchmark campaigns.")
+    parser = argparse.ArgumentParser(description="Interactive TUI for managing application campaigns.")
     parser.add_argument("--config", default="", help="Path to campaign YAML config file")
     parser.add_argument("--results-dir", default="./campaign_results", help="Directory for campaign logs/results")
     parser.add_argument("--clusters", default="", help="Comma-separated list of clusters to pre-fill")

@@ -1,4 +1,7 @@
 from pathlib import Path
+import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Optional
 import yaml
 
@@ -8,6 +11,17 @@ from sbatchman.exceptions import ConfigurationError, ProjectExistsError, Project
 PROJECT_ROOT_DIR_NAME = "SbatchMan"
 
 _cached_sbatchman_home: Optional[Path] = None
+_project_root_context = ContextVar("sbatchman_project_root", default=None)
+
+
+@contextmanager
+def use_project_root(path: Path):
+  """Use a project rooted at ``path`` for the current execution context."""
+  token = _project_root_context.set(Path(path).resolve())
+  try:
+    yield
+  finally:
+    _project_root_context.reset(token)
 
 def reset_cached_sbatchman_home():
   """SbatchMan caches its current project directory as an optimization. Calling this function will force the path to be re-fetched."""
@@ -59,6 +73,14 @@ def get_project_root() -> Path:
   Searches for the project root directory (SbatchMan) upwards from the CWD.
   """
   global _cached_sbatchman_home
+  contextual_root = _project_root_context.get()
+  if contextual_root is None and os.environ.get("SBATCHMAN_PROJECT_ROOT"):
+    contextual_root = Path(os.environ["SBATCHMAN_PROJECT_ROOT"]).resolve()
+  if contextual_root is not None:
+    project_dir = contextual_root / PROJECT_ROOT_DIR_NAME
+    if project_dir.is_dir():
+      return project_dir
+    raise ProjectNotInitializedError()
   if _cached_sbatchman_home is not None:
       return _cached_sbatchman_home
 

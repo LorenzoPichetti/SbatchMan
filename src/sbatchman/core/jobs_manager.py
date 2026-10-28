@@ -4,6 +4,7 @@ import fnmatch
 import os
 from typing import Callable, List, Optional, Dict, Any, Tuple
 import concurrent.futures
+from contextvars import copy_context
 from pathlib import Path
 import pandas as pd
 from dataclasses import asdict
@@ -763,7 +764,7 @@ def _update_single_job_status(job: Job) -> bool:
       return False
     return False
 
-def update_jobs_status() -> int:
+def update_jobs_status(cluster_name: Optional[str] = None) -> int:
   """
   Updates the status of active jobs by querying the scheduler.
   
@@ -772,12 +773,20 @@ def update_jobs_status() -> int:
   """
   # current_cluster = get_cluster_name()
   # cluster_name=current_cluster,
-  active_jobs = jobs_list(from_active=True, from_archived=False, update_jobs=False)
+  active_jobs = jobs_list(
+    cluster_name=cluster_name,
+    from_active=True,
+    from_archived=False,
+    update_jobs=False,
+  )
   
   updated_count = 0
 
   with concurrent.futures.ThreadPoolExecutor() as executor:
-      futures = [executor.submit(_update_single_job_status, job) for job in active_jobs]
+      futures = [
+          executor.submit(copy_context().run, _update_single_job_status, job)
+          for job in active_jobs
+      ]
       for future in concurrent.futures.as_completed(futures):
           if future.result():
               updated_count += 1

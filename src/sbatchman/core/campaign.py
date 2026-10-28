@@ -2,7 +2,7 @@
 campaign.py
 ===========
 
-Library for orchestrating multi-app, multi-cluster benchmark campaigns on
+Library for orchestrating multi-application campaigns across clusters
 top of sbatchman.
 
 This module is UI-agnostic. It can be driven by:
@@ -26,10 +26,14 @@ Design notes for callers that want live monitoring / control
 """
 
 import json
+import hashlib
+import argparse
+import copy
 import logging
 import os
 import shutil
 import subprocess
+import shlex
 import sys
 import time
 import threading
@@ -43,8 +47,7 @@ from rich.console import Console
 
 import yaml
 import sbatchman as sbm
-from sbatchman.config import global_config
-from sbatchman.core.jobs_manager import job_by_id
+from sbatchman.config import global_config, project_config
 
 # ============================================================================
 # Configuration
@@ -163,6 +166,7 @@ class EventType(Enum):
     STEP_SKIPPED = "step_skipped"          # data={"app", "cluster", "step", "reason"}
     STEP_PROGRESS = "step_progress"        # data={"app","cluster","step","completed","total"}
     STEP_END = "step_end"                  # data={"app","cluster","step","status","duration"}
+    STEP_NEEDS_ATTENTION = "step_needs_attention"  # data={"app", "cluster", "step", "error"}
 
     PAUSED = "paused"                      # data={}
     RESUMED = "resumed"                    # data={}
@@ -175,6 +179,7 @@ TERMINAL_STATES = {
     "CANCELLED",
     "TIMEOUT",
     "FAILED_SUBMISSION",
+    "MISSING",
 }
 
 
@@ -190,6 +195,7 @@ class StepConfig:
     name: str
     script: Optional[str] = None  # Bash script to run before jobs
     jobs: Optional[str] = None    # Path to jobs YAML file
+    jobs_args: List[str] = field(default_factory=list)
     on_fails: str = "terminate"   # terminate | continue | skip
 
     def __post_init__(self):
@@ -204,11 +210,8 @@ class AppConfig:
 
     name: str
     dir: Path
-    blocking: bool = False
     cluster_whitelist: List[str] = field(default_factory=list)
-    cluster_blacklist: List[str] = field(default_factory=list)
     configs: List[str] = field(default_factory=list)
-    results_dir: Optional[str] = None
     steps: List[StepConfig] = field(default_factory=list)
 
 
@@ -238,6 +241,12 @@ class StepExecutionLog:
     jobs_successful: int = 0
     jobs_failed: int = 0
     job_errors: List[str] = field(default_factory=list)
+    jobs: List[Dict[str, Any]] = field(default_factory=list)
+    job_attempts: List[Dict[str, Any]] = field(default_factory=list)
+    attempt_count: int = 0
+    manual_resolution: Optional[str] = None
+    resolution_history: List[Dict[str, Any]] = field(default_factory=list)
+    definition_hash: Optional[str] = None
 
     duration_seconds: float = 0.0
 
@@ -248,6 +257,9 @@ class ExecutionState:
 
     campaign_id: str
     campaign_start: str
+    config_file: Optional[str] = None
+    config_sha256: Optional[str] = None
+    application_projects: Dict[str, str] = field(default_factory=dict)
     campaign_end: Optional[str] = None
     clusters_processed: List[str] = field(default_factory=list)
     dry_run: bool = False
@@ -282,6 +294,7 @@ class CampaignControl:
     def __init__(self) -> None:
         self.pause_event = threading.Event()
         self.cancel_event = threading.Event()
+        self.resolutions: "queue_module.Queue[str]" = queue_module.Queue()
 
     def request_pause(self) -> None:
         self.pause_event.set()
@@ -294,6 +307,23 @@ class CampaignControl:
         # cancellation promptly instead of sleeping in the pause loop.
         self.cancel_event.set()
         self.pause_event.clear()
+        self.resolutions.put("stop")
+
+    def request_resolution(self, action: str) -> None:
+        if action not in {"retry", "continue", "skip", "stop"}:
+            raise ValueError(f"Unknown campaign resolution: {action}")
+        self.resolutions.put(action)
+
+    def wait_for_resolution(self) -> str:
+        while not self.is_cancelled:
+            try:
+                action = self.resolutions.get(timeout=0.2)
+            except queue_module.Empty:
+                continue
+            if action == "stop" or self.is_cancelled:
+                return "stop"
+            return action
+        return "stop"
 
     @property
     def is_paused(self) -> bool:
@@ -306,6 +336,11 @@ class CampaignControl:
     def reset(self) -> None:
         self.pause_event.clear()
         self.cancel_event.clear()
+        while True:
+            try:
+                self.resolutions.get_nowait()
+            except queue_module.Empty:
+                break
 
 
 # ============================================================================
@@ -443,9 +478,13 @@ def load_campaign_config(file: Path) -> CampaignConfig:
             raise ConfigurationError("Invalid campaign config: missing 'apps' section")
 
         apps = []
+        app_names = set()
         for app_data in data["apps"]:
             logger.debug(f"Loading app config: {app_data.get('name', 'unknown')}")
-            app = load_app_config(app_data)
+            app = load_app_config(app_data, base_dir=Path(file).resolve().parent)
+            if app.name in app_names:
+                raise ConfigurationError(f"Duplicate application name '{app.name}'")
+            app_names.add(app.name)
             apps.append(app)
 
         config = CampaignConfig(apps=apps)
@@ -459,13 +498,15 @@ def load_campaign_config(file: Path) -> CampaignConfig:
         raise ConfigurationError(f"Failed to load campaign config: {str(e)}")
 
 
-def load_app_config(app_data: dict) -> AppConfig:
+def load_app_config(app_data: dict, base_dir: Optional[Path] = None) -> AppConfig:
     """Load single app configuration."""
     logger = logging.getLogger(__name__)
     try:
         name = app_data.get("name")
         if not name:
             raise ConfigurationError("App config missing 'name'")
+        if Path(name).name != name or name in (".", ".."):
+            raise ConfigurationError(f"App name '{name}' must be a single safe path component")
 
         logger.debug(f"Loading app '{name}'")
 
@@ -476,7 +517,10 @@ def load_app_config(app_data: dict) -> AppConfig:
         # Convert to Path
         dir_path = Path(dir_str)
         if not dir_path.is_absolute():
-            dir_path = Path.cwd() / dir_path
+            dir_path = (base_dir or Path.cwd()) / dir_path
+        dir_path = dir_path.resolve()
+        if not dir_path.is_dir():
+            raise ConfigurationError(f"App '{name}' directory does not exist: {dir_path}")
 
         logger.debug(f"App directory: {dir_path}")
 
@@ -487,22 +531,24 @@ def load_app_config(app_data: dict) -> AppConfig:
 
         if not steps:
             raise ConfigurationError(f"App '{name}' has no steps")
+        step_names = [step.name for step in steps]
+        if len(step_names) != len(set(step_names)):
+            raise ConfigurationError(f"App '{name}' contains duplicate step names")
 
         # Parse configs
-        configs_data = app_data.get("configs", [])
+        configs_data = app_data.get("configs") or []
         if isinstance(configs_data, str):
             configs_data = [configs_data]
+        if not isinstance(configs_data, list) or not all(isinstance(path, str) for path in configs_data):
+            raise ConfigurationError(f"App '{name}' configs must be a string or list of strings")
 
         logger.debug(f"Configs: {configs_data}")
 
         app = AppConfig(
             name=name,
             dir=dir_path,
-            blocking=app_data.get("blocking", False),
             cluster_whitelist=app_data.get("cluster_whitelist", []),
-            cluster_blacklist=app_data.get("cluster_blacklist", []),
             configs=configs_data,
-            results_dir=app_data.get("results_dir"),
             steps=steps,
         )
 
@@ -533,6 +579,13 @@ def load_step_config(step_data: dict) -> StepConfig:
             raise ConfigurationError(f"Step '{name}' missing both 'script' and 'jobs'")
 
         on_fails = step_data.get("on_fails", "terminate")
+        jobs_args = step_data.get("jobs_args", [])
+        if isinstance(jobs_args, str):
+            jobs_args = shlex.split(jobs_args)
+        if not isinstance(jobs_args, list) or not all(isinstance(arg, str) for arg in jobs_args):
+            raise ConfigurationError(f"Step '{name}' jobs_args must be a string or list of strings")
+        if jobs_args and not jobs:
+            raise ConfigurationError(f"Step '{name}' has jobs_args but no jobs file")
 
         logger.debug(f"Script: {script if script else 'None'}")
         logger.debug(f"Jobs: {jobs}")
@@ -542,6 +595,7 @@ def load_step_config(step_data: dict) -> StepConfig:
             name=name,
             script=script,
             jobs=jobs,
+            jobs_args=jobs_args,
             on_fails=on_fails,
         )
 
@@ -550,6 +604,37 @@ def load_step_config(step_data: dict) -> StepConfig:
     except Exception as e:
         logger.error(f"Failed to load step config: {str(e)}")
         raise ConfigurationError(f"Failed to load step config: {str(e)}")
+
+
+def parse_jobs_args(arguments: List[str]) -> Dict[str, Any]:
+    """Parse supported `sbatchman launch` options for a campaign jobs batch."""
+    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    parser.add_argument("--tag", "-t", action="append", default=[])
+    parser.add_argument("--variable", "-v", action="append", default=[])
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--ignore-archived", "-ia", action="store_true")
+    parser.add_argument("--ignore-conf-in-dup-check", "-ic", action="store_true")
+    parser.add_argument("--ignore-commands-in-dup-check", "-icomm", action="store_true")
+    try:
+        options = parser.parse_args(arguments)
+    except SystemExit as exc:
+        raise ConfigurationError(f"Invalid jobs_args: {' '.join(arguments)}") from exc
+
+    variables = {}
+    for value in options.variable:
+        if "=" not in value:
+            raise ConfigurationError(f"Invalid jobs_args variable '{value}'; expected key=value")
+        key, val = value.split("=", 1)
+        variables[key] = val
+
+    return {
+        "filter_tags": options.tag or None,
+        "filter_variables": variables or None,
+        "force": options.force,
+        "ignore_archived": options.ignore_archived,
+        "ignore_conf_in_dup_check": options.ignore_conf_in_dup_check,
+        "ignore_commands_in_dup_check": options.ignore_commands_in_dup_check,
+    }
 
 
 def discover_clusters_from_config(config: CampaignConfig) -> List[str]:
@@ -563,6 +648,65 @@ def discover_clusters_from_config(config: CampaignConfig) -> List[str]:
             if c not in clusters:
                 clusters.append(c)
     return sorted(clusters)
+
+
+def select_campaign_workflow(
+    config: CampaignConfig,
+    applications: Optional[List[str]] = None,
+    steps: Optional[List[str]] = None,
+) -> CampaignConfig:
+    """Apply optional application and step selections in campaign order."""
+    requested_apps = set(applications or [])
+    requested_steps = set(steps or [])
+    known_apps = {app.name for app in config.apps}
+    unknown_apps = requested_apps - known_apps
+    if unknown_apps:
+        raise ConfigurationError(f"Unknown application(s): {', '.join(sorted(unknown_apps))}")
+    selected_apps = [app for app in config.apps if not requested_apps or app.name in requested_apps]
+    if requested_steps:
+        known_steps = {step.name for app in selected_apps for step in app.steps}
+        unknown_steps = requested_steps - known_steps
+        if unknown_steps:
+            raise ConfigurationError(f"Unknown step(s): {', '.join(sorted(unknown_steps))}")
+        for app in selected_apps:
+            app.steps = [step for step in app.steps if step.name in requested_steps]
+        selected_apps = [app for app in selected_apps if app.steps]
+    if not selected_apps:
+        raise ConfigurationError("The selected applications/steps contain no campaign work")
+    config.apps = selected_apps
+    return config
+
+
+def _campaign_input_hash(config_file: Optional[Path], config: CampaignConfig) -> Optional[str]:
+    """Hash the campaign definition and referenced config/jobs files for safe resume."""
+    if config_file is None:
+        return None
+    digest = hashlib.sha256()
+    digest.update(Path(config_file).read_bytes())
+    for app in config.apps:
+        for relative_path in list(app.configs) + [step.jobs for step in app.steps if step.jobs]:
+            path = (app.dir / relative_path).resolve()
+            digest.update(str(path).encode("utf-8"))
+            if path.is_file():
+                digest.update(path.read_bytes())
+            else:
+                digest.update(b"<missing>")
+    return digest.hexdigest()
+
+
+def _step_definition_hash(app: AppConfig, step: StepConfig) -> str:
+    """Fingerprint a step and the files that determine its work."""
+    digest = hashlib.sha256()
+    digest.update(json.dumps(asdict(step), sort_keys=True).encode("utf-8"))
+    digest.update(str(app.dir).encode("utf-8"))
+    for relative_path in list(app.configs) + ([step.jobs] if step.jobs else []):
+        path = (app.dir / relative_path).resolve()
+        digest.update(str(path).encode("utf-8"))
+        if path.is_file():
+            digest.update(path.read_bytes())
+        else:
+            digest.update(b"<missing>")
+    return digest.hexdigest()
 
 
 # ============================================================================
@@ -591,6 +735,9 @@ def recover_execution_state(
         state = ExecutionState(
             campaign_id=data.get("campaign_id"),
             campaign_start=data.get("campaign_start"),
+            config_file=data.get("config_file"),
+            config_sha256=data.get("config_sha256"),
+            application_projects=data.get("application_projects", {}),
             campaign_end=data.get("campaign_end"),
             clusters_processed=data.get("clusters_processed", []),
             dry_run=data.get("dry_run", False),
@@ -615,7 +762,7 @@ def recover_execution_state(
         if DEBUG_STACKTRACE:
             console.print_exception()
         logger.warning(f"Failed to recover state from {log_file}: {str(e)}")
-        return None
+        raise StateRecoveryError(f"Could not recover campaign journal {log_file}: {e}") from e
 
 
 def is_app_completed(
@@ -645,6 +792,7 @@ def is_step_completed(
     step_name: str,
     cluster: str,
     state: ExecutionState,
+    definition_hash: Optional[str] = None,
 ) -> bool:
     """Check if specific step completed on cluster."""
     if app_name not in state.execution:
@@ -657,7 +805,12 @@ def is_step_completed(
     if cluster not in step_logs:
         return False
 
-    return step_logs[cluster].status == StepStatus.COMPLETED.value
+    log = step_logs[cluster]
+    return (
+        log.status == StepStatus.COMPLETED.value
+        and definition_hash is not None
+        and log.definition_hash == definition_hash
+    )
 
 
 def get_failed_apps(state: ExecutionState) -> List[str]:
@@ -750,6 +903,7 @@ def load_campaign_log_summary(log_file: Path) -> Optional[Dict[str, Any]]:
         "campaign_start": data.get("campaign_start"),
         "campaign_end": data.get("campaign_end"),
         "clusters_processed": data.get("clusters_processed", []),
+        "application_projects": data.get("application_projects", {}),
         "dry_run": data.get("dry_run", False),
         "total_steps": total_steps,
         "completed_steps": completed_steps,
@@ -770,6 +924,7 @@ def poll_jobs_until_completion(
     logger: Optional[logging.Logger] = None,
     control: Optional[CampaignControl] = None,
     on_progress: Optional[Callable[[int, int], None]] = None,
+    on_status: Optional[Callable[[Dict[int, str]], None]] = None,
 ) -> Tuple[bool, int, int, List[str]]:
     """
     Poll jobs until all reach TERMINAL_STATES.
@@ -792,6 +947,13 @@ def poll_jobs_until_completion(
     start_time = time.time()
     elapsed = 0
 
+    def _read_job_status(job: sbm.Job) -> str:
+        # Read the exact job record. Scheduler IDs may collide across clusters,
+        # so a project-wide lookup by ID can return the different application's job.
+        with open(job.get_metadata_path(), "r") as f:
+            metadata = yaml.safe_load(f) or {}
+        return str(metadata.get("status", "UNKNOWN"))
+
     while elapsed < max_wait:
         if control is not None:
             if control.is_cancelled:
@@ -801,16 +963,23 @@ def poll_jobs_until_completion(
             if control.is_cancelled:
                 raise CampaignCancelledError("Job polling cancelled by user")
 
+        try:
+            sbm.update_jobs_status(cluster_name=jobs[0].cluster_name)
+        except Exception as exc:
+            logger.warning(f"Could not refresh scheduler state for cluster {jobs[0].cluster_name}: {exc}")
+
         # Refresh job statuses
         job_statuses = {}
         for job in jobs:
             # Re-fetch job from sbatchman
             try:
-                updated = job_by_id(job.job_id)
-                job_statuses[job.job_id] = updated.status
+                job_statuses[job.job_id] = _read_job_status(job)
             except Exception as e:
                 logger.warning(f"Failed to fetch status for job {job.job_id}: {e}")
-                job_statuses[job.job_id] = "UNKNOWN"
+                job_statuses[job.job_id] = "UNKNOWN" if job.get_metadata_path().exists() else "MISSING"
+
+        if on_status is not None:
+            on_status(job_statuses)
 
         # Check if all terminal
         all_terminal = all(
@@ -841,12 +1010,12 @@ def poll_jobs_until_completion(
 
     for job in jobs:
         try:
-            updated = job_by_id(job.job_id)
-            if updated.status == "COMPLETED":
+            final_status = _read_job_status(job)
+            if final_status == "COMPLETED":
                 passed += 1
             else:
                 failed += 1
-                errors.append(f"Job {job.job_id}: {updated.status}")
+                errors.append(f"Job {job.job_id}: {final_status}")
         except Exception as e:
             failed += 1
             errors.append(f"Job {job.job_id}: {str(e)}")
@@ -897,7 +1066,7 @@ def initialize_project(app_dir: Path, dry_run: bool = False) -> None:
 
 
 class CampaignRunner:
-    """Orchestrates benchmark campaign execution."""
+    """Orchestrates application campaign execution."""
 
     def __init__(
         self,
@@ -909,12 +1078,15 @@ class CampaignRunner:
         event_queue: Optional["queue_module.Queue"] = None,
         control: Optional[CampaignControl] = None,
         console_output: bool = True,
+        config_file: Optional[Path] = None,
     ):
         self.config = config
-        self.results_dir = results_dir
-        self.log_file = log_file
+        self.results_dir = Path(results_dir).resolve()
+        self.log_file = Path(log_file).resolve()
         self.verbose = verbose
         self.dry_run = dry_run
+        self.config_file = Path(config_file).resolve() if config_file else None
+        self.config_sha256 = _campaign_input_hash(self.config_file, config)
 
         # Live monitoring / remote control (both optional; a plain CLI run
         # leaves these as None and behaves exactly as before).
@@ -931,8 +1103,14 @@ class CampaignRunner:
 
         # Campaign state
         self.state = ExecutionState(
-            campaign_id=datetime.now().strftime("%Y%m%d_%H%M%S"),
+            campaign_id=datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
             campaign_start=datetime.now().isoformat(),
+            config_file=str(self.config_file) if self.config_file else None,
+            config_sha256=self.config_sha256,
+            application_projects={
+                app.name: str(self.results_dir / "applications" / app.name / "SbatchMan")
+                for app in self.config.apps
+            },
         )
 
         # Store original working directory
@@ -943,11 +1121,49 @@ class CampaignRunner:
     # ------------------------------------------------------------------
 
     def _emit(self, event_type: EventType, **data: Any) -> None:
+        self._checkpoint()
         if self.event_queue is None:
             return
         self.event_queue.put(
             CampaignEvent(type=event_type, timestamp=datetime.now().isoformat(), data=data)
         )
+
+    def _state_as_dict(self) -> dict:
+        log_data = {
+            "campaign_id": self.state.campaign_id,
+            "campaign_start": self.state.campaign_start,
+            "config_file": self.state.config_file,
+            "config_sha256": self.state.config_sha256,
+            "application_projects": self.state.application_projects,
+            "campaign_end": self.state.campaign_end,
+            "clusters_processed": self.state.clusters_processed,
+            "dry_run": self.state.dry_run,
+            "resume_mode": self.state.resume_mode,
+            "force_apps": self.state.force_apps,
+            "execution": {},
+        }
+        for app_name, app_steps in self.state.execution.items():
+            log_data["execution"][app_name] = {"steps": {}}
+            for step_name, step_logs in app_steps.items():
+                log_data["execution"][app_name]["steps"][step_name] = {
+                    cluster: asdict(log) for cluster, log in step_logs.items()
+                }
+        return log_data
+
+    def _checkpoint(self) -> None:
+        """Persist the current journal atomically so interruption loses little state."""
+        if self.dry_run:
+            return
+        try:
+            self.log_file.parent.mkdir(parents=True, exist_ok=True)
+            temporary_file = self.log_file.with_suffix(self.log_file.suffix + ".tmp")
+            with open(temporary_file, "w") as f:
+                json.dump(self._state_as_dict(), f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary_file, self.log_file)
+        except OSError as exc:
+            raise CampaignRunnerError(f"Could not checkpoint campaign state at {self.log_file}: {exc}") from exc
 
     def _check_control(self) -> None:
         """Raise if cancellation was requested; block (in short increments)
@@ -1004,6 +1220,7 @@ class CampaignRunner:
                     self.logger.info(f"Successfully recovered execution state")
             except StateRecoveryError as e:
                 self.logger.warning(f"Failed to recover state: {str(e)}")
+                raise
 
         self._emit(
             EventType.CAMPAIGN_START,
@@ -1016,7 +1233,8 @@ class CampaignRunner:
             self._print_campaign_header(clusters)
 
             for cluster in clusters:
-                self._run_cluster(cluster, previous_state, force_apps)
+                with global_config.use_cluster_name(cluster):
+                    self._run_cluster(cluster, previous_state, force_apps)
 
             self._finalize()
             success = all(
@@ -1081,7 +1299,7 @@ class CampaignRunner:
                 continue
 
             try:
-                self._run_app(app, cluster, previous_state)
+                self._run_app(app, cluster, previous_state, force=app.name in force_apps)
             except CampaignCancelledError:
                 raise
             except CampaignRunnerError as e:
@@ -1091,10 +1309,8 @@ class CampaignRunner:
         self._emit(EventType.CLUSTER_END, cluster=cluster)
 
     def _should_run_app_on_cluster(self, app: AppConfig, cluster: str) -> bool:
-        """Check if app should run on cluster (whitelist/blacklist filtering)."""
+        """Check whether an app's optional whitelist includes this cluster."""
         if app.cluster_whitelist and cluster not in app.cluster_whitelist:
-            return False
-        if app.cluster_blacklist and cluster in app.cluster_blacklist:
             return False
         return True
 
@@ -1110,10 +1326,8 @@ class CampaignRunner:
         if app_name in force_apps:
             return True
 
-        # Check if completed
-        if is_app_completed(app_name, cluster, previous_state):
-            return False
-
+        # Compare individual step definitions so edited campaigns can reuse
+        # only the completed work that is still valid.
         return True
 
     def _setup_app_for_cluster(
@@ -1132,12 +1346,11 @@ class CampaignRunner:
             # Ensure we're in the app directory
             self.logger.debug(f"[blue]├────[/blue] Changing working directory to: {app.dir.resolve().absolute()}")
             os.chdir(app.dir)
-            sbm.reset_cached_sbatchman_home()  # Do not delete this
 
             # Initialize project
             self.logger.debug(f"Initializing project for app '{app.name}'")
             try:
-                initialize_project(app.dir, dry_run=self.dry_run)
+                initialize_project(self._application_project_parent(app), dry_run=self.dry_run)
             except ProjectInitializationError as e:
                 self.logger.error(f"Project initialization failed: {str(e)}")
                 raise e
@@ -1171,12 +1384,30 @@ class CampaignRunner:
             # Always restore original working directory
             self.logger.debug(f"Restoring working directory to: {self.original_cwd}")
             os.chdir(self.original_cwd)
+            self._checkpoint()
+
+    def _application_project_parent(self, app: AppConfig) -> Path:
+        return self.results_dir / "applications" / app.name
 
     def _run_app(
         self,
         app: AppConfig,
         cluster: str,
         previous_state: Optional[ExecutionState],
+        force: bool = False,
+    ) -> None:
+        """Run an application inside its isolated SbatchMan project context."""
+        project_parent = self._application_project_parent(app)
+        self.logger.info(f"Application SbatchMan project: {project_parent / 'SbatchMan'}")
+        with project_config.use_project_root(project_parent):
+            self._run_app_in_project(app, cluster, previous_state, force=force)
+
+    def _run_app_in_project(
+        self,
+        app: AppConfig,
+        cluster: str,
+        previous_state: Optional[ExecutionState],
+        force: bool = False,
     ) -> None:
         """Execute single app on single cluster."""
         self.logger.info('')
@@ -1198,51 +1429,86 @@ class CampaignRunner:
             self._check_control()
 
             # Check resume for step
-            if previous_state and is_step_completed(
-                app.name, step.name, cluster, previous_state
+            if previous_state and not force and is_step_completed(
+                app.name,
+                step.name,
+                cluster,
+                previous_state,
+                _step_definition_hash(app, step),
             ):
                 self.logger.info(f"[blue]└──── {step.name} [yellow][SKIPPED] (already completed in previous run)[/yellow][/blue]")
                 self._emit(EventType.STEP_SKIPPED, app=app.name, cluster=cluster, step=step.name, reason="already completed")
                 # Copy previous log
-                self.state.execution[app.name][step.name] = previous_state.execution[
+                self.state.execution[app.name][step.name] = copy.deepcopy(previous_state.execution[
                     app.name
-                ][step.name].copy()
+                ][step.name])
                 continue
 
-            # Execute step
             self.logger.info(f"[blue]├────────────── STEP [magenta]{step.name}[/magenta][/blue]")
-            self._emit(EventType.STEP_START, app=app.name, cluster=cluster, step=step.name)
-            try:
-                success = self._execute_step(app, step, cluster)
-            except CampaignCancelledError:
-                raise
-            except StepExecutionError as e:
-                success = False
+            retry = False
+            while True:
+                self._emit(EventType.STEP_START, app=app.name, cluster=cluster, step=step.name)
+                try:
+                    success = self._execute_step(app, step, cluster, force=retry)
+                except CampaignCancelledError:
+                    raise
+                except StepExecutionError:
+                    success = False
 
-            log = self.state.execution[app.name][step.name][cluster]
-            self._emit(
-                EventType.STEP_END,
-                app=app.name,
-                cluster=cluster,
-                step=step.name,
-                status=log.status,
-                duration=log.duration_seconds,
-            )
+                log = self.state.execution[app.name][step.name][cluster]
+                self._emit(
+                    EventType.STEP_END,
+                    app=app.name,
+                    cluster=cluster,
+                    step=step.name,
+                    status=log.status,
+                    duration=log.duration_seconds,
+                )
+                if success:
+                    break
 
-            if not success:
-                # Handle failure per policy
+                if self.control is not None and self.event_queue is not None:
+                    self._emit(
+                        EventType.STEP_NEEDS_ATTENTION,
+                        app=app.name,
+                        cluster=cluster,
+                        step=step.name,
+                        error=log.error_message or "Step failed.",
+                        jobs=log.jobs,
+                    )
+                    resolution = self.control.wait_for_resolution()
+                    log.resolution_history.append({
+                        "action": resolution,
+                        "timestamp": datetime.now().isoformat(),
+                    })
+                    self._checkpoint()
+                    if resolution == "retry":
+                        retry = True
+                        continue
+                    if resolution == "continue":
+                        log.status = StepStatus.COMPLETED.value
+                        log.manual_resolution = "continued_after_manual_intervention"
+                        log.error_message = None
+                        self._checkpoint()
+                        self._emit(EventType.STEP_END, app=app.name, cluster=cluster, step=step.name, status=log.status, duration=log.duration_seconds)
+                        break
+                    if resolution == "skip":
+                        log.status = StepStatus.SKIPPED.value
+                        log.manual_resolution = "skipped_by_user"
+                        self._checkpoint()
+                        self._emit(EventType.STEP_END, app=app.name, cluster=cluster, step=step.name, status=log.status, duration=log.duration_seconds)
+                        break
+                    raise CampaignCancelledError("Campaign stopped by user at a failed step")
+
                 policy = OnFailsPolicy(step.on_fails)
                 self.logger.warning(f"Step '{step.name}' failed, applying policy: {policy.value}")
-
                 if policy == OnFailsPolicy.TERMINATE:
-                    self.logger.error(f"TERMINATE policy active, exiting campaign")
-                    raise StepExecutionError(
-                        f"Step [magenta]{step.name}[/magenta] failed with TERMINATE policy"
-                    )
-                elif policy == OnFailsPolicy.SKIP:
-                    self.logger.info(f"SKIP policy active, moving to next app")
+                    raise StepExecutionError(f"Step '{step.name}' failed with TERMINATE policy")
+                if policy == OnFailsPolicy.SKIP:
+                    log.status = StepStatus.SKIPPED.value
+                    self._checkpoint()
                     break
-                # else: CONTINUE, move to next step
+                break
 
         self.logger.info("[blue]└" + "─" * 25 + f" APPLICATION [magenta]{app.name}[/magenta] COMPLETED " + "─" * (25 - len(' COMPLETED')) + "[/blue]")
         self._emit(EventType.APP_END, app=app.name, cluster=cluster)
@@ -1252,6 +1518,7 @@ class CampaignRunner:
         app: AppConfig,
         step: StepConfig,
         cluster: str,
+        force: bool = False,
     ) -> bool:
         """
         Execute single step (script + jobs).
@@ -1264,8 +1531,16 @@ class CampaignRunner:
         if step.name not in self.state.execution[app.name]:
             self.state.execution[app.name][step.name] = {}
 
-        log = StepExecutionLog(status=StepStatus.RUNNING.value)
+        previous_log = self.state.execution[app.name][step.name].get(cluster)
+        log = StepExecutionLog(
+            status=StepStatus.RUNNING.value,
+            attempt_count=(previous_log.attempt_count + 1) if previous_log else 1,
+            job_attempts=list(previous_log.job_attempts) if previous_log else [],
+            resolution_history=list(previous_log.resolution_history) if previous_log else [],
+            definition_hash=_step_definition_hash(app, step),
+        )
         self.state.execution[app.name][step.name][cluster] = log
+        self._checkpoint()
 
         try:
             # Ensure we're in the app directory for all operations
@@ -1275,26 +1550,34 @@ class CampaignRunner:
             # Step 1: Execute script (if any)
             if step.script:
                 self.logger.info(f"[blue]├────[/blue] 📜 Executing script:\n{step.script}")
-                try:
-                    success, stdout, stderr, exit_code = self._execute_script(
-                        step.script, app.dir
-                    )
-
-                    log.script_executed = True
-                    log.script_stdout = stdout
-                    log.script_stderr = stderr
-                    log.script_exit_code = exit_code
-
-                    self.logger.debug(f"Script exit code: {exit_code}")
-
-                    if not success:
-                        self.logger.error(f"Script failed with exit code {exit_code}")
-                        raise ScriptExecutionError(
-                            f"Script failed with exit code {exit_code}"
+                if self.dry_run:
+                    self.logger.info("[DRY-RUN] Would execute step script")
+                else:
+                    try:
+                        script_env = os.environ.copy()
+                        script_env["SBATCHMAN_CLUSTER_NAME"] = cluster
+                        script_env["SBATCHMAN_PROJECT_ROOT"] = str(
+                            self._application_project_parent(app)
                         )
-                    self.logger.info(f"[blue]├────[/blue] ✅ Script executed successfully")
-                except ScriptExecutionError:
-                    raise
+                        success, stdout, stderr, exit_code = self._execute_script(
+                            step.script, app.dir, env=script_env
+                        )
+
+                        log.script_executed = True
+                        log.script_stdout = stdout
+                        log.script_stderr = stderr
+                        log.script_exit_code = exit_code
+
+                        self.logger.debug(f"Script exit code: {exit_code}")
+
+                        if not success:
+                            self.logger.error(f"Script failed with exit code {exit_code}")
+                            raise ScriptExecutionError(
+                                f"Script failed with exit code {exit_code}"
+                            )
+                        self.logger.info(f"[blue]├────[/blue] ✅ Script executed successfully")
+                    except ScriptExecutionError:
+                        raise
 
             # Step 2: Launch and monitor jobs
             if step.jobs:
@@ -1312,11 +1595,48 @@ class CampaignRunner:
                         jobs = []
                     else:
                         self.logger.info(f"[blue]├────[/blue] 🚀 Running jobs from file '{step.jobs}'")
-                        jobs = sbm.launch_jobs_from_file(step.jobs, force=False)
+                        baseline_jobs = sbm.jobs_list(
+                            cluster_name=cluster,
+                            from_active=True,
+                            from_archived=False,
+                            update_jobs=False,
+                        )
+                        baseline_keys = {(job.cluster_name, job.exp_dir) for job in baseline_jobs}
+                        options = parse_jobs_args(step.jobs_args)
+                        jobs = sbm.launch_jobs_from_file(
+                            step.jobs,
+                            force=force or options["force"],
+                            filter_tags=options["filter_tags"],
+                            filter_variables=options["filter_variables"],
+                            ignore_archived=options["ignore_archived"],
+                            ignore_conf_in_dup_check=options["ignore_conf_in_dup_check"],
+                            ignore_commands_in_dup_check=options["ignore_commands_in_dup_check"],
+                        )
                         self.logger.info(f"[blue]├────[/blue] Launched {len(jobs)} job(s)")
+                    if self.dry_run:
+                        baseline_keys = set()
 
                     log.jobs_launched = True
                     log.jobs_count = len(jobs)
+                    log.jobs = [
+                        {
+                            "job_id": job.job_id,
+                            "cluster": job.cluster_name,
+                            "config": job.config_name,
+                            "tag": job.tag,
+                            "status": job.status,
+                            "exp_dir": job.exp_dir,
+                            "scheduler": job.scheduler,
+                        }
+                        for job in jobs
+                    ]
+                    if jobs:
+                        log.job_attempts.append({
+                            "attempt": log.attempt_count,
+                            "submitted_at": datetime.now().isoformat(),
+                            "jobs": log.jobs,
+                        })
+                    self._checkpoint()
 
                     # Poll until completion
                     if jobs and not self.dry_run:
@@ -1332,12 +1652,40 @@ class CampaignRunner:
                                 total=total,
                             )
 
+                        def _on_job_status(statuses: Dict[int, str]) -> None:
+                            for record in log.jobs:
+                                record["status"] = statuses.get(record["job_id"], "UNKNOWN")
+                            known_keys = baseline_keys | {
+                                (job.cluster_name, job.exp_dir) for job in jobs
+                            }
+                            current_jobs = sbm.jobs_list(
+                                cluster_name=cluster,
+                                from_active=True,
+                                from_archived=False,
+                                update_jobs=False,
+                            )
+                            unexpected = [
+                                job for job in current_jobs
+                                if (job.cluster_name, job.exp_dir) not in known_keys
+                            ]
+                            if unexpected:
+                                details = ", ".join(
+                                    f"{job.tag} (ID {job.job_id}, {job.status})"
+                                    for job in unexpected[:10]
+                                )
+                                raise JobExecutionError(
+                                    "Untracked jobs appeared in this application project while the step was running: "
+                                    f"{details}. They were not adopted; review them and choose Continue or Retry."
+                                )
+                            self._checkpoint()
+
                         all_success, passed, failed, errors = (
                             poll_jobs_until_completion(
                                 jobs,
                                 logger=self.logger,
                                 control=self.control,
                                 on_progress=_on_progress,
+                                on_status=_on_job_status,
                             )
                         )
                         log.jobs_successful = passed
@@ -1380,11 +1728,13 @@ class CampaignRunner:
             # Always restore original working directory
             self.logger.debug(f"Restoring working directory to: {self.original_cwd}")
             os.chdir(self.original_cwd)
+            self._checkpoint()
 
     def _execute_script(
         self,
         script: str,
         cwd: Path,
+        env: Optional[Dict[str, str]] = None,
     ) -> Tuple[bool, str, str, int]:
         """
         Execute bash script in the specified working directory.
@@ -1415,6 +1765,7 @@ class CampaignRunner:
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                env=env,
             )
         except Exception as e:
             self.logger.error(f"Script execution failed to start: {str(e)}")
@@ -1470,36 +1821,11 @@ class CampaignRunner:
     def _finalize(self) -> None:
         """Write log and print summary."""
         self.state.campaign_end = datetime.now().isoformat()
-
-        # Build JSON log
-        log_data = {
-            "campaign_id": self.state.campaign_id,
-            "campaign_start": self.state.campaign_start,
-            "campaign_end": self.state.campaign_end,
-            "clusters_processed": self.state.clusters_processed,
-            "dry_run": self.state.dry_run,
-            "resume_mode": self.state.resume_mode,
-            "force_apps": self.state.force_apps,
-            "execution": {},
-        }
-
-        # Serialize execution state
-        for app_name, app_steps in self.state.execution.items():
-            log_data["execution"][app_name] = {"steps": {}}
-            for step_name, step_logs in app_steps.items():
-                log_data["execution"][app_name]["steps"][step_name] = {}
-                for cluster, log in step_logs.items():
-                    log_data["execution"][app_name]["steps"][step_name][cluster] = (
-                        asdict(log)
-                    )
-
-        # Write log
+        log_data = self._state_as_dict()
         if not self.dry_run:
-            self.logger.info(f"Writing campaign log to '{self.log_file}'")
-            self.log_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.log_file, "w") as f:
-                json.dump(log_data, f, indent=2)
-            self.logger.debug(f"Campaign log written successfully")
+            self.logger.info(f"Writing campaign journal to '{self.log_file}'")
+            self._checkpoint()
+            self.logger.debug("Campaign journal checkpointed")
 
         # Print summary
         self._print_summary(log_data)
@@ -1619,6 +1945,8 @@ def run_campaign(
     event_queue: Optional["queue_module.Queue"] = None,
     control: Optional[CampaignControl] = None,
     console_output: bool = True,
+    applications: Optional[List[str]] = None,
+    steps: Optional[List[str]] = None,
 ) -> bool:
     """
     Run campaign from YAML config.
@@ -1652,7 +1980,12 @@ def run_campaign(
         logger.debug(f"Verbose: {verbose}, Dry-run: {dry_run}, Resume: {resume}")
 
         # Load config
-        config = load_campaign_config(config_file)
+        config = select_campaign_workflow(load_campaign_config(config_file), applications, steps)
+        clusters = list(dict.fromkeys(clusters or discover_clusters_from_config(config)))
+        if not clusters:
+            raise ConfigurationError(
+                "No cluster targets were supplied or declared in app cluster_whitelist fields."
+            )
 
         # Set up results directory
         results_dir = Path(results_dir)
@@ -1661,7 +1994,7 @@ def run_campaign(
         # Log file
         log_file = (
             results_dir
-            / f"campaign_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            / f"campaign_log_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.json"
         )
         logger.debug(f"Log file will be written to: {log_file}")
 
@@ -1675,6 +2008,7 @@ def run_campaign(
             event_queue=event_queue,
             control=control,
             console_output=console_output,
+            config_file=config_file,
         )
 
         success = runner.run_campaign(
@@ -1716,6 +2050,8 @@ def run_campaign_with_existing_log(
     event_queue: Optional["queue_module.Queue"] = None,
     control: Optional[CampaignControl] = None,
     console_output: bool = True,
+    applications: Optional[List[str]] = None,
+    steps: Optional[List[str]] = None,
 ) -> bool:
     """
     Convenience wrapper to resume a campaign against a *specific* previous
@@ -1728,12 +2064,12 @@ def run_campaign_with_existing_log(
     """
     logger = setup_logger(__name__, verbose, console_output=console_output, event_queue=event_queue)
     try:
-        config = load_campaign_config(config_file)
+        config = select_campaign_workflow(load_campaign_config(config_file), applications, steps)
 
         results_dir = Path(log_file).parent
         new_log_file = (
             results_dir
-            / f"campaign_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            / f"campaign_log_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.json"
         )
 
         runner = CampaignRunner(
@@ -1745,6 +2081,7 @@ def run_campaign_with_existing_log(
             event_queue=event_queue,
             control=control,
             console_output=console_output,
+            config_file=config_file,
         )
         # After construction, redirect where the *new* log gets written,
         # while resume-state recovery below still reads from `log_file`.
@@ -1789,7 +2126,8 @@ def _run_with_explicit_previous_log(
     try:
         runner._print_campaign_header(clusters)
         for cluster in clusters:
-            runner._run_cluster(cluster, previous_state, force_apps)
+            with global_config.use_cluster_name(cluster):
+                runner._run_cluster(cluster, previous_state, force_apps)
         runner._finalize()
         success = all(
             all(

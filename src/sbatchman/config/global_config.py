@@ -1,10 +1,25 @@
 from pathlib import Path
+import os
 import shutil
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Optional
 import yaml
 import platformdirs
 
 from sbatchman.exceptions import ClusterNameNotSetError
+
+_cluster_name_context = ContextVar("sbatchman_cluster_name", default=None)
+
+
+@contextmanager
+def use_cluster_name(cluster_name: str):
+  """Temporarily select a cluster for this execution context only."""
+  token = _cluster_name_context.set(cluster_name)
+  try:
+    yield
+  finally:
+    _cluster_name_context.reset(token)
 
 def get_global_config_path() -> Path:
   """Returns the path to the global sbatchman config.yaml file using platformdirs."""
@@ -32,6 +47,12 @@ def get_cluster_name() -> str:
   Raises:
     ClusterNameNotSetError: If the cluster name is not set in the config file.
   """
+  contextual_name = _cluster_name_context.get()
+  if contextual_name is not None:
+    return contextual_name
+  environment_name = os.environ.get("SBATCHMAN_CLUSTER_NAME")
+  if environment_name:
+    return environment_name
   config_path = get_global_config_path()
   if not config_path.exists():
     raise ClusterNameNotSetError
@@ -39,7 +60,13 @@ def get_cluster_name() -> str:
     return yaml.safe_load(f).get('cluster_name', {})
 
 def set_cluster_name(cluster_name: str):
-  """Writes the cluster name to the global configuration file."""
+  """Set the cluster name globally, or locally inside a cluster context."""
+  if _cluster_name_context.get() is not None:
+    _cluster_name_context.set(cluster_name)
+    return
+  if "SBATCHMAN_CLUSTER_NAME" in os.environ:
+    os.environ["SBATCHMAN_CLUSTER_NAME"] = cluster_name
+    return
   config = _load_global_config()
   config["cluster_name"] = cluster_name
   _save_global_config(config)

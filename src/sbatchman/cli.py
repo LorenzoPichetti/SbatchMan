@@ -263,7 +263,7 @@ def configure(
 def launch(
   file: Optional[Path] = typer.Option(None, "--file", "-f", help="YAML file that describes a batch of experiments."),
   config: Optional[str] = typer.Option(None, "--config", help="Configuration name."),
-  tag: Optional[List[str]] = typer.Option(None, "--tag", "-t", help="Tag for the experiment. If --file is used, it filters jobs by tag (can be used multiple times)."),
+  tag: Optional[List[str]] = typer.Option(None, "--tag", "-t", help="Tag for the experiment. With --file, filters jobs by tag and supports shell-style wildcards (*, ?, [seq]); repeatable. Quote wildcard patterns to prevent shell expansion (e.g. -t 'trial_*')."),
   command: Optional[str] = typer.Argument(None, help="The executable and its parameters, enclosed in quotes."),
   preprocess: Optional[str] = typer.Option(None, "--preprocess", help="Command to run before the main job (optional)."),
   postprocess: Optional[str] = typer.Option(None, "--postprocess", help="Command to run after the main job (optional)."),
@@ -511,12 +511,14 @@ def show_campaign_tui():
 @app.command("campaign")
 def campaign(
   file: Path = typer.Argument(..., help="The campaign YAML file."),  
-  results_dir: Path = typer.Option(Path("./campaign_results"), "--results-dir", "-r", help="Root directory for aggregated results."),
+  results_dir: Path = typer.Option(Path("./campaign_results"), "--results-dir", "-r", help="Root for the campaign journal and per-application SbatchMan projects."),
   clusters: List[str] = typer.Option([], "--clusters", "-c", help="Run the campaign using multiple cluster names."),
   verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output with all commands executed."),
   dry_run: bool = typer.Option(False, "--dry-run", help="Print what would be done without actually running commands."),
+  applications: List[str] = typer.Option([], "--application", "-a", help="Run only these application names; repeat the option to select several."),
+  steps: List[str] = typer.Option([], "--step", help="Run only these step names; repeat the option to select several."),
 ):
-  run_campaign(config_file=file, results_dir=results_dir, clusters=clusters, verbose=verbose, dry_run=dry_run)
+  run_campaign(config_file=file, results_dir=results_dir, clusters=clusters, verbose=verbose, dry_run=dry_run, applications=applications, steps=steps)
 
 
 
