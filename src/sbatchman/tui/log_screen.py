@@ -29,9 +29,13 @@ class LogScreen(Screen):
       self.stdout_signature = stdout_signature
       self.stderr_signature = stderr_signature
 
-  def __init__(self, job: Job, **kwargs):
+  def __init__(self, job: Job, log_dir=None, **kwargs):
     super().__init__(**kwargs)
     self.job = job
+    # Campaign jobs are loaded from an isolated project. Their Job objects
+    # retain relative exp_dir values, but the project context used to load
+    # them is gone by the time this screen's background log reader runs.
+    self.log_dir = log_dir
     self.stdout_lines = []
     self.stderr_lines = []
     self.stdout_page = 0
@@ -68,6 +72,11 @@ class LogScreen(Screen):
     except OSError:
       return None
 
+  def _log_paths(self):
+    if self.log_dir is not None:
+      return self.log_dir / "stdout.log", self.log_dir / "stderr.log"
+    return self.job.get_stdout_path(), self.job.get_stderr_path()
+
   def _check_logs(self) -> None:
     # Filesystem access can block (for example on a network mount), so keep
     # both the checks and reads off the UI thread. Never queue overlapping scans.
@@ -75,7 +84,7 @@ class LogScreen(Screen):
       self._log_worker = self.run_worker(self._read_changed_logs, thread=True, name="read-job-logs")
 
   def _read_changed_logs(self) -> None:
-    paths = (self.job.get_stdout_path(), self.job.get_stderr_path())
+    paths = self._log_paths()
     signatures = tuple(self._file_signature(path) for path in paths)
     if self._log_signatures is not None and signatures == self._log_signatures:
       return
@@ -158,11 +167,7 @@ class LogScreen(Screen):
 
   def action_copy_path(self) -> None:
     """Copy the full path of the currently focused log file."""
-    path = (
-      self.job.get_stdout_path()
-      if self.focused_log == "stdout"
-      else self.job.get_stderr_path()
-    ).resolve()
+    path = (self._log_paths()[0 if self.focused_log == "stdout" else 1]).resolve()
     self.app.copy_to_clipboard(str(path))
     self.notify(f"Copied {self.focused_log.upper()} path: {path}")
 

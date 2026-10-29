@@ -4,9 +4,14 @@ from typing import Any, List, Optional, Union
 from dataclasses import dataclass, asdict
 import shlex
 
-from sbatchman.config.project_config import get_archive_dir, get_experiments_dir, get_project_configs_file_path
+from sbatchman.config.project_config import (
+  get_archive_dir,
+  get_experiments_dir,
+  get_project_configs_file_path,
+  load_project_configurations,
+)
 from sbatchman.core.status import Status
-from sbatchman.exceptions import ConfigurationError, ConfigurationNotFoundError
+from sbatchman.exceptions import ConfigurationError
 from sbatchman.schedulers.pbs import PbsConfig
 from sbatchman.schedulers.slurm import SlurmConfig
 from sbatchman.schedulers.local import LocalConfig
@@ -34,18 +39,15 @@ class Job:
   variables: Optional[dict[str, Any]] = None
   start_timestamp: Optional[str] = None
   end_timestamp: Optional[str] = None
+  project_root: Optional[str] = None
 
   def get_job_config(self) -> BaseConfig:
     """
     Returns the configuration of the job. It will specialize the class to either SlurmConfig, LocalConfig or PbsConfig
     """
   
-    configs_file_path = get_project_configs_file_path()
-
-    if not configs_file_path.exists():
-      raise ConfigurationNotFoundError(f"Configuration '{configs_file_path}' for cluster '{self.cluster_name}' not found at '{configs_file_path}'.")
-    
-    configs = yaml.safe_load(open(configs_file_path, 'r'))
+    configs_file_path = get_project_configs_file_path(self.cluster_name)
+    configs = load_project_configurations(self.cluster_name)
     if self.cluster_name not in configs:
       raise ConfigurationError(f"Could not find cluster '{self.cluster_name}' in configurations.yaml file ({configs_file_path})")
     
@@ -107,6 +109,11 @@ class Job:
     return executable, positional_args, args_dict
 
   def get_job_base_path(self) -> Path:
+    if self.project_root:
+      root = Path(self.project_root)
+      if self.archive_name:
+        return root / "archive" / self.archive_name / self.exp_dir
+      return root / "experiments" / self.exp_dir
     if self.archive_name:
       return get_archive_dir() / self.archive_name / self.exp_dir
     else:

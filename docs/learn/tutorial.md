@@ -41,11 +41,12 @@ behind the scenes.
 SbatchMan/
 ├── archive/                        # Archived jobs
 ├── configs/                        # All configurations and templates
-│   ├── configurations.yaml         # Central registry of all configurations
 │   ├── <cluster_name>/
+│   │   ├── configurations.yaml     # Registry for this cluster only
 │   │   ├── <configuration_name_1>.sh  # Configuration template script
 │   │   └── <configuration_name_2>.sh
 │   └── <another_cluster_name>/
+│       ├── configurations.yaml
 │       ├── <configuration_name_1>.sh
 │       └── <configuration_name_2>.sh
 └── experiments/                    # All job runs and their results
@@ -62,6 +63,8 @@ SbatchMan/
         │       └── ...
         └── ...
 ```
+
+Configuration metadata is stored per cluster to keep concurrent config updates independent. Existing projects with the former root-level `configs/configurations.yaml` remain readable; when a cluster configuration is next saved, its entries are written under that cluster's directory.
 
 - `configs/` Contains all configuration files and template scripts, organized by cluster.
 - `experiments/` Stores all job runs, grouped by configuration and tag. Each run has its own timestamped folder with logs and metadata.

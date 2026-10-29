@@ -388,4 +388,18 @@ except Exception as e:
 The `dry_run` parameter allows to get the list of jobs **without submitting** them.  
 This way you can programmatically modify the jobs and later submit them using `job_submit(Job)`.
 
+By default, the function returns only newly submitted jobs. Set `return_details=True` to also inspect jobs skipped as duplicates and the number of definitions filtered out:
+
+```python
+result = sbm.launch_jobs_from_file(jobs_file, return_details=True)
+print(f"Submitted: {result.submitted_count}; duplicates: {result.duplicate_count}")
+for duplicate in result.duplicate_jobs:
+  existing = duplicate["existing_job"] or {}
+  print(f"  - Existing job {existing.get('job_id')}: {duplicate['config']} / {duplicate['tag']}")
+```
+
+`result.jobs` contains newly submitted jobs; `result.duplicate_jobs` contains the matching existing job metadata and skip reason. This lets campaign steps account for both submitted and previously existing jobs.
+
+Campaign execution uses `rerun_non_completed=True`: matching existing jobs are treated as duplicates only when their recorded status is `COMPLETED`; cancelled, failed, queued, or running jobs are submitted again. The default remains unchanged for direct `launch_jobs_from_file` calls.
+
 For more details, refer to the [API](../api.md/#sbatchman.launch_jobs_from_file) page.

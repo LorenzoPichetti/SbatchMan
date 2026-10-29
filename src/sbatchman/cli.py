@@ -14,6 +14,7 @@ from sbatchman.config import global_config
 from sbatchman.exceptions import ProjectNotInitializedError, SbatchManError
 from sbatchman.tui.tui_status import run_tui
 from sbatchman.core.campaign import run_campaign
+from sbatchman.core.campaign_export import export_campaign_project
 from sbatchman.tui.tui_campaign import run_campaign_tui
 from sbatchman.tui.tui_remote import run_remotes_config_tui
 from sbatchman.parser import print_sqlite_db
@@ -511,7 +512,7 @@ def show_campaign_tui():
 @app.command("campaign")
 def campaign(
   file: Path = typer.Argument(..., help="The campaign YAML file."),  
-  results_dir: Path = typer.Option(Path("./campaign_results"), "--results-dir", "-r", help="Root for the campaign journal and per-application SbatchMan projects."),
+  results_dir: Path = typer.Option(Path("./campaign_results"), "--results-dir", "-r", help="Root for campaign journals."),
   clusters: List[str] = typer.Option([], "--clusters", "-c", help="Run the campaign using multiple cluster names."),
   verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output with all commands executed."),
   dry_run: bool = typer.Option(False, "--dry-run", help="Print what would be done without actually running commands."),
@@ -519,6 +520,20 @@ def campaign(
   steps: List[str] = typer.Option([], "--step", help="Run only these step names; repeat the option to select several."),
 ):
   run_campaign(config_file=file, results_dir=results_dir, clusters=clusters, verbose=verbose, dry_run=dry_run, applications=applications, steps=steps)
+
+
+@app.command("export-campaign")
+def export_campaign(
+  log_file: Path = typer.Argument(..., help="Campaign journal JSON file."),
+  output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output tar.gz path (defaults beside the journal)."),
+):
+  """Export a campaign journal and all recorded application SbatchMan projects."""
+  try:
+    archive_path = export_campaign_project(log_file, output)
+    console.print(f"[green]✓[/green] Exported campaign project to [cyan]{archive_path}[/cyan]")
+  except (OSError, ValueError) as e:
+    console.print(f"[bold red]Error:[/bold red] {e}")
+    raise typer.Exit(1)
 
 
 

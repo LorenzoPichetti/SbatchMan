@@ -1,4 +1,7 @@
 from abc import ABC, abstractmethod
+import threading
+import os
+import tempfile
 from pathlib import Path
 from dataclasses import asdict, dataclass
 from typing import List, Optional, Union
@@ -7,7 +10,39 @@ import yaml
 
 from sbatchman.core.status import Status
 from sbatchman.exceptions import ConfigurationError, SchedulerMismatchError
-from sbatchman.config.project_config import get_project_config_dir, get_project_configs_file_path
+from sbatchman.config.project_config import (
+  get_project_config_dir,
+  get_project_configs_file_path,
+  load_project_configurations,
+)
+
+
+_CONFIG_WRITE_LOCKS = {}
+_CONFIG_WRITE_LOCKS_GUARD = threading.Lock()
+
+
+def _config_write_lock(path: Path):
+  key = str(path.resolve())
+  with _CONFIG_WRITE_LOCKS_GUARD:
+    return _CONFIG_WRITE_LOCKS.setdefault(key, threading.RLock())
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+  path.parent.mkdir(parents=True, exist_ok=True)
+  temporary_path = None
+  try:
+    with tempfile.NamedTemporaryFile(
+      mode="w", encoding="utf-8", dir=path.parent,
+      prefix=f".{path.name}.", suffix=".tmp", delete=False,
+    ) as temporary_file:
+      temporary_path = Path(temporary_file.name)
+      temporary_file.write(content)
+      temporary_file.flush()
+      os.fsync(temporary_file.fileno())
+    os.replace(temporary_path, path)
+  finally:
+    if temporary_path is not None and temporary_path.exists():
+      temporary_path.unlink()
 
 @dataclass
 class BaseConfig(ABC):
@@ -73,7 +108,7 @@ class BaseConfig(ABC):
     # Add a command to CD into the submission directory
     working_dir_setup = [
       "\n# Change to the submission directory",
-      'cd "{CWD}"',
+      'cd "$SBATCHMAN_WD"',
       "\n# Update job_id in metadata.yaml",
       self._generate_jobid_update_line(),
       "\n# Update status to RUNNING",
@@ -158,14 +193,15 @@ class BaseConfig(ABC):
     raise NotImplementedError(f"Job cancellation is not supported for scheduler '{self.get_scheduler_name()}'.")
 
   def _update_main_config(self, overwrite: bool = False):
-    """Reads, updates, and writes to the central configurations.yaml file."""
-    config_path = get_project_configs_file_path()
+    """Serialize updates to this cluster's configuration document."""
+    config_path = get_project_configs_file_path(self.cluster_name)
+    with _config_write_lock(config_path):
+      self._update_main_config_locked(overwrite)
 
-    try:
-      with open(config_path, 'r') as f:
-        data = yaml.safe_load(f) or {}
-    except FileNotFoundError:
-      data = {}
+  def _update_main_config_locked(self, overwrite: bool = False):
+    """Read, update, and atomically write this cluster's registry."""
+    config_path = get_project_configs_file_path(self.cluster_name)
+    data = load_project_configurations(self.cluster_name)
 
     scheduler_name = self.get_scheduler_name()
     
@@ -193,8 +229,8 @@ class BaseConfig(ABC):
     clean_config_params['scheduler'] = scheduler_name
     data[self.cluster_name]['configs'][self.name] = clean_config_params
 
-    with open(config_path, 'w') as f:
-      yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+    config_text = yaml.dump(data, default_flow_style=False, sort_keys=False)
+    _atomic_write_text(config_path, config_text)
 
   def _get_config_template_path(self) -> Path:
     config_dir = get_project_config_dir() / self.cluster_name

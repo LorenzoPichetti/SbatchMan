@@ -7,7 +7,7 @@ import itertools
 
 from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, map_info_to_vars, resolve_map_variable, get_var_path_filename, warn_undereferenced_map_variables
 from sbatchman.config.global_config import get_cluster_name
-from sbatchman.config.project_config import get_project_configs_file_path
+from sbatchman.config.project_config import load_project_configurations
 from sbatchman.exceptions import ConfigurationError, SyntaxError
 from typing import Any, List, Optional, Union
 from sbatchman.schedulers.base import BaseConfig
@@ -78,6 +78,7 @@ def create_configs_from_data(data: dict, base_dir: Path, overwrite: bool = False
   # Handle variables at the top level
   variables = data.pop("variables", {})
   global_vars_file = data.get("include_variables")
+  included_var_bases = {}
 
   if global_vars_file:
     global_vars_file_list = []
@@ -99,11 +100,16 @@ def create_configs_from_data(data: dict, base_dir: Path, overwrite: bool = False
       with open(vars_file, "r") as f:
         included_vars = dict(yaml.safe_load(f))
         all_included_vars.update(included_vars)
+        included_var_bases.update({key: vars_file.parent for key in included_vars})
       
     all_included_vars.update(variables)
+    included_var_bases.update({key: base_dir for key in variables})
     variables = all_included_vars
 
-  expanded_vars = {k: load_variable_values(v, k) for k, v in variables.items()}
+  expanded_vars = {
+    k: load_variable_values(v, k, base_dir=included_var_bases.get(k, base_dir))
+    for k, v in variables.items()
+  }
  
   if not isinstance(data, dict):
     raise ConfigurationError("The root of the configuration file must be a dictionary of clusters.")
@@ -422,11 +428,9 @@ def create_slurm_config(
   return config
 
 def load_local_config(name: str) -> Optional[LocalConfig]:
-  file = get_project_configs_file_path()
   cluster_name = get_cluster_name()
   try:
-    with open(file, "r") as f:
-      data = yaml.safe_load(f)
+    data = load_project_configurations(cluster_name)
   except Exception as e:
     raise ConfigurationError(f"Could not read config file: {e}")
 

@@ -1,10 +1,12 @@
 from pathlib import Path
+import logging
 import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Optional
 import yaml
 
+from sbatchman.config.global_config import get_cluster_name
 from sbatchman.exceptions import ConfigurationError, ProjectExistsError, ProjectNotInitializedError
 
 # The name of the root directory to search for.
@@ -37,11 +39,6 @@ def init_project(path: Path, no_logo=False):
   configs_dir = project_dir / "configs"
   configs_dir.mkdir(parents=True, exist_ok=True)
   (project_dir / "experiments").mkdir(exist_ok=True)
-
-  main_config_path = configs_dir / "configurations.yaml"
-  if not main_config_path.exists():
-    with open(main_config_path, "w") as f:
-      yaml.dump({}, f)
 
   if not no_logo:
     print("                                                                          %#@@@@@@@@@                         ")
@@ -111,9 +108,41 @@ def get_project_config_dir() -> Path:
   path.mkdir(parents=True, exist_ok=True)
   return path
 
-def get_project_configs_file_path() -> Path:
-  """Returns the path to the main configurations.yaml file."""
+def get_project_configs_file_path(cluster_name: Optional[str] = None) -> Path:
+  """Return the metadata file for one cluster's configurations."""
+  cluster_name = cluster_name or get_cluster_name()
+  return get_project_root() / "configs" / cluster_name / "configurations.yaml"
+
+
+def get_legacy_project_configs_file_path() -> Path:
+  """Return the pre-cluster-split configuration registry path."""
   return get_project_root() / "configs" / "configurations.yaml"
+
+
+def load_project_configurations(cluster_name: str) -> dict:
+  """Load one cluster's registry, falling back to the legacy shared registry."""
+  cluster_path = get_project_configs_file_path(cluster_name)
+  if cluster_path.is_file():
+    with open(cluster_path, "r") as f:
+      data = yaml.safe_load(f) or {}
+    return data if cluster_name in data else {}
+
+  legacy_path = get_legacy_project_configs_file_path()
+  if not legacy_path.is_file():
+    return {}
+  try:
+    with open(legacy_path, "r") as f:
+      legacy_data = yaml.safe_load(f) or {}
+  except yaml.YAMLError as exc:
+    logging.getLogger(__name__).warning(
+      "Ignoring malformed legacy configuration registry %s; per-cluster configs "
+      "will be rebuilt from their source files (%s)",
+      legacy_path,
+      exc,
+    )
+    return {}
+  cluster_data = legacy_data.get(cluster_name)
+  return {cluster_name: cluster_data} if cluster_data else {}
 
 def get_experiments_dir() -> Path:
   """Returns the path to the experiments directory."""
@@ -132,14 +161,7 @@ def get_scheduler_from_cluster_and_config_name(cluster_name: str, config_name: s
   Detects the scheduler type based on the cluster name, as stored in the project configuration.
   Returns the scheduler name as a string.
   """
-  config_path = get_project_configs_file_path()
-  
-  if not config_path.exists():
-    raise ConfigurationError(f"Project configuration file not found.")
-  
-  with open(config_path, 'r') as f:
-    all_configs = yaml.safe_load(f) or {}
-  
+  all_configs = load_project_configurations(cluster_name)
   if cluster_name not in all_configs:
     raise ConfigurationError(f"No configurations found for cluster '{cluster_name}'.")
   

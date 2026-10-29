@@ -17,7 +17,7 @@ def get_var_path_filename(path):
   
   return "NOT_A_VALID_PATH"
 
-def load_variable_values(var_value, key):
+def load_variable_values(var_value, key, base_dir=None):
   # If var_value is a list, return as is
   if isinstance(var_value, list):
     return var_value
@@ -35,7 +35,7 @@ def load_variable_values(var_value, key):
       else:
         raise ClusterNameNotFoundError(f'Cluster "{get_cluster_name()}" not found in {var_value} and no "default" value specified.')
 
-      return load_variable_values(val, key)
+      return load_variable_values(val, key, base_dir=base_dir)
     
     elif 'map' in var_value and isinstance(var_value['map'], dict):
       # Store the map structure for later use in substitution
@@ -43,12 +43,15 @@ def load_variable_values(var_value, key):
       return {
         '__map__': deepcopy(var_value['map']),
         '__default__': deepcopy(var_value.get('default')),
+        '__base_dir__': str(base_dir) if base_dir is not None else None,
       }
     else:
       raise SyntaxError(f"Invalid variable value {var_value}. In case the variable value is a dictionary, you must specify a 'per_cluster' dictionary, a 'map' dictionary, or both (+ optional default value).")
   # If var_value is a string and a file, read lines
   elif isinstance(var_value, str):
     path = Path(var_value)
+    if not path.is_absolute() and base_dir is not None:
+      path = Path(base_dir) / path
     if path.is_file():
       with open(path, "r") as f:
         return [line.strip().replace('\n', '') for line in f if line.strip()]
@@ -109,7 +112,8 @@ def resolve_map_variable(map_var_dict, key_value):
     # Resolve nested per_cluster/map structures
     resolved = load_variable_values(
         selected,
-        f"<map:{key_str}>"
+        f"<map:{key_str}>",
+        base_dir=map_var_dict.get('__base_dir__'),
     )
 
     # If the selected value is another map, keep resolving

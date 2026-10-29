@@ -37,8 +37,34 @@ def job_exists(
   ignore_conf_in_dup_check: bool = False,
   ignore_commands_in_dup_check: bool = False,
 ) -> Tuple[bool, str]:
+  existing_job, source = find_existing_job(
+    command,
+    config_name,
+    cluster_name,
+    tag,
+    preprocess,
+    postprocess,
+    ignore_archived=ignore_archived,
+    ignore_conf_in_dup_check=ignore_conf_in_dup_check,
+    ignore_commands_in_dup_check=ignore_commands_in_dup_check,
+  )
+  return existing_job is not None, source
+
+
+def find_existing_job(
+  command: str,
+  config_name: str,
+  cluster_name: str,
+  tag: str,
+  preprocess: Optional[str],
+  postprocess: Optional[str],
+  ignore_archived: bool = False,
+  ignore_conf_in_dup_check: bool = False,
+  ignore_commands_in_dup_check: bool = False,
+  refresh: bool = False,
+) -> Tuple[Optional[Dict[str, Any]], str]:
   """
-  Checks if an identical job already exists (active or archived).
+  Return metadata for an identical existing job and its source, if found.
 
   Duplicate logic can be customized via:
     - ignore_archived
@@ -46,7 +72,6 @@ def job_exists(
     - ignore_commands_in_dup_check
   """
   global JOBS_CACHE
-  from_archive = False
 
   # Cache key depends on whether config is part of the duplicate logic
   if ignore_conf_in_dup_check:
@@ -54,52 +79,24 @@ def job_exists(
   else:
     cache_key = (cluster_name, config_name, tag)
 
-  if cache_key not in JOBS_CACHE:
-    JOBS_CACHE[cache_key] = []
-    exp_dir = get_experiments_dir()
+  if cache_key not in JOBS_CACHE and not refresh:
+    JOBS_CACHE[cache_key] = _load_existing_job_candidates(
+      cluster_name, config_name, tag, ignore_archived, ignore_conf_in_dup_check
+    )
 
-    if ignore_conf_in_dup_check:
-      # Ignore config level: cluster/*/tag/*/metadata.yaml
-      glob_pattern = f"{cluster_name}/*/{tag}/*/metadata.yaml"
-    else:
-      glob_pattern = f"{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
-
-    # Scan active experiments
-    for metadata_path in exp_dir.glob(glob_pattern):
-      try:
-        with open(metadata_path, 'r') as f:
-          job_dict = yaml.safe_load(f)
-        if job_dict:
-          JOBS_CACHE[cache_key].append(job_dict)
-      except Exception:
-        continue
-
-    if not ignore_archived:
-      archive_root = get_archive_dir()
-
-      if ignore_conf_in_dup_check:
-        archive_glob_pattern = f"*/{cluster_name}/*/{tag}/*/metadata.yaml"
-      else:
-        archive_glob_pattern = (
-          f"*/{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
-        )
-
-      for metadata_path in archive_root.glob(archive_glob_pattern):
-        try:
-          with open(metadata_path, 'r') as f:
-            job_dict = yaml.safe_load(f)
-          if job_dict:
-            from_archive = True
-            JOBS_CACHE[cache_key].append(job_dict)
-        except Exception:
-          continue
+  if refresh:
+    candidates = _load_existing_job_candidates(
+      cluster_name, config_name, tag, ignore_archived, ignore_conf_in_dup_check
+    )
+  else:
+    candidates = JOBS_CACHE[cache_key]
 
   # Duplicate check
-  for job_dict in JOBS_CACHE[cache_key]:
+  for job_dict, source in candidates:
 
     # If we ignore command-level comparison, tag (+ optional config rule) is enough
     if ignore_commands_in_dup_check:
-      return True, 'archive' if from_archive else 'active'
+      return job_dict, source
 
     # Otherwise perform full comparison
     if (
@@ -107,9 +104,50 @@ def job_exists(
       job_dict.get('preprocess') == preprocess and
       job_dict.get('postprocess') == postprocess
     ):
-      return True, 'archive' if from_archive else 'active'
+      return job_dict, source
 
-  return False, ''
+  return None, ''
+
+
+def _load_existing_job_candidates(
+  cluster_name: str,
+  config_name: str,
+  tag: str,
+  ignore_archived: bool,
+  ignore_conf_in_dup_check: bool,
+) -> List[Tuple[Dict[str, Any], str]]:
+  """Read the active and eligible archived metadata for one duplicate key."""
+  candidates = []
+  exp_dir = get_experiments_dir()
+  if ignore_conf_in_dup_check:
+    glob_pattern = f"{cluster_name}/*/{tag}/*/metadata.yaml"
+  else:
+    glob_pattern = f"{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
+
+  for metadata_path in exp_dir.glob(glob_pattern):
+    try:
+      with open(metadata_path, 'r') as f:
+        job_dict = yaml.safe_load(f)
+      if job_dict:
+        candidates.append((job_dict, "active"))
+    except Exception:
+      continue
+
+  if not ignore_archived:
+    archive_root = get_archive_dir()
+    if ignore_conf_in_dup_check:
+      archive_glob_pattern = f"*/{cluster_name}/*/{tag}/*/metadata.yaml"
+    else:
+      archive_glob_pattern = f"*/{cluster_name}/{config_name}/{tag}/*/metadata.yaml"
+    for metadata_path in archive_root.glob(archive_glob_pattern):
+      try:
+        with open(metadata_path, 'r') as f:
+          job_dict = yaml.safe_load(f)
+        if job_dict:
+          candidates.append((job_dict, "archive"))
+      except Exception:
+        continue
+  return candidates
 
 
 def register_job(job: Job):
@@ -119,13 +157,15 @@ def register_job(job: Job):
   global JOBS_CACHE
   cache_key = (job.cluster_name, job.config_name, job.tag)
   if cache_key in JOBS_CACHE:
-    JOBS_CACHE[cache_key].append(asdict(job))
+    JOBS_CACHE[cache_key].append((asdict(job), "active"))
 
 def _load_job_metadata(metadata_path: Path, variables: Optional[Dict[str, Any]] = None) -> Optional[Job]:
   try:
     with open(metadata_path, 'r') as f:
       job_dict = yaml.load(f, Loader=SafeLoader)
       if job_dict:
+        if not job_dict.get("project_root"):
+          job_dict["project_root"] = _project_root_for_metadata(metadata_path)
         if variables:
           job_vars = job_dict.get('variables') or {}
           match = True
@@ -138,6 +178,14 @@ def _load_job_metadata(metadata_path: Path, variables: Optional[Dict[str, Any]] 
         return Job(**job_dict)
   except Exception:
     return None
+  return None
+
+
+def _project_root_for_metadata(metadata_path: Path) -> Optional[str]:
+  """Infer the owning SbatchMan project from an active or archived job path."""
+  for parent in Path(metadata_path).parents:
+    if parent.name in {"experiments", "archive"}:
+      return str(parent.parent.resolve())
   return None
 
 def _get_matching_subdirs(parent: Path, pattern: Optional[str]) -> List[Path]:
@@ -359,6 +407,9 @@ def job_by_id(
 
       if not job_dict:
         return None
+
+      if not job_dict.get("project_root"):
+        job_dict["project_root"] = _project_root_for_metadata(metadata_path)
 
       if str(job_dict.get("job_id")) != target_id:
         return None

@@ -3,7 +3,7 @@ import importlib.metadata
 from .config.global_config import get_cluster_name, get_max_queued_jobs, set_max_queued_jobs
 from .config.project_config import init_project, reset_cached_sbatchman_home
 from .core.config_manager import create_configs_from_file, create_local_config, create_slurm_config, create_pbs_config
-from .core.launcher import launch_job, launch_jobs_from_file, job_submit
+from .core.launcher import LaunchResult, launch_job, launch_jobs_from_file, job_submit
 from .core.jobs_manager import jobs_list, jobs_to_dataframe, archive_jobs, delete_jobs, update_jobs_status, count_active_jobs, archive_job, unarchive_job
 from .schedulers.slurm import SlurmConfig
 from .schedulers.pbs import PbsConfig
@@ -29,6 +29,7 @@ __all__ = [
   "set_max_queued_jobs",
 
   "Job",
+  "LaunchResult",
   "Status",
 
   "init_project",

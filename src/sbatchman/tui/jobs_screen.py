@@ -20,8 +20,10 @@ from textual.widgets.data_table import RowDoesNotExist
 from textual.containers import Container, Vertical, Horizontal, ScrollableContainer
 from pathlib import Path
 from datetime import datetime
+from contextlib import ExitStack
 
-from sbatchman.config.project_config import get_archive_dir, get_experiments_dir
+from sbatchman.config.project_config import get_archive_dir, get_experiments_dir, use_project_root
+from sbatchman.config.global_config import use_cluster_name
 from sbatchman.core.launcher import Status
 from sbatchman.tui.log_screen import LogScreen
 
@@ -897,14 +899,32 @@ class JobsScreen(Screen):
         self,
         experiments_dir: Optional[Path] = None,
         columns: Optional[List[str]] = None,
+        project_root: Optional[Path] = None,
+        cluster_name: Optional[str] = None,
+        exp_dirs: Optional[List[str]] = None,
+        read_only: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.experiments_root = experiments_dir or get_experiments_dir()
+        self.project_root = Path(project_root).resolve() if project_root else None
+        self.cluster_name = cluster_name
+        self.exp_dirs = set(exp_dirs) if exp_dirs is not None else None
+        self.read_only = read_only
+        self.experiments_root = (
+            Path(experiments_dir) if experiments_dir else
+            self.project_root / "experiments" if self.project_root else
+            get_experiments_dir()
+        )
         self.all_jobs = []
         self.filter = None
+        self.archives_dir = self.project_root / "archive" if self.project_root else get_archive_dir()
         self.archive_selection = {"active": True}
-        self.archives_dir = get_archive_dir()
+        if self.read_only and self.project_root and self.archives_dir.exists():
+            self.archive_selection.update({
+                f"archive:{item.name}": True
+                for item in self.archives_dir.iterdir()
+                if item.is_dir()
+            })
         self._is_loading = False
         self._needs_refresh = False
 
@@ -997,6 +1017,9 @@ class JobsScreen(Screen):
 
     def action_delete_job(self) -> None:
         """Prompt before deleting a job, cancelling active submissions first."""
+        if self.read_only:
+            self.notify("This campaign job view is read-only.", severity="warning")
+            return
         job = self._get_selected_job()
         if job is None:
             return
@@ -1027,6 +1050,9 @@ class JobsScreen(Screen):
 
     def action_delete_ended_jobs(self) -> None:
         """Delete every ended job matching the current filters."""
+        if self.read_only:
+            self.notify("This campaign job view is read-only.", severity="warning")
+            return
         if self.query_one(TabbedContent).active != "finished-tab":
             self.notify("Switch to the Ended tab to delete filtered jobs.", severity="warning")
             return
@@ -1063,6 +1089,9 @@ class JobsScreen(Screen):
 
     def action_archive_job(self) -> None:
         """Open archive picker and move the selected active finished job to an archive."""
+        if self.read_only:
+            self.notify("This campaign job view is read-only.", severity="warning")
+            return
         job = self._get_selected_finished_job()
         if job is None:
             return
@@ -1091,6 +1120,9 @@ class JobsScreen(Screen):
 
     def action_archive_ended_jobs(self) -> None:
         """Archive all active ended jobs matching the current filters."""
+        if self.read_only:
+            self.notify("This campaign job view is read-only.", severity="warning")
+            return
         if self.query_one(TabbedContent).active != "finished-tab":
             self.notify("Switch to the Ended tab to archive filtered jobs.", severity="warning")
             return
@@ -1130,6 +1162,9 @@ class JobsScreen(Screen):
 
     def action_unarchive_job(self) -> None:
         """Move the selected archived finished job back to active."""
+        if self.read_only:
+            self.notify("This campaign job view is read-only.", severity="warning")
+            return
         job = self._get_selected_finished_job()
         if job is None:
             return
@@ -1217,6 +1252,14 @@ class JobsScreen(Screen):
             status_widget.update("")
 
     def load_and_update_jobs(self) -> None:
+        with ExitStack() as stack:
+            if self.project_root:
+                stack.enter_context(use_project_root(self.project_root.parent))
+            if self.cluster_name:
+                stack.enter_context(use_cluster_name(self.cluster_name))
+            self._load_and_update_jobs_in_context()
+
+    def _load_and_update_jobs_in_context(self) -> None:
         if self._is_loading:
             self._needs_refresh = True
             return
@@ -1244,6 +1287,8 @@ class JobsScreen(Screen):
             for j in new_jobs:
                 if j.status in [Status.FAILED.value, Status.CHECK_FAIL.value] and j.exitcode:
                     j.status += f"({j.exitcode})"
+            if self.exp_dirs is not None:
+                new_jobs = [job for job in new_jobs if job.exp_dir in self.exp_dirs]
             self.all_jobs = new_jobs
             self.update_tables()
         finally:
@@ -1253,6 +1298,25 @@ class JobsScreen(Screen):
                 self.call_later(self.load_and_update_jobs)
 
     def update_tables(self):
+        tabbed_content = self.query_one(TabbedContent)
+        active_tab = tabbed_content.active
+        selected_key = None
+        selected_column = 0
+        try:
+            active_table_id = {
+                "queued-tab": "#queued-table",
+                "running-tab": "#running-table",
+                "finished-tab": "#finished-table",
+            }.get(active_tab)
+            if active_table_id:
+                active_table = self.query_one(active_table_id, DataTable)
+                if active_table.row_count:
+                    coordinate = active_table.cursor_coordinate
+                    selected_key = active_table.coordinate_to_cell_key(coordinate).row_key.value
+                    selected_column = coordinate[1]
+        except Exception:
+            pass
+
         tables = {
             "queued-table": self.query_one("#queued-table", DataTable),
             "running-table": self.query_one("#running-table", DataTable),
@@ -1273,6 +1337,25 @@ class JobsScreen(Screen):
         self._update_table_with_jobs(tables["queued-table"], queued_jobs)
         self._update_table_with_jobs(tables["running-table"], running_jobs)
         self._update_table_with_jobs(tables["finished-table"], finished_jobs)
+
+        if selected_key is not None:
+            for tab_id, table_id in (
+                ("queued-tab", "#queued-table"),
+                ("running-tab", "#running-table"),
+                ("finished-tab", "#finished-table"),
+            ):
+                table = tables[tab_id.replace("-tab", "-table")]
+                try:
+                    row_index = table.get_row_index(selected_key)
+                except RowDoesNotExist:
+                    continue
+                tabbed_content.active = tab_id
+                table.move_cursor(
+                    row=row_index,
+                    column=min(selected_column, max(0, len(self._columns) - 1)),
+                    animate=False,
+                )
+                break
 
     def _update_table_with_jobs(self, table: DataTable, jobs: List[Job]) -> None:
         job_map = {job.get_stdout_path().parent: job for job in jobs if job.exp_dir}
@@ -1317,7 +1400,14 @@ class JobsScreen(Screen):
                 exp_dir_str = active_table.coordinate_to_cell_key(coord).row_key.value or ""
                 job = self._get_job_by_exp_dir(exp_dir_str)
                 if job:
-                    self.app.push_screen(LogScreen(job=job))
+                    log_dir = None
+                    if self.project_root:
+                        log_dir = (
+                            self.archives_dir / job.archive_name / job.exp_dir
+                            if job.archive_name
+                            else self.experiments_root / job.exp_dir
+                        )
+                    self.app.push_screen(LogScreen(job=job, log_dir=log_dir))
             except (RowDoesNotExist, Exception):
                 pass
 
@@ -1341,7 +1431,9 @@ class JobsScreen(Screen):
         try:
             metadata_path = self.experiments_root / exp_dir / "metadata.yaml"
             if metadata_path.exists():
-                return Job(**yaml.safe_load(open(metadata_path, "r")))
+                job_data = yaml.safe_load(open(metadata_path, "r"))
+                job_data.setdefault("project_root", str(self.experiments_root.parent.resolve()))
+                return Job(**job_data)
         except Exception:
             pass
         return None

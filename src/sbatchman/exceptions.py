@@ -64,6 +64,8 @@ class ClusterNameNotFoundError(SbatchManError):
 
 class JobExistsError(SbatchManError):
   """Raised when an identical job already exists."""
-  def __init__(self, message: str):
+  def __init__(self, message: str, existing_job=None, existing_job_source: str = ""):
     self.message = message
+    self.existing_job = existing_job
+    self.existing_job_source = existing_job_source
     super().__init__(self.message)

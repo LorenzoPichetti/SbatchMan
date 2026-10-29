@@ -7,17 +7,18 @@ import time
 import yaml
 import fnmatch
 import typer
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from rich.console import Console
 
 from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, resolve_map_variable, map_info_to_vars, get_var_path_filename, warn_undereferenced_map_variables
 from sbatchman.core.config_manager import load_local_config, create_configs_from_file, create_configs_from_data
 from sbatchman.core.job import Job, Status
-from sbatchman.core.jobs_manager import job_exists, register_job, count_active_jobs
+from sbatchman.core.jobs_manager import job_exists, find_existing_job, register_job, count_active_jobs
 from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError, SbatchManError
 from sbatchman.config.global_config import get_cluster_name, get_max_queued_jobs
-from sbatchman.config.project_config import get_project_config_dir, get_scheduler_from_cluster_and_config_name
+from sbatchman.config.project_config import get_project_config_dir, get_project_root, get_scheduler_from_cluster_and_config_name
 
 from sbatchman.config.project_config import get_experiments_dir
 from sbatchman.schedulers.pbs import pbs_submit
@@ -26,6 +27,24 @@ from sbatchman.schedulers.slurm import slurm_submit
 console = Console(width=shutil.get_terminal_size().columns)
 
 DEFAULT_QUEUE_WAIT_INTERVAL = 30  # seconds to wait between queue checks
+
+
+@dataclass
+class LaunchResult:
+  """Detailed outcome of expanding and launching a jobs YAML file."""
+
+  jobs: List[Job]
+  duplicate_jobs: List[Dict[str, Any]]
+  candidate_count: int
+  filtered_count: int
+
+  @property
+  def submitted_count(self) -> int:
+    return len(self.jobs)
+
+  @property
+  def duplicate_count(self) -> int:
+    return len(self.duplicate_jobs)
 
 def wait_for_queue_slot(
   max_jobs: Optional[int] = None,
@@ -160,7 +179,8 @@ def job_submit(
     check=job.check,
     variables=job.variables if job.variables is not None else {},
     queued_timestamp=queued_ts,
-    category=job.category
+    category=job.category,
+    project_root=str(get_project_root().resolve()),
   )
 
   job.write_metadata()
@@ -224,6 +244,9 @@ def launch_job(
   ignore_archived: bool = False,
   ignore_conf_in_dup_check: bool = False,
   ignore_commands_in_dup_check: bool = False,
+  quiet: bool = False,
+  working_directory: Optional[Path] = None,
+  rerun_non_completed: bool = False,
 ) -> Job:
   """
   Launches an experiment based on a configuration name.
@@ -275,7 +298,7 @@ def launch_job(
     wait_for_queue_slot(max_queued_jobs)
     
   if not force:
-    j_exists, where = job_exists(
+    existing_job, where = find_existing_job(
       command,
       config_name,
       cluster_name,
@@ -285,15 +308,24 @@ def launch_job(
       ignore_archived=ignore_archived,
       ignore_conf_in_dup_check=ignore_conf_in_dup_check,
       ignore_commands_in_dup_check=ignore_commands_in_dup_check,
+      refresh=rerun_non_completed,
     )
-    if j_exists:
+    if (
+      existing_job is not None
+      and not (
+        rerun_non_completed
+        and str(existing_job.get("status", "")).upper() != Status.COMPLETED.value
+      )
+    ):
       raise JobExistsError(
         f"An identical job already exists{'' if where == 'active' else '(in some archive)'} for config '{config_name}'{'(ignored)'if ignore_conf_in_dup_check else ''} with tag '{tag}'. " +
-        ("\nUse '--force' to submit it anyway." if where == 'active' else "\nUse '--ignore-archived or -ia' to ignore archived jobs.")
+        ("\nUse '--force' to submit it anyway." if where == 'active' else "\nUse '--ignore-archived or -ia' to ignore archived jobs."),
+        existing_job=existing_job,
+        existing_job_source=where,
       )
 
   # Capture the Current Working Directory at the time of launch
-  submission_cwd = Path.cwd()
+  submission_cwd = Path(working_directory).resolve() if working_directory else Path.cwd().resolve()
     
   # 2. Create a unique, nested directory for this experiment run
   timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -363,6 +395,7 @@ def launch_job(
     variables=job_vars,
     queued_timestamp=queued_ts,
     category=category,
+    project_root=str(get_project_root().resolve()),
   )
 
   if dry_run:
@@ -377,7 +410,8 @@ def launch_job(
     elif scheduler == 'pbs':
       job.job_id = pbs_submit(run_script_path, exp_dir, previous_job_id)
     elif scheduler == 'local':
-      console.print(f"✅ Submitting job with command '[bold cyan]{job.command}[/bold cyan]'.")
+      if not quiet:
+        console.print(f"✅ Submitting job with command '[bold cyan]{job.command}[/bold cyan]'.")
       config = load_local_config(config_name)
       if config is None:
         raise ConfigurationError(f'Couldn\'t find configuration `{config_name}`')
@@ -407,8 +441,7 @@ def launch_job(
     with open(job.get_stderr_path(), 'w+') as err_file:
       err_file.write(err_str)
     raise JobSubmitError(err_str) from e
-  finally:    
-    return job
+  return job
 
 
 def _merge_dicts(base, override):
@@ -459,6 +492,26 @@ def _should_skip_job(
   return False
 
 
+def _record_duplicate(
+  launch_summary: Optional[Dict[str, Any]],
+  config_name: str,
+  tag: str,
+  cluster_name: Optional[str],
+  error: JobExistsError,
+) -> None:
+  if launch_summary is None:
+    return
+  launch_summary["duplicates"] += 1
+  launch_summary["duplicate_jobs"].append({
+    "config": config_name,
+    "tag": tag,
+    "cluster": cluster_name,
+    "source": error.existing_job_source,
+    "reason": error.message,
+    "existing_job": error.existing_job,
+  })
+
+
 def launch_jobs_from_file(
   jobs_file_path: Path,
   force: bool = False,
@@ -468,8 +521,13 @@ def launch_jobs_from_file(
   ignore_archived: bool = False,
   ignore_conf_in_dup_check: bool = False,
   ignore_commands_in_dup_check: bool = False,
-  skip_configs_load: bool = False
-) -> List[Job]:
+  skip_configs_load: bool = False,
+  quiet: bool = False,
+  working_directory: Optional[Path] = None,
+  launch_summary: Optional[Dict[str, Any]] = None,
+  return_details: bool = False,
+  rerun_non_completed: bool = False,
+) -> Union[List[Job], LaunchResult]:
   """  Launches jobs based on a YAML configuration file.
   Args:
     jobs_file_path: Path to the YAML file containing job definitions.
@@ -477,13 +535,19 @@ def launch_jobs_from_file(
     dry_run: If True, will return the list of jobs but will not launch them (warning: won't work for sequential jobs)
     filter_tags: If provided, only launch jobs whose tag matches one of these values.
     filter_variables: If provided, only launch jobs where variables match all key=value pairs.
+    return_details: Return a LaunchResult with submitted and duplicate-skipped job details.
+    rerun_non_completed: Submit a new job when an otherwise matching existing job
+      is not COMPLETED; completed matches remain duplicate skips.
+    launch_summary: Optional mutable mapping populated with candidate, filtered,
+      duplicate, and submitted counts and duplicate job records.
   Returns:
-    A list of Job objects representing the launched jobs.
+    A list of submitted Job objects, or LaunchResult when return_details=True.
   Raises:
     ConfigurationError: If the jobs file is not found or has invalid syntax.
   """
 
   jobs_file_path = Path(jobs_file_path)
+  emit = console.print if not quiet else lambda *args, **kwargs: None
   with open(jobs_file_path, "r") as f:
     config = yaml.safe_load(f)
 
@@ -491,6 +555,7 @@ def launch_jobs_from_file(
   global_configs_file = config.get("configs")
   global_vars = config.get("variables", {})
   global_vars_file = config.get("include_variables")
+  included_var_bases = {}
   global_command = config.get("command", None)
   global_preprocess = config.get("preprocess", None)
   global_postprocess = config.get("postprocess", None)
@@ -517,8 +582,10 @@ def launch_jobs_from_file(
       with open(vars_file, "r") as f:
         included_vars = dict(yaml.safe_load(f))
         all_included_vars.update(included_vars)
+        included_var_bases.update({key: vars_file.parent for key in included_vars})
       
     all_included_vars.update(global_vars)
+    included_var_bases.update({key: jobs_file_path.parent for key in global_vars})
     global_vars = all_included_vars
     # for rem_k in ['configs', 'include_variables']:
     #   if rem_k in global_vars:
@@ -528,13 +595,15 @@ def launch_jobs_from_file(
   if not skip_configs_load:
     global_configs = []
     if isinstance(global_configs_file, dict):
-      console.print('[cyan]Loading inline configs from jobs file[/cyan]')
+      emit('[cyan]Loading inline configs from jobs file[/cyan]')
       try:
         for c in create_configs_from_data(global_configs_file, jobs_file_path.parent, True):
-          console.print(f"✅ Configuration '[bold cyan]{c.name}[/bold cyan]' saved to {c.template_path}")
-        console.print("✅ Inline configurations loaded successfully.")
+          emit(f"✅ Configuration '[bold cyan]{c.name}[/bold cyan]' saved to {c.template_path}")
+        emit("✅ Inline configurations loaded successfully.")
       except SbatchManError as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
+        emit(f"[bold red]Error:[/bold red] {e}")
+        if quiet:
+          raise
         raise typer.Exit(1)
     elif global_configs_file:
       if isinstance(global_configs_file, list):
@@ -548,15 +617,17 @@ def launch_jobs_from_file(
       conf_file = Path(conf_file)
       if not conf_file.is_absolute():
         conf_file = jobs_file_path.parent / conf_file
-      console.print(f'[cyan]Loading configs from file[/cyan] {conf_file.resolve().absolute()}')
+      emit(f'[cyan]Loading configs from file[/cyan] {conf_file.resolve().absolute()}')
       if not Path(conf_file).exists():
         raise ConfigurationError(f'Configuration file {conf_file} does NOT exist')
       try:
         for c in create_configs_from_file(conf_file, True):
-          console.print(f"✅ Configuration '[bold cyan]{c.name}[/bold cyan]' saved to {c.template_path}")
-        console.print(f"✅ Configurations from '[bold cyan]{conf_file.resolve().absolute()}[/bold cyan]' loaded successfully.")
+          emit(f"✅ Configuration '[bold cyan]{c.name}[/bold cyan]' saved to {c.template_path}")
+        emit(f"✅ Configurations from '[bold cyan]{conf_file.resolve().absolute()}[/bold cyan]' loaded successfully.")
       except SbatchManError as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
+        emit(f"[bold red]Error:[/bold red] {e}")
+        if quiet:
+          raise
         raise typer.Exit(1)
   
   machine_cluster_name = None
@@ -566,12 +637,28 @@ def launch_jobs_from_file(
     pass
 
   if global_is_sequential:
-    console.print('[yellow]Jobs will be scheduled sequentially.[/yellow]')
+    emit('[yellow]Jobs will be scheduled sequentially.[/yellow]')
   
   # Prepare global variable values (expand files if needed)
-  expanded_global_vars = {k: load_variable_values(v, k) for k, v in global_vars.items()}
+  variable_base_dir = jobs_file_path.parent
+  expanded_global_vars = {
+    k: load_variable_values(v, k, base_dir=included_var_bases.get(k, variable_base_dir))
+    for k, v in global_vars.items()
+  }
   
   launched_jobs = []
+
+  if launch_summary is None:
+    launch_summary = {}
+  launch_summary.clear()
+  launch_summary.update({
+    "candidates": 0,
+    "filtered": 0,
+    "duplicates": 0,
+    "submitted": 0,
+    "cluster_mismatch": 0,
+    "duplicate_jobs": [],
+  })
   job_definitions = config.get("jobs", [])
   previous_job_id = None
 
@@ -587,7 +674,10 @@ def launch_jobs_from_file(
     job_cluster_name = job_def.get("cluster_name", global_cluster_name)
     job_vars = job_def.get("variables", {})
 
-    expanded_job_vars = {k: load_variable_values(v, k) for k, v in job_vars.items()}
+    expanded_job_vars = {
+      k: load_variable_values(v, k, base_dir=variable_base_dir)
+      for k, v in job_vars.items()
+    }
 
     # Merge global and job-specific variables
     merged_job_vars = {**expanded_global_vars, **expanded_job_vars}
@@ -627,6 +717,10 @@ def launch_jobs_from_file(
         ignore_archived=ignore_archived,
         ignore_conf_in_dup_check=ignore_conf_in_dup_check,
         ignore_commands_in_dup_check=ignore_commands_in_dup_check,
+        quiet=quiet,
+        working_directory=working_directory,
+        launch_summary=launch_summary,
+        rerun_non_completed=rerun_non_completed,
       )
     else:
       for entry in config_jobs:
@@ -648,7 +742,10 @@ def launch_jobs_from_file(
         entry_check_template = entry.get("check", job_check_template)
         entry_cluster_name = entry.get("cluster_name", job_cluster_name)
         entry_vars = entry.get("variables", {})
-        expanded_entry_vars = {k: load_variable_values(v, k) for k, v in entry_vars.items()}
+        expanded_entry_vars = {
+          k: load_variable_values(v, k, base_dir=variable_base_dir)
+          for k, v in entry_vars.items()
+        }
         
         # Merge all variables: global -> job -> entry
         final_vars = {**merged_job_vars, **expanded_entry_vars}
@@ -676,8 +773,19 @@ def launch_jobs_from_file(
           ignore_archived=ignore_archived,
           ignore_conf_in_dup_check=ignore_conf_in_dup_check,
           ignore_commands_in_dup_check=ignore_commands_in_dup_check,
+          quiet=quiet,
+          working_directory=working_directory,
+          launch_summary=launch_summary,
+          rerun_non_completed=rerun_non_completed,
         )
 
+  if return_details:
+    return LaunchResult(
+      jobs=launched_jobs,
+      duplicate_jobs=list(launch_summary["duplicate_jobs"]),
+      candidate_count=launch_summary["candidates"],
+      filtered_count=launch_summary["filtered"],
+    )
   return launched_jobs
 
 
@@ -701,6 +809,10 @@ def _launch_job_combinations(
   ignore_archived: bool = False,
   ignore_conf_in_dup_check: bool = False,
   ignore_commands_in_dup_check: bool = False,
+  quiet: bool = False,
+  working_directory: Optional[Path] = None,
+  launch_summary: Optional[Dict[str, Any]] = None,
+  rerun_non_completed: bool = False,
 ) -> Optional[int]:
     """
     Generates and launches jobs for all combinations of variables.
@@ -774,7 +886,11 @@ def _launch_job_combinations(
       check = substitute(check_template, {})
       
       # Check if this job should be skipped based on filters
+      if launch_summary is not None:
+        launch_summary["candidates"] += 1
       if _should_skip_job(job_tag, {}, filter_tags, filter_variables):
+        if launch_summary is not None:
+          launch_summary["filtered"] += 1
         return previous_job_id
       
       try:
@@ -793,14 +909,28 @@ def _launch_job_combinations(
           ignore_archived=ignore_archived,
           ignore_conf_in_dup_check=ignore_conf_in_dup_check,
           ignore_commands_in_dup_check=ignore_commands_in_dup_check,
+          quiet=quiet,
+          working_directory=working_directory,
+          rerun_non_completed=rerun_non_completed,
         )
-        console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
+        if not quiet:
+          console.print(
+            f"[yellow]Would generate[/yellow] [bold cyan]{job.config_name} / {job.tag}[/bold cyan]"
+            if dry_run else f"[green]Submitted[/green] [bold cyan]{job.config_name} / {job.tag}[/bold cyan]"
+          )
         launched_jobs.append(job)
+        if launch_summary is not None:
+          launch_summary["submitted"] += 1
         previous_job_id = job.job_id
       except JobExistsError as e:
-        console.print(f"Skipping job: {e.message}")
+        _record_duplicate(launch_summary, config_name, job_tag, cluster_name, e)
+        if not quiet:
+          console.print(f"Skipping job: {e.message}")
       except JobSubmitError as e:
-        console.print(f"Failed to submit job: {e.message}")
+        if quiet:
+          raise
+        if not quiet:
+          console.print(f"Failed to submit job: {e.message}")
       return previous_job_id
  
     keys, values = zip(*filtered_vars.items())
@@ -840,7 +970,11 @@ def _launch_job_combinations(
           check = substitute(check_template, final_vars)
           
           # Check if this job should be skipped based on filters
+          if launch_summary is not None:
+            launch_summary["candidates"] += 1
           if _should_skip_job(job_tag, final_vars, filter_tags, filter_variables):
+            if launch_summary is not None:
+              launch_summary["filtered"] += 1
             continue
           
           try:
@@ -860,14 +994,28 @@ def _launch_job_combinations(
               ignore_archived=ignore_archived,
               ignore_conf_in_dup_check=ignore_conf_in_dup_check,
               ignore_commands_in_dup_check=ignore_commands_in_dup_check,
+              quiet=quiet,
+              working_directory=working_directory,
+              rerun_non_completed=rerun_non_completed,
             )
-            console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
+            if not quiet:
+              console.print(
+                f"[yellow]Would generate[/yellow] [bold cyan]{job.config_name} / {job.tag}[/bold cyan]"
+                if dry_run else f"[green]Submitted[/green] [bold cyan]{job.config_name} / {job.tag}[/bold cyan]"
+              )
             launched_jobs.append(job)
+            if launch_summary is not None:
+              launch_summary["submitted"] += 1
             previous_job_id = job.job_id
           except JobExistsError as e:
-            console.print(f"Skipping job: {e.message}")
+            _record_duplicate(launch_summary, config_name, job_tag, cluster_name, e)
+            if not quiet:
+              console.print(f"Skipping job: {e.message}")
           except JobSubmitError as e:
-            console.print(f"Failed to submit job: {e.message}")
+            if quiet:
+              raise
+            if not quiet:
+              console.print(f"Failed to submit job: {e.message}")
       else:
         # No map variables to resolve, process normally
         config_name = substitute(config_template, substitution_vars)
@@ -879,7 +1027,11 @@ def _launch_job_combinations(
         check = substitute(check_template, substitution_vars)
         
         # Check if this job should be skipped based on filters
+        if launch_summary is not None:
+          launch_summary["candidates"] += 1
         if _should_skip_job(job_tag, var_dict, filter_tags, filter_variables):
+          if launch_summary is not None:
+            launch_summary["filtered"] += 1
           continue
         
         try:
@@ -899,13 +1051,27 @@ def _launch_job_combinations(
             ignore_archived=ignore_archived,
             ignore_conf_in_dup_check=ignore_conf_in_dup_check,
             ignore_commands_in_dup_check=ignore_commands_in_dup_check,
+            quiet=quiet,
+            working_directory=working_directory,
+            rerun_non_completed=rerun_non_completed,
           )
-          console.print(f"✅ Submitted job '{job.config_name}' with tag '{job.tag}'")
+          if not quiet:
+            console.print(
+              f"[yellow]Would generate[/yellow] [bold cyan]{job.config_name} / {job.tag}[/bold cyan]"
+              if dry_run else f"[green]Submitted[/green] [bold cyan]{job.config_name} / {job.tag}[/bold cyan]"
+            )
           launched_jobs.append(job)
+          if launch_summary is not None:
+            launch_summary["submitted"] += 1
           previous_job_id = job.job_id
         except JobExistsError as e:
-          console.print(f"Skipping job: {e.message}")
+          _record_duplicate(launch_summary, config_name, job_tag, cluster_name, e)
+          if not quiet:
+            console.print(f"Skipping job: {e.message}")
         except JobSubmitError as e:
-          console.print(f"Failed to submit job: {e.message}")
+          if quiet:
+            raise
+          if not quiet:
+            console.print(f"Failed to submit job: {e.message}")
     
     return previous_job_id
