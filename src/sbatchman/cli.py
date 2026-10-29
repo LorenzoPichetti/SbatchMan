@@ -273,11 +273,12 @@ def launch(
   variable: Optional[List[str]] = typer.Option(None, "--variable", "-v", help="Only launch jobs where variable matches value (e.g. model=gpt4). Can be used multiple times. Only applicable with --file."),
   ignore_archived: bool = typer.Option(False, "--ignore-archived", "-ia", help="If True, do not check for duplicates in jobs archives."),
   ignore_conf_in_dup_check: bool = typer.Option(False, "--ignore-conf-in-dup-check", "-ic", help="If True, jobs with the same tag are considered duplicates even if they use different configs."),
-  ignore_commands_in_dup_check: bool = typer.Option(False, "--ignore-commands-in-dup-check", "-icomm", help="If True, the duplicate check does not compare command, preprocess, or postprocess. Duplicates are determined solely based on cluster/tag (and config unless --ignore-conf-in-dup-check is also set)."),
+  ignore_commands_in_dup_check: bool = typer.Option(True, "--ignore-commands-in-dup-check", "-icomm", help="By default, duplicate checks ignore command, preprocess, and postprocess. Use --compare-commands-in-dup-check to include them."),
+  compare_commands_in_dup_check: bool = typer.Option(False, "--compare-commands-in-dup-check", help="Include command, preprocess, and postprocess in duplicate checks."),
 ):
   """
   Launches an experiment (or a batch of experiments) using a predefined configuration.
-  Before submitting each job, a duplicates check is performed. By default, this check is based on cluster, config, tag, and commands. This behavior can be changed (see args help).
+  Before submitting each job, a duplicate check is performed. By default, it is based on cluster, config, and tag; command, preprocess, and postprocess are ignored. Use --compare-commands-in-dup-check to include them.
   """
 
   try:
@@ -301,7 +302,9 @@ def launch(
         filter_variables=filter_variables_dict if filter_variables_dict else None,
         ignore_archived=ignore_archived,
         ignore_conf_in_dup_check=ignore_conf_in_dup_check,
-        ignore_commands_in_dup_check=ignore_commands_in_dup_check,
+        ignore_commands_in_dup_check=(
+          ignore_commands_in_dup_check and not compare_commands_in_dup_check
+        ),
       )
       failed_sub_jobs_count = len([1 for j in jobs if j.status == Status.FAILED_SUBMISSION.value])
       ok_jobs_count = len(jobs) - failed_sub_jobs_count
@@ -319,6 +322,10 @@ def launch(
           force=force,
           dry_run=dry_run,
           ignore_archived=ignore_archived,
+          ignore_conf_in_dup_check=ignore_conf_in_dup_check,
+          ignore_commands_in_dup_check=(
+            ignore_commands_in_dup_check and not compare_commands_in_dup_check
+          ),
         )
         console.print(f"✅ Experiment for config '[bold cyan]{config}[/bold cyan]' submitted successfully.")
         console.print(f"   ┣━ Job ID: {job.job_id}")

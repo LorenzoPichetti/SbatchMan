@@ -90,4 +90,8 @@ sbatchman campaign campaign.yaml --application matrix --application solver
 sbatchman campaign campaign.yaml --step compile --step small-runs
 ```
 
-Selections retain campaign order. Step names are selected across the chosen applications; steps not selected are omitted. Include prerequisite steps yourself when needed (for example, select `compile` before a run step if the binary is not already available). The CLI selection options are not currently part of the TUI history flow; choose a full resume there, or use the CLI to start a selected run.
+Selections retain campaign order. Step names are selected across the chosen applications; steps not selected are omitted. Include prerequisite steps yourself when needed (for example, select `compile` before a run step if the binary is not already available). CLI selections remain separate from a campaign's saved TUI selection.
+
+When starting a new campaign in the TUI, you can select applications, their steps, and the campaign clusters each step should run on. Everything available is selected by default; an application's cluster whitelist limits the clusters offered for its steps. The selection is stored in that campaign's journal JSON. Open an existing campaign and choose **Edit selection** to change it; resume uses the saved selection.
+
+Before a step retry, campaign resume, or failed-app rerun resubmits recorded jobs, the TUI lists the affected non-`COMPLETED` jobs and asks for confirmation. Failed-app reruns are limited to the affected steps and clusters. Completed jobs are reused and are never submitted again during recovery; existing job records and directories are retained.

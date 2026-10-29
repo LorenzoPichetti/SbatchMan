@@ -91,12 +91,17 @@ def find_existing_job(
   else:
     candidates = JOBS_CACHE[cache_key]
 
-  # Duplicate check
+  # Prefer a completed match when recovery is allowed to replace non-completed
+  # jobs. Multiple attempts may share the same config/tag, and encountering a
+  # cancelled attempt first must not cause an already completed attempt to run
+  # again.
+  matching_candidates = []
   for job_dict, source in candidates:
 
     # If we ignore command-level comparison, tag (+ optional config rule) is enough
     if ignore_commands_in_dup_check:
-      return job_dict, source
+      matching_candidates.append((job_dict, source))
+      continue
 
     # Otherwise perform full comparison
     if (
@@ -104,7 +109,20 @@ def find_existing_job(
       job_dict.get('preprocess') == preprocess and
       job_dict.get('postprocess') == postprocess
     ):
-      return job_dict, source
+      matching_candidates.append((job_dict, source))
+
+  completed_match = next(
+    (
+      (job_dict, source)
+      for job_dict, source in matching_candidates
+      if str(job_dict.get("status", "")).upper() == Status.COMPLETED.value
+    ),
+    None,
+  )
+  if completed_match is not None:
+    return completed_match
+  if matching_candidates:
+    return matching_candidates[0]
 
   return None, ''
 
