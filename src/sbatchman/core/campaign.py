@@ -112,6 +112,10 @@ class CampaignCancelledError(CampaignRunnerError):
     """Raised internally when a user requests cancellation of a running campaign."""
 
 
+class CampaignDetachedError(Exception):
+    """Raised when the TUI exits while submitted jobs are left running."""
+
+
 # ============================================================================
 # Enums & Constants
 # ============================================================================
@@ -316,21 +320,36 @@ class CampaignControl:
     def __init__(self) -> None:
         self.pause_event = threading.Event()
         self.cancel_event = threading.Event()
+        self.detach_event = threading.Event()
+        self._wake_event = threading.Event()
         self._lock = threading.Lock()
         self._resolutions: Dict[str, "queue_module.Queue[str]"] = {}
         self._waiting: List[str] = []
 
     def request_pause(self) -> None:
         self.pause_event.set()
+        self._wake_event.set()
 
     def resume(self) -> None:
         self.pause_event.clear()
+        self._wake_event.set()
 
     def request_cancel(self) -> None:
         # Cancelling also releases a pause, so the runner can observe the
         # cancellation promptly instead of sleeping in the pause loop.
         self.cancel_event.set()
         self.pause_event.clear()
+        self._wake_event.set()
+
+    def request_detach(self) -> None:
+        """Stop campaign monitoring without cancelling submitted jobs."""
+        self.detach_event.set()
+        self.pause_event.clear()
+        self._wake_event.set()
+
+    def wait_for_change(self, timeout: float) -> None:
+        self._wake_event.wait(timeout)
+        self._wake_event.clear()
 
     def _queue_for(self, key: str) -> "queue_module.Queue[str]":
         with self._lock:
@@ -366,7 +385,7 @@ class CampaignControl:
             self._waiting.append(key)
         last_poll = time.monotonic()
         try:
-            while not self.is_cancelled:
+            while not self.is_cancelled and not self.is_detached:
                 try:
                     action = q.get(timeout=0.2)
                 except queue_module.Empty:
@@ -379,7 +398,13 @@ class CampaignControl:
                         if action:
                             return action
                     continue
-                return "stop" if self.is_cancelled else action
+                if self.is_cancelled:
+                    return "stop"
+                if self.is_detached:
+                    return "detach"
+                return action
+            if self.is_detached:
+                return "detach"
             return "stop"
         finally:
             with self._lock:
@@ -394,9 +419,15 @@ class CampaignControl:
     def is_cancelled(self) -> bool:
         return self.cancel_event.is_set()
 
+    @property
+    def is_detached(self) -> bool:
+        return self.detach_event.is_set()
+
     def reset(self) -> None:
         self.pause_event.clear()
         self.cancel_event.clear()
+        self.detach_event.clear()
+        self._wake_event.clear()
         with self._lock:
             self._resolutions.clear()
             self._waiting.clear()
@@ -1633,12 +1664,16 @@ def monitor_jobs(
 
     while True:
         if control is not None:
+            if control.is_detached:
+                raise CampaignDetachedError("Campaign monitoring detached; submitted jobs remain active")
             if control.is_cancelled:
                 cancel_owned()
-            while control.is_paused and not control.is_cancelled:
+            while control.is_paused and not control.is_cancelled and not control.is_detached:
                 time.sleep(0.2)
             if control.is_cancelled:
                 cancel_owned()
+            if control.is_detached:
+                raise CampaignDetachedError("Campaign monitoring detached; submitted jobs remain active")
 
         snapshot = load_project_snapshot(project_dir, cluster, update_scheduler=True)
         if snapshot.warning and snapshot.warning not in warned:
@@ -1693,7 +1728,7 @@ def monitor_jobs(
             logger.warning(f"Job polling reached max wait time of {max_wait}s")
             break
         if control is not None:
-            control.cancel_event.wait(poll_interval)
+            control.wait_for_change(poll_interval)
         else:
             time.sleep(poll_interval)
 
@@ -1847,6 +1882,8 @@ class CampaignRunner:
         """Raise if cancellation was requested; block while paused."""
         if self.control is None:
             return
+        if self.control.is_detached:
+            raise CampaignDetachedError("Campaign detached from the TUI")
         if self.control.is_cancelled:
             raise CampaignCancelledError("Campaign cancelled by user")
         if self.control.is_paused:
@@ -1854,10 +1891,13 @@ class CampaignRunner:
                 self._emit(EventType.PAUSED)
                 self.logger.info("Campaign paused")
                 self._pause_emitted = True
-            while self.control.is_paused and not self.control.is_cancelled:
+            while (self.control.is_paused and not self.control.is_cancelled
+                   and not self.control.is_detached):
                 time.sleep(0.2)
             if self.control.is_cancelled:
                 raise CampaignCancelledError("Campaign cancelled by user")
+            if self.control.is_detached:
+                raise CampaignDetachedError("Campaign detached from the TUI")
             self._emit(EventType.RESUMED)
             self.logger.info("Campaign resumed")
             self._pause_emitted = False
@@ -1935,6 +1975,13 @@ class CampaignRunner:
             success = self._compute_success()
             self._emit(EventType.CAMPAIGN_END, success=success, steps=self._step_status_snapshot())
             return success
+        except CampaignDetachedError as e:
+            self.logger.info(f"Campaign detached; leaving queued/running jobs alone: {e}")
+            self.state.campaign_end = None
+            self._checkpoint()
+            self._emit(EventType.CAMPAIGN_END, success=False, detached=True,
+                       steps=self._step_status_snapshot())
+            return False
         except CampaignCancelledError as e:
             self.logger.warning(f"Campaign cancelled: {str(e)}")
             self._emit(EventType.CAMPAIGN_CANCELLED, message=str(e))
@@ -2234,6 +2281,8 @@ class CampaignRunner:
                         return "external"
 
                     resolution = self.control.wait_for_resolution(key, poll=externally_fixed)
+                    if resolution == "detach":
+                        raise CampaignDetachedError("Campaign detached from the TUI")
                     log.resolution_history.append({"action": resolution, "timestamp": datetime.now().isoformat()})
                     self._checkpoint()
                     if resolution == "retry":
@@ -2577,6 +2626,10 @@ class CampaignRunner:
 
         try:
             while proc.poll() is None:
+                if self.control is not None and self.control.is_detached:
+                    # The script is independent work; let it continue after the
+                    # TUI stops supervising the campaign.
+                    raise CampaignDetachedError("Campaign detached from the TUI")
                 if self.control is not None and self.control.is_cancelled:
                     proc.terminate()
                     try:
@@ -2597,7 +2650,7 @@ class CampaignRunner:
             if stderr:
                 self.logger.debug(f"Script stderr:\n{stderr}")
             return proc.returncode == 0, stdout, stderr, proc.returncode
-        except (CampaignCancelledError, ScriptExecutionError):
+        except (CampaignCancelledError, CampaignDetachedError, ScriptExecutionError):
             raise
         except Exception as e:
             raise ScriptExecutionError(f"Script execution failed: {str(e)}")

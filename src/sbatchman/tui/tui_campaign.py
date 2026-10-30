@@ -249,6 +249,51 @@ class ConfirmCampaignRerunScreen(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class CampaignExitScreen(ModalScreen[str]):
+    """Choose whether exiting an active campaign cancels its owned jobs."""
+
+    BINDINGS = [
+        Binding("escape", "stay", "Stay in campaign"),
+        Binding("q", "stay", "Stay in campaign"),
+        Binding("ctrl+c", "stay", "Stay in campaign"),
+    ]
+
+    CSS = """
+    CampaignExitScreen { align: center middle; }
+    #campaign_exit_box { width: 76; height: auto; border: round $warning; background: $surface; padding: 1 2; }
+    #campaign_exit_title { height: 2; text-style: bold; color: $warning; }
+    #campaign_exit_message { height: auto; padding-bottom: 1; }
+    #campaign_exit_buttons { height: 5; align: center middle; }
+    #campaign_exit_buttons Button { margin: 0 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="campaign_exit_box"):
+            yield Static("Campaign is still active", id="campaign_exit_title")
+            yield Static(
+                "Choose whether to cancel queued/running jobs submitted by this campaign or leave "
+                "them running in the SbatchMan projects. Leaving stops campaign monitoring; "
+                "you can reopen the campaign later to refresh its state.",
+                id="campaign_exit_message",
+            )
+            with Vertical(id="campaign_exit_buttons"):
+                yield Button("Cancel campaign jobs and exit", id="campaign_exit_cancel", variant="error")
+                yield Button("Leave jobs running and exit", id="campaign_exit_leave", variant="success")
+                yield Button("Stay in campaign", id="campaign_exit_stay")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        choices = {
+            "campaign_exit_cancel": "cancel",
+            "campaign_exit_leave": "leave",
+            "campaign_exit_stay": "stay",
+        }
+        if event.button.id in choices:
+            self.dismiss(choices[event.button.id])
+
+    def action_stay(self) -> None:
+        self.dismiss("stay")
+
+
 class CampaignSelectionScreen(Screen):
     """Choose the applications and steps included in a campaign run."""
 
@@ -563,6 +608,7 @@ class RunScreen(Screen):
         self.control = CampaignControl()
         self.success: Optional[bool] = None
         self.finished = False
+        self.detached = False
         self.pending: List[Dict[str, Any]] = []  # steps waiting for a user decision (FIFO)
         self._exit_after_campaign = False
 
@@ -655,7 +701,9 @@ class RunScreen(Screen):
         self.query_one("#back_btn", Button).disabled = False
         self.query_one("#attention_label", Static).update("")
         log = self.query_one("#log_view", RichLog)
-        if self.success:
+        if self.detached:
+            log.write("[bold yellow]Campaign monitoring stopped; queued/running jobs were left alone.[/bold yellow]")
+        elif self.success:
             log.write("[bold green]Campaign finished successfully.[/bold green]")
         else:
             log.write("[bold red]Campaign finished with failures (or was cancelled).[/bold red]")
@@ -994,6 +1042,19 @@ class RunScreen(Screen):
             if exit_after else "Cancellation requested… (only jobs submitted by this campaign are cancelled)"
         )
         self.query_one("#log_view", RichLog).write(f"[bold magenta]{message}[/bold magenta]")
+
+    def request_campaign_detach(self) -> None:
+        if self.finished:
+            self.app.exit()
+            return
+        self.detached = True
+        self._exit_after_campaign = True
+        self.control.request_detach()
+        for button_id in ("#cancel_btn", "#pause_btn", "#retry_btn", "#continue_btn", "#skip_btn"):
+            self.query_one(button_id, Button).disabled = True
+        self.query_one("#log_view", RichLog).write(
+            "[bold yellow]Stopping campaign monitoring and leaving submitted jobs running…[/bold yellow]"
+        )
 
 
 # ============================================================================
@@ -1576,7 +1637,7 @@ class CampaignTUIApp(App):
     """Root Textual application."""
 
     TITLE = "Campaign Manager"
-    BINDINGS = [("q", "quit", "Quit")]
+    BINDINGS = [("q", "quit", "Quit"), ("ctrl+c", "quit", "Quit")]
 
     def __init__(
         self,
@@ -1597,12 +1658,25 @@ class CampaignTUIApp(App):
         self.push_screen(MenuScreen(**self._initial))
 
     def action_quit(self) -> None:
-        """Cancel active campaign work before shutting down the Textual app."""
+        """Ask whether active campaign jobs should be cancelled before exit."""
         screen = self.screen
         if isinstance(screen, RunScreen) and not screen.finished:
-            screen.request_campaign_cancel(exit_after=True)
+            self.push_screen(CampaignExitScreen(), self._on_campaign_exit_choice)
             return
         self.exit()
+
+    def _on_campaign_exit_choice(self, choice: str) -> None:
+        screen = next(
+            (candidate for candidate in reversed(self.screen_stack)
+             if isinstance(candidate, RunScreen)),
+            None,
+        )
+        if not isinstance(screen, RunScreen):
+            return
+        if choice == "cancel":
+            screen.request_campaign_cancel(exit_after=True)
+        elif choice == "leave":
+            screen.request_campaign_detach()
 
 
 # ============================================================================
