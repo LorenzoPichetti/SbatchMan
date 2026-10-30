@@ -1,6 +1,6 @@
 """
 campaign_tui.py
-================
+===============
 
 Interactive terminal UI (Textual) for managing and monitoring application
 campaigns built on top of `campaign.py`.
@@ -10,20 +10,24 @@ Usage
     python campaign_tui.py [--config CAMPAIGN.yaml] [--results-dir DIR]
                             [--clusters cluster1,cluster2] [--dry-run] [--verbose]
 
-All flags just pre-fill the start screen; everything can also be entered
-interactively. This script is meant to be launched by your external CLI,
-e.g.:
+or, from your CLI wrapper:
 
-    campaign-cli tui --config campaign.yaml --results-dir ./results
+    run_campaign_tui(config_file="campaign.yaml", results_dir="./results")
 
 Screens
 -------
-- MenuScreen: configure campaigns, inspect previous runs, view step jobs,
-  resume, and re-run failed apps from one page.
-- RunScreen: live table of app/step/cluster status, a job-progress bar,
-  a streaming log panel, and Pause / Cancel / Back controls. The campaign
-  runs in a background thread; a queue.Queue carries structured events
-  from that thread into the UI.
+- MenuScreen: configure campaigns, inspect previous runs, view step jobs.
+- CampaignStateScreen: live state of one campaign; resume / re-run / edit.
+- RunScreen: live table of app/step/cluster status, progress bar, log and
+  Pause / Cancel / Retry / Continue / Skip controls. The campaign runs in a
+  background thread; a queue.Queue carries structured events into the UI.
+
+Data rules
+----------
+Every job status, count and duration shown here is resolved LIVE from the
+application's SbatchMan project (by cluster/config/tag identity). The journal
+only says which jobs belong to which step. All blocking project reads run in
+worker threads, never on the UI thread.
 """
 
 from __future__ import annotations
@@ -31,7 +35,8 @@ from __future__ import annotations
 import argparse
 import json
 import queue
-import sys
+import time
+import traceback
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 
@@ -44,19 +49,8 @@ from textual.screen import ModalScreen, Screen
 from textual.binding import Binding
 from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
-    Header,
-    Footer,
-    Static,
-    Button,
-    Input,
-    Switch,
-    DataTable,
-    RichLog,
-    ProgressBar,
-    ListView,
-    ListItem,
-    Label,
-    Checkbox,
+    Header, Footer, Static, Button, Input, Switch, DataTable, RichLog,
+    ProgressBar, ListView, ListItem, Label, Checkbox,
 )
 from textual.worker import Worker, WorkerState
 from textual import work
@@ -65,16 +59,23 @@ from sbatchman.core.campaign import (
     CampaignControl,
     CampaignEvent,
     EventType,
-    StepStatus,
     CampaignRunnerError,
+    StepView,
+    JobView,
+    job_key,
     load_campaign_config,
     discover_clusters_from_config,
     list_campaign_logs,
     load_campaign_log_summary,
+    build_campaign_view,
+    plan_incomplete_work,
+    plan_resume_jobs,
+    load_project_snapshot,
+    save_campaign_selection,
+    journal_lock_owner,
     run_campaign,
     run_campaign_with_existing_log,
-    current_recorded_job_status,
-    resolve_recorded_job,
+    DEFAULT_JOBS_CACHE,
 )
 from sbatchman.tui.jobs_screen import JobsScreen
 
@@ -88,10 +89,13 @@ STATUS_STYLES = {
     "pending": "dim",
     "running": "bold yellow",
     "completed": "bold green",
+    "recovered": "bold green",
     "failed": "bold red",
     "skipped": "dim cyan",
     "cancelled": "bold magenta",
+    "incomplete jobs": "bold red",
     "needs attention": "bold red on yellow",
+    "unknown": "dim",
 }
 
 
@@ -121,74 +125,57 @@ def campaign_display_label(campaign_name: Optional[str], campaign_id: str) -> st
     return rich_escape(str(campaign_id or "unknown"))
 
 
-def _recorded_step_jobs(step_record: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Return unique jobs across attempts, with the current attempt taking precedence."""
-    jobs_by_key: Dict[Tuple[str, str, str, str], Dict[str, Any]] = {}
-    for attempt in step_record.get("job_attempts") or []:
-        for job in attempt.get("jobs") or []:
-            key = (
-                str(job.get("cluster", "")),
-                str(job.get("job_id") or ""),
-                str(job.get("exp_dir") or ""),
-                str(job.get("tag") or ""),
-            )
-            jobs_by_key[key] = dict(job)
-    for job in step_record.get("jobs") or []:
-        key = (
-            str(job.get("cluster", "")),
-            str(job.get("job_id") or ""),
-            str(job.get("exp_dir") or ""),
-            str(job.get("tag") or ""),
-        )
-        jobs_by_key[key] = dict(job)
-    return list(jobs_by_key.values())
-
-
-def _recorded_job_status(
-    job: Dict[str, Any], application_project: Optional[str] = None
-) -> str:
-    """Resolve job identity before falling back to its journal snapshot."""
-    return current_recorded_job_status(job, application_project)
-
-
-def _recorded_job_counts(
-    record: Dict[str, Any], application_project: Optional[str] = None
-) -> Tuple[int, int]:
-    jobs = _recorded_step_jobs(record)
-    if not jobs:
-        return int(record.get("jobs_successful", 0)), int(record.get("jobs_count", 0))
-    completed = sum(
-        _recorded_job_status(job, application_project) == "COMPLETED"
-        for job in jobs
+def summary_label(summary: Dict[str, Any]) -> str:
+    status = "OK" if summary["failed_steps"] == 0 else f"{summary['failed_steps']} need work"
+    name = f"{summary['campaign_name']}  |  " if summary.get("campaign_name") else ""
+    return (
+        f"{name}{summary['campaign_id']}  "
+        f"[{summary['completed_steps']}/{summary['total_steps']} steps]  "
+        f"({status})  clusters={','.join(summary['clusters_processed'])}"
     )
-    return completed, len(jobs)
 
 
-def _display_recorded_step_status(
-    record: Dict[str, Any], application_project: Optional[str] = None
-) -> str:
-    status = str(record.get("status", "unknown"))
-    if status.lower() == StepStatus.COMPLETED.value and any(
-        _recorded_job_status(job, application_project) != "COMPLETED"
-        for job in _recorded_step_jobs(record)
-    ):
-        return "incomplete jobs"
-    return status
+def step_detail_text(view: StepView) -> Text:
+    """Detail of one step, entirely from live data."""
+    text = Text()
+    text.append(f"Step error: {view.error_message or 'None'}\n")
+    text.append(f"Jobs (live): {view.jobs_completed}/{view.jobs_total} completed")
+    if view.recorded_status != view.status:
+        text.append(f"   (journal says: {view.recorded_status})", style="dim")
+    text.append("\n")
+    if view.snapshot_error:
+        text.append(f"Project unreadable: {view.snapshot_error}\n", style="bold red")
+    bad = view.incomplete_jobs
+    for job in bad[:6]:
+        text.append(f"  {job.config} / {job.tag}: ")
+        text.append(job.status, style=STATUS_STYLES.get(job.status.lower(), "bold red"))
+        text.append("\n")
+    if len(bad) > 6:
+        text.append(f"  ... and {len(bad) - 6} more\n", style="dim")
+    return text
 
 
-def _save_campaign_selection_to_journal(log_file: Path, selection: Dict[str, Any]) -> None:
-    log_file = Path(log_file)
-    journal = json.loads(log_file.read_text())
-    if not isinstance(journal, dict):
-        raise ValueError("Campaign journal must contain a JSON object")
-    journal["selection"] = selection
-    temporary_file = log_file.with_suffix(log_file.suffix + ".tmp")
-    temporary_file.write_text(json.dumps(journal, indent=2) + "\n")
-    temporary_file.replace(log_file)
+def open_step_jobs(app: App, view: Optional[StepView]) -> None:
+    """Open the project's own jobs view, limited to the step's CURRENT jobs."""
+    if view is None or not view.project_dir:
+        app.notify("Could not locate the application project for this step.", severity="error")
+        return
+    exp_dirs = view.exp_dirs
+    if not exp_dirs:
+        app.notify("No live jobs found for this step in the project.", severity="warning")
+        return
+    app.push_screen(
+        CampaignJobsScreen(
+            project_root=Path(view.project_dir),
+            cluster_name=view.cluster,
+            exp_dirs=exp_dirs,
+            read_only=True,
+        )
+    )
 
 
 class ConfirmCampaignRerunScreen(ModalScreen[bool]):
-    """Show the recorded jobs affected by a campaign rerun before proceeding."""
+    """Show the live jobs affected by a campaign rerun before proceeding."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
@@ -215,47 +202,37 @@ class ConfirmCampaignRerunScreen(ModalScreen[bool]):
         steps: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         super().__init__()
-        self.title = title
-        self.description = description
-        self.jobs = jobs
-        self.steps = steps or []
+        self._title_text = title
+        self._description_text = description
+        self._jobs = jobs
+        self._steps = steps or []
 
     def compose(self) -> ComposeResult:
+        esc = lambda v, d="unknown": rich_escape(str(v if v not in (None, "") else d))
         with Vertical(id="rerun_box"):
-            yield Static(self.title, id="rerun_title")
-            yield Static(self.description, id="rerun_description")
+            yield Static(rich_escape(self._title_text), id="rerun_title")
+            yield Static(rich_escape(self._description_text), id="rerun_description")
             with VerticalScroll(id="rerun_jobs"):
-                if self.steps:
+                if self._steps:
                     yield Static("Steps and clusters to retry:", classes="rerun_job_heading")
-                    for item in self.steps:
-                        app = rich_escape(str(item.get("app", "")))
-                        step = rich_escape(str(item.get("step", "")))
-                        cluster = rich_escape(str(item.get("cluster", "unknown")))
-                        status = rich_escape(str(item.get("status", "unknown")))
+                    for item in self._steps:
                         yield Static(
-                            f"[b]{app}/{step}[/b]  cluster=[cyan]{cluster}[/cyan]  status={status}",
+                            f"[b]{esc(item.get('app'), '')}/{esc(item.get('step'), '')}[/b]  "
+                            f"cluster=[cyan]{esc(item.get('cluster'))}[/cyan]  status={esc(item.get('status'))}",
                             classes="rerun_job",
                         )
-                if self.jobs:
+                if self._jobs:
+                    yield Static("Jobs that are not COMPLETED right now (will be submitted again):",
+                                 classes="rerun_job_heading")
+                for index, job in enumerate(self._jobs, start=1):
+                    command = job.get("command")
+                    command_line = f"\nCommand: {esc(command)}" if command else ""
                     yield Static(
-                        "Jobs to be re-submitted (only jobs not COMPLETED):",
-                        classes="rerun_job_heading",
-                    )
-                for index, job in enumerate(self.jobs, start=1):
-                    app = rich_escape(str(job.get("app", "")))
-                    step = rich_escape(str(job.get("step", "")))
-                    cluster = rich_escape(str(job.get("cluster", "unknown")))
-                    config = rich_escape(str(job.get("config", "unknown")))
-                    tag = rich_escape(str(job.get("tag", "unknown")))
-                    job_id = rich_escape(str(job.get("job_id") or "not assigned"))
-                    status = rich_escape(str(job.get("status", "unknown")))
-                    exp_dir = rich_escape(str(job.get("exp_dir", "unknown")))
-                    command = rich_escape(str(job.get("command", "")))
-                    command_line = f"\nCommand: {command}" if command else ""
-                    yield Static(
-                        f"[b]{index}. {app}/{step}[/b]  cluster=[cyan]{cluster}[/cyan]\n"
-                        f"Job ID={job_id}  status={status}  config={config}  tag={tag}\n"
-                        f"Directory: {exp_dir}{command_line}",
+                        f"[b]{index}. {esc(job.get('app'), '')}/{esc(job.get('step'), '')}[/b]  "
+                        f"cluster=[cyan]{esc(job.get('cluster'))}[/cyan]\n"
+                        f"Job ID={esc(job.get('job_id'), 'not assigned')}  status={esc(job.get('status'))}  "
+                        f"config={esc(job.get('config'))}  tag={esc(job.get('tag'))}\n"
+                        f"Directory: {esc(job.get('exp_dir'))}{command_line}",
                         classes="rerun_job",
                     )
             with Horizontal(id="rerun_buttons"):
@@ -273,7 +250,7 @@ class ConfirmCampaignRerunScreen(ModalScreen[bool]):
 
 
 class CampaignSelectionScreen(Screen):
-    """Choose the applications and steps included in a new campaign run."""
+    """Choose the applications and steps included in a campaign run."""
 
     CSS = """
     #selection_title { height: 3; padding: 0 1; }
@@ -329,22 +306,17 @@ class CampaignSelectionScreen(Screen):
             app_cluster_steps = selected_clusters.get(app.name, {})
             for step in app.steps:
                 step_selected = (
-                    step.name in selected_app_steps
-                    if isinstance(selected_app_steps, list) else True
+                    step.name in selected_app_steps if isinstance(selected_app_steps, list) else True
                 )
                 stored_clusters = app_cluster_steps.get(step.name)
                 app_steps[step.name] = {
                     "enabled": step_selected,
                     "clusters": {
-                        cluster: cluster in stored_clusters
-                        if isinstance(stored_clusters, list) else True
+                        cluster: cluster in stored_clusters if isinstance(stored_clusters, list) else True
                         for cluster in self._available_clusters(app)
                     },
                 }
-            preferences["applications"][app.name] = {
-                "enabled": app_selected,
-                "steps": app_steps,
-            }
+            preferences["applications"][app.name] = {"enabled": app_selected, "steps": app_steps}
         return preferences
 
     def _available_clusters(self, app) -> List[str]:
@@ -370,9 +342,8 @@ class CampaignSelectionScreen(Screen):
                 saved_steps = saved_app.get("steps", {})
                 if not isinstance(saved_steps, dict):
                     saved_steps = {}
-                app_enabled = bool(saved_app.get("enabled", True))
                 app_id = f"app_{app_index}"
-                app_check = Checkbox(app.name, value=app_enabled, id=app_id)
+                app_check = Checkbox(app.name, value=bool(saved_app.get("enabled", True)), id=app_id)
                 self.app_checks[app.name] = app_check
                 self._ids[app_id] = (app.name, None, None)
                 with Vertical(classes="app_card"):
@@ -396,18 +367,15 @@ class CampaignSelectionScreen(Screen):
                             with Horizontal(classes="step_heading"):
                                 yield step_check
                             if app.cluster_whitelist:
-                                whitelist_text = ", ".join(app.cluster_whitelist)
-                                cluster_heading = f"Select clusters (YAML whitelist: {whitelist_text})"
+                                cluster_heading = f"Select clusters (YAML whitelist: {', '.join(app.cluster_whitelist)})"
                             else:
                                 cluster_heading = "Select clusters (campaign targets)"
-                            yield Static(cluster_heading, classes="cluster_label")
+                            yield Static(rich_escape(cluster_heading), classes="cluster_label")
                             with Grid(classes="cluster_grid"):
                                 for cluster_index, cluster in enumerate(self._available_clusters(app)):
                                     cluster_id = f"cluster_{app_index}_{step_index}_{cluster_index}"
                                     cluster_check = Checkbox(
-                                        cluster,
-                                        value=bool(saved_clusters.get(cluster, True)),
-                                        id=cluster_id,
+                                        cluster, value=bool(saved_clusters.get(cluster, True)), id=cluster_id,
                                     )
                                     yield cluster_check
                                     self.cluster_checks[(app.name, step.name, cluster)] = cluster_check
@@ -415,11 +383,8 @@ class CampaignSelectionScreen(Screen):
 
         yield Static("", id="selection_error")
         with Horizontal(id="selection_controls"):
-            yield Button(
-                "Save selection" if self.edit_log else "Run selected",
-                id="run_selected_btn",
-                variant="success",
-            )
+            yield Button("Save selection" if self.edit_log else "Run selected",
+                         id="run_selected_btn", variant="success")
             yield Button("Back", id="selection_back_btn")
         yield Footer()
 
@@ -429,34 +394,33 @@ class CampaignSelectionScreen(Screen):
             return
         app_name, step_name, cluster_name = info
         if step_name is None and event.value:
-            app_steps = [
-                (step, check) for (name, step), check in self.step_checks.items()
-                if name == app_name
-            ]
+            app_steps = [(step, check) for (name, step), check in self.step_checks.items() if name == app_name]
             if app_steps and not any(check.value for _, check in app_steps):
                 for step, check in app_steps:
                     check.value = True
                     for (cluster_app, cluster_step, _), cluster_check in self.cluster_checks.items():
                         if cluster_app == app_name and cluster_step == step:
                             cluster_check.value = True
-        elif step_name is not None and cluster_name is None:
-            if event.value:
-                step_clusters = [
-                    check for (name, step, _), check in self.cluster_checks.items()
-                    if name == app_name and step == step_name
-                ]
-                if step_clusters and not any(check.value for check in step_clusters):
-                    for check in step_clusters:
-                        check.value = True
+        elif step_name is not None and cluster_name is None and event.value:
+            step_clusters = [
+                check for (name, step, _), check in self.cluster_checks.items()
+                if name == app_name and step == step_name
+            ]
+            if step_clusters and not any(check.value for check in step_clusters):
+                for check in step_clusters:
+                    check.value = True
 
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
+    def _error(self, message: str) -> None:
+        self.query_one("#selection_error", Static).update(rich_escape(message))
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "selection_back_btn":
             self.app.pop_screen()
             return
         if event.button.id != "run_selected_btn":
             return
 
-        selected_apps = []
+        selected_apps: List[str] = []
         steps_by_app: Dict[str, List[str]] = {}
         clusters_by_app_step: Dict[str, Dict[str, List[str]]] = {}
         selected_campaign_clusters = set()
@@ -481,21 +445,14 @@ class CampaignSelectionScreen(Screen):
                 }
                 if enabled_step:
                     if enabled and self._available_clusters(app) and not selected_clusters:
-                        self.query_one("#selection_error", Static).update(
-                            f"Choose at least one cluster for step '{step.name}' in '{app.name}'."
-                        )
+                        self._error(f"Choose at least one cluster for step '{step.name}' in '{app.name}'.")
                         return
                     selected_steps.append(step.name)
                     selected_clusters_by_step[step.name] = selected_clusters
-            remembered["applications"][app.name] = {
-                "enabled": enabled,
-                "steps": remembered_steps,
-            }
+            remembered["applications"][app.name] = {"enabled": enabled, "steps": remembered_steps}
             if enabled:
                 if not selected_steps:
-                    self.query_one("#selection_error", Static).update(
-                        f"Select at least one step for application '{app.name}', or uncheck the application."
-                    )
+                    self._error(f"Select at least one step for application '{app.name}', or uncheck the application.")
                     return
                 selected_apps.append(app.name)
                 steps_by_app[app.name] = selected_steps
@@ -503,9 +460,7 @@ class CampaignSelectionScreen(Screen):
                 for step_clusters in selected_clusters_by_step.values():
                     selected_campaign_clusters.update(step_clusters)
         if not selected_apps:
-            self.query_one("#selection_error", Static).update(
-                "Select at least one application and step."
-            )
+            self._error("Select at least one application and step.")
             return
 
         campaign_selection = {
@@ -516,11 +471,9 @@ class CampaignSelectionScreen(Screen):
         }
         if self.edit_log is not None:
             try:
-                _save_campaign_selection_to_journal(self.edit_log, campaign_selection)
-            except (OSError, ValueError, json.JSONDecodeError) as e:
-                self.query_one("#selection_error", Static).update(
-                    f"Could not save the campaign selection: {e}"
-                )
+                save_campaign_selection(self.edit_log, campaign_selection)
+            except (OSError, ValueError, CampaignRunnerError) as e:
+                self._error(f"Could not save the campaign selection: {e}")
                 return
             self.app.pop_screen()
             self.app.notify("Campaign selection saved to its journal.", severity="information")
@@ -553,6 +506,7 @@ class RunScreen(Screen):
     #status_table { height: 1fr; }
     #log_view { height: 16; border: solid $accent; }
     #progress_label { height: 1; }
+    #attention_label { height: 1; color: $warning; }
     #controls { height: 3; align: center middle; }
     """
 
@@ -580,9 +534,8 @@ class RunScreen(Screen):
         self.config_file = Path(config_file)
         self.results_dir = Path(results_dir)
         campaign_config = load_campaign_config(self.config_file)
-        self.application_projects = {
-            app.name: app.dir / "SbatchMan"
-            for app in campaign_config.apps
+        self.application_projects: Dict[str, str] = {
+            app.name: str(app.dir / "SbatchMan") for app in campaign_config.apps
         }
         self.campaign_name = campaign_config.name
         self.clusters = clusters
@@ -601,6 +554,8 @@ class RunScreen(Screen):
                 journal = json.loads(self.log_file.read_text())
                 self.campaign_id = journal.get("campaign_id")
                 self.campaign_name = journal.get("campaign_name") or self.campaign_name
+                # A resumed campaign keeps using the projects it was created with.
+                self.application_projects.update(journal.get("application_projects") or {})
             except (OSError, json.JSONDecodeError):
                 pass
 
@@ -608,11 +563,9 @@ class RunScreen(Screen):
         self.control = CampaignControl()
         self.success: Optional[bool] = None
         self.finished = False
-        self.awaiting_resolution = False
-        self.pending_step_resolution: Optional[Dict[str, Any]] = None
+        self.pending: List[Dict[str, Any]] = []  # steps waiting for a user decision (FIFO)
         self._exit_after_campaign = False
 
-        # row key -> row data
         self.rows: Dict[str, Dict[str, Any]] = {}
         self.row_order: List[str] = []
         self.selected_row_key: Optional[str] = None
@@ -620,10 +573,10 @@ class RunScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield Static(self._header_text(), id="run_header")
-        table = DataTable(id="status_table")
-        yield table
+        yield DataTable(id="status_table")
         yield Static("", id="progress_label")
         yield ProgressBar(id="job_progress", show_eta=False)
+        yield Static("", id="attention_label")
         yield RichLog(id="log_view", markup=True, highlight=False, wrap=True)
         with Horizontal(id="controls"):
             yield Button("Pause", id="pause_btn")
@@ -636,12 +589,12 @@ class RunScreen(Screen):
 
     def _header_text(self) -> str:
         mode_label = "Resuming" if self.mode == "resume" else "Starting"
-        campaign = f"  campaign=[cyan]{self.campaign_id}[/cyan]" if self.campaign_id else ""
+        campaign = f"  campaign=[cyan]{rich_escape(str(self.campaign_id))}[/cyan]" if self.campaign_id else ""
         name = f"[b]{rich_escape(self.campaign_name)}[/b]  " if self.campaign_name else ""
         return (
             f"[b]{mode_label} campaign[/b]  {name}{campaign}  "
-            f"config=[cyan]{self.config_file}[/cyan]  "
-            f"clusters=[cyan]{', '.join(self.clusters)}[/cyan]  "
+            f"config=[cyan]{rich_escape(str(self.config_file))}[/cyan]  "
+            f"clusters=[cyan]{rich_escape(', '.join(self.clusters))}[/cyan]  "
             f"dry_run=[cyan]{self.dry_run}[/cyan]"
         )
 
@@ -649,10 +602,7 @@ class RunScreen(Screen):
         table = self.query_one("#status_table", DataTable)
         table.add_columns("App", "Step", "Cluster", "Status", "Duration", "Jobs")
         table.cursor_type = "row"
-
-        progress = self.query_one("#job_progress", ProgressBar)
-        progress.update(total=100, progress=0)
-
+        self.query_one("#job_progress", ProgressBar).update(total=100, progress=0)
         self.set_interval(0.15, self._drain_queue)
         self._run_campaign_worker()
 
@@ -660,69 +610,59 @@ class RunScreen(Screen):
     # Background worker
     # ------------------------------------------------------------------
 
+    def _log_error(self, message: str) -> None:
+        self.event_queue.put(CampaignEvent(
+            type=EventType.LOG, timestamp="", data={"level": "error", "message": rich_escape(message)},
+        ))
+
     @work(thread=True, exclusive=True, group="campaign")
     def _run_campaign_worker(self) -> None:
         try:
             if self.mode == "resume" and self.log_file is not None:
                 self.success = run_campaign_with_existing_log(
-                    config_file=self.config_file,
-                    log_file=self.log_file,
-                    clusters=self.clusters,
-                    verbose=self.verbose,
-                    dry_run=self.dry_run,
-                    resume_mode=self.resume_mode,
-                    force_apps=self.force_apps,
-                    event_queue=self.event_queue,
-                    control=self.control,
-                    console_output=False,
-                    applications=self.applications,
-                    steps_by_application=self.steps_by_application,
-                    clusters_by_step=self.clusters_by_step,
+                    config_file=self.config_file, log_file=self.log_file, clusters=self.clusters,
+                    verbose=self.verbose, dry_run=self.dry_run, resume_mode=self.resume_mode,
+                    force_apps=self.force_apps, event_queue=self.event_queue, control=self.control,
+                    console_output=False, applications=self.applications,
+                    steps_by_application=self.steps_by_application, clusters_by_step=self.clusters_by_step,
                 )
             else:
                 self.success = run_campaign(
-                    config_file=self.config_file,
-                    results_dir=self.results_dir,
-                    clusters=self.clusters,
-                    verbose=self.verbose,
-                    dry_run=self.dry_run,
-                    resume=False,
-                    event_queue=self.event_queue,
-                    control=self.control,
-                    console_output=False,
-                    applications=self.applications,
-                    steps_by_application=self.steps_by_application,
-                    clusters_by_step=self.clusters_by_step,
-                    campaign_selection=self.campaign_selection,
+                    config_file=self.config_file, results_dir=self.results_dir, clusters=self.clusters,
+                    verbose=self.verbose, dry_run=self.dry_run, resume=False,
+                    event_queue=self.event_queue, control=self.control, console_output=False,
+                    applications=self.applications, steps_by_application=self.steps_by_application,
+                    clusters_by_step=self.clusters_by_step, campaign_selection=self.campaign_selection,
                 )
         except CampaignRunnerError as e:
-            self.event_queue.put(
-                CampaignEvent(
-                    type=EventType.LOG,
-                    timestamp="",
-                    data={"level": "error", "message": f"Fatal error: {e}"},
-                )
-            )
+            self._log_error(f"Fatal error: {e}")
+            self.success = False
+        except Exception as e:  # never end a run silently
+            self._log_error(f"Unexpected error: {type(e).__name__}: {e}")
+            self._log_error(traceback.format_exc(limit=8))
             self.success = False
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        if event.state in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
-            self.finished = True
-            self.query_one("#pause_btn", Button).disabled = True
-            self.query_one("#retry_btn", Button).disabled = True
-            self.query_one("#continue_btn", Button).disabled = True
-            self.query_one("#skip_btn", Button).disabled = True
-            self.query_one("#cancel_btn", Button).disabled = True
-            self.query_one("#back_btn", Button).disabled = False
-            log = self.query_one("#log_view", RichLog)
-            if self.success:
-                log.write("[bold green]Campaign finished successfully.[/bold green]")
-            else:
-                log.write("[bold red]Campaign finished with failures (or was cancelled).[/bold red]")
-            if self.mode == "resume" and self.log_file is not None:
-                log.write(f"Campaign journal updated in place: {self.log_file}")
-            if self._exit_after_campaign:
-                self.app.exit()
+        if event.worker.group != "campaign":
+            return
+        if event.state not in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
+            return
+        self._drain_queue()  # flush the last events before the verdict
+        self.finished = True
+        self.pending.clear()
+        for button_id in ("#pause_btn", "#retry_btn", "#continue_btn", "#skip_btn", "#cancel_btn"):
+            self.query_one(button_id, Button).disabled = True
+        self.query_one("#back_btn", Button).disabled = False
+        self.query_one("#attention_label", Static).update("")
+        log = self.query_one("#log_view", RichLog)
+        if self.success:
+            log.write("[bold green]Campaign finished successfully.[/bold green]")
+        else:
+            log.write("[bold red]Campaign finished with failures (or was cancelled).[/bold red]")
+        if self.mode == "resume" and self.log_file is not None:
+            log.write(rich_escape(f"Campaign journal updated in place: {self.log_file}"))
+        if self._exit_after_campaign:
+            self.app.exit()
 
     # ------------------------------------------------------------------
     # Event draining / rendering
@@ -737,114 +677,103 @@ class RunScreen(Screen):
                 event = self.event_queue.get_nowait()
             except queue.Empty:
                 break
+            data = event.data
 
             if event.type == EventType.LOG:
-                level = event.data.get("level", "info")
-                message = event.data.get("message", "")
+                level = data.get("level", "info")
+                message = data.get("message", "")
                 color = {
-                    "debug": "dim",
-                    "info": "blue",
-                    "warning": "yellow",
-                    "error": "red",
-                    "critical": "bold red",
-                    "job": "bold cyan",
+                    "debug": "dim", "info": "blue", "warning": "yellow", "error": "red",
+                    "critical": "bold red", "job": "bold cyan",
                 }.get(level, "white")
                 if message.lstrip().startswith(("Step:", "Step complete:", "Execution summary")):
                     log.write(Text(" "))
-                if level == "job" and event.data.get("job_title"):
+                if level == "job" and data.get("job_title"):
                     job_line = Text("Job: ")
-                    job_line.append(event.data["job_title"], style="bold cyan")
-                    details = event.data.get("job_details")
-                    if details:
-                        job_line.append(f"  {details}", style="dim")
+                    job_line.append(data["job_title"], style="bold cyan")
+                    if data.get("job_details"):
+                        job_line.append(f"  {data['job_details']}", style="dim")
                     log.write(job_line)
                 else:
                     log.write(f"[{color}]{message}[/{color}]")
 
             elif event.type == EventType.CAMPAIGN_START:
-                campaign_name = event.data.get("campaign_name")
-                title = f": {rich_escape(campaign_name)}" if campaign_name else ""
+                if data.get("campaign_id"):
+                    self.campaign_id = data["campaign_id"]
+                    self.query_one("#run_header", Static).update(self._header_text())
+                title = f": {rich_escape(data['campaign_name'])}" if data.get("campaign_name") else ""
                 log.write(f"[bold]Campaign started{title}.[/bold]")
 
             elif event.type == EventType.CLUSTER_START:
                 log.write(Text(" "))
-                log.write(f"[bold magenta]== Cluster: {event.data['cluster']} ==[/bold magenta]")
+                log.write(f"[bold magenta]== Cluster: {rich_escape(str(data['cluster']))} ==[/bold magenta]")
 
             elif event.type == EventType.APP_START:
                 log.write(Text(" "))
-                log.write(f"[bold blue]-- App: {event.data['app']} --[/bold blue]")
+                log.write(f"[bold blue]-- App: {rich_escape(str(data['app']))} ({rich_escape(str(data.get('cluster')))}) --[/bold blue]")
 
             elif event.type == EventType.APP_SKIPPED:
-                log.write(f"[yellow]App skipped: {event.data['app']} ({event.data.get('reason')})[/yellow]")
+                log.write(f"[yellow]App skipped: {rich_escape(str(data['app']))} ({rich_escape(str(data.get('reason')))})[/yellow]")
 
             elif event.type == EventType.STEP_START:
-                key = self._row_key(event.data)
-                self._ensure_row(key, event.data, status="running")
+                key = self._row_key(data)
+                self._clear_pending(key)
+                self._ensure_row(key, data, status="running")
                 self.rows[key]["duration"] = ""
                 table_dirty = True
 
             elif event.type == EventType.STEP_SKIPPED:
-                key = self._row_key(event.data)
-                self._ensure_row(key, event.data, status="skipped")
+                key = self._row_key(data)
+                self._clear_pending(key)
+                self._ensure_row(key, data, status="skipped")
                 table_dirty = True
 
             elif event.type == EventType.STEP_PROGRESS:
-                completed = event.data.get("completed", 0)
-                total = event.data.get("total", 0) or 1
-                label = self.query_one("#progress_label", Static)
-                label.update(
-                    f"Polling jobs for {event.data.get('app')}/{event.data.get('step')}: "
-                    f"{completed}/{total}"
+                completed = data.get("completed", 0)
+                succeeded = data.get("succeeded", completed)
+                total = data.get("total", 0) or 1
+                self.query_one("#progress_label", Static).update(
+                    rich_escape(f"Following jobs for {data.get('app')}/{data.get('step')} on "
+                                f"{data.get('cluster')}: {completed}/{total} finished")
                 )
-                progress = self.query_one("#job_progress", ProgressBar)
-                progress.update(total=total, progress=completed)
-
-                key = self._row_key(event.data)
+                self.query_one("#job_progress", ProgressBar).update(total=total, progress=completed)
+                key = self._row_key(data)
                 if key in self.rows:
-                    self.rows[key]["jobs"] = f"{completed}/{total}"
-                    self.rows[key]["job_records"] = event.data.get("jobs", [])
-                    duration = event.data.get("duration")
-                    if duration is not None:
-                        self.rows[key]["duration"] = f"{duration:.1f}s"
+                    self.rows[key]["jobs"] = f"{succeeded}/{total}"
+                    self.rows[key]["job_records"] = data.get("jobs", [])
+                    if data.get("duration") is not None:
+                        self.rows[key]["duration"] = f"{data['duration']:.1f}s"
                     table_dirty = True
 
             elif event.type == EventType.STEP_END:
-                key = self._row_key(event.data)
-                self._ensure_row(key, event.data, status=event.data.get("status", "completed"))
-                duration = event.data.get("duration")
-                if duration is not None and key in self.rows:
-                    self.rows[key]["duration"] = f"{duration:.1f}s"
-                if key in self.rows:
-                    self.rows[key]["job_records"] = event.data.get("jobs", [])
-                    if self.dry_run:
-                        self.rows[key]["jobs"] = f"{len(self.rows[key]['job_records'])} planned"
-                    elif "jobs_count" in event.data:
-                        self.rows[key]["jobs"] = (
-                            f"{event.data.get('jobs_successful', 0)}/"
-                            f"{event.data.get('jobs_count', 0)}"
-                        )
+                key = self._row_key(data)
+                self._clear_pending(key)
+                self._ensure_row(key, data, status=data.get("status", "completed"))
+                row = self.rows[key]
+                if data.get("duration") is not None:
+                    row["duration"] = f"{data['duration']:.1f}s"
+                row["job_records"] = data.get("jobs", [])
+                if self.dry_run:
+                    row["jobs"] = f"{len(row['job_records'])} planned"
+                elif "jobs_count" in data:
+                    row["jobs"] = f"{data.get('jobs_successful', 0)}/{data.get('jobs_count', 0)}"
                 table_dirty = True
 
             elif event.type == EventType.STEP_NEEDS_ATTENTION:
-                key = self._row_key(event.data)
-                self._ensure_row(key, event.data, status="needs attention")
+                key = self._row_key(data)
+                self._ensure_row(key, data, status="needs attention")
                 table_dirty = True
-                self.awaiting_resolution = True
-                self.pending_step_resolution = dict(event.data)
-                self.query_one("#pause_btn", Button).disabled = True
-                self.query_one("#retry_btn", Button).disabled = False
-                self.query_one("#continue_btn", Button).disabled = False
-                self.query_one("#skip_btn", Button).disabled = False
-                log.write(
-                    f"[bold yellow]Needs attention: {event.data.get('app')}/"
-                    f"{event.data.get('step')} on {event.data.get('cluster')}[/bold yellow]\n"
-                    f"{event.data.get('error', '')}"
-                )
-                for job in event.data.get("jobs", []):
-                    log.write(
-                        f"  Job {job.get('job_id')} [{job.get('status')}]: "
-                        f"{job.get('tag')} ({job.get('exp_dir')})"
-                    )
+                self.pending = [p for p in self.pending if self._row_key(p) != key] + [dict(data)]
+                self._update_attention()
+                log.write(Text(
+                    f"Needs attention: {data.get('app')}/{data.get('step')} on {data.get('cluster')}\n"
+                    f"{data.get('error', '')}", style="bold yellow"))
+                for job in data.get("jobs", []):
+                    if str(job.get("last_known_status", "")).upper() != "COMPLETED":
+                        log.write(Text(f"  {job.get('config')} / {job.get('tag')} "
+                                       f"[{job.get('last_known_status')}] ({job.get('exp_dir')})"))
+                log.write(Text("  If you fix these jobs by hand, the campaign notices and continues "
+                               "on its own; or choose Retry / Continue / Skip.", style="dim"))
 
             elif event.type == EventType.PAUSED:
                 self.query_one("#pause_btn", Button).label = "Resume"
@@ -855,24 +784,22 @@ class RunScreen(Screen):
                 log.write("[green]Resumed.[/green]")
 
             elif event.type == EventType.CAMPAIGN_CANCELLED:
-                log.write(f"[bold magenta]Cancelled: {event.data.get('message')}[/bold magenta]")
+                log.write(f"[bold magenta]Cancelled: {rich_escape(str(data.get('message')))}[/bold magenta]")
 
             elif event.type == EventType.CAMPAIGN_END:
-                # A final snapshot makes the table authoritative even if a
+                # Final snapshot: the table is authoritative even if a
                 # progress event was delayed or lost during parallel runs.
-                for step in event.data.get("steps", []):
+                for step in data.get("steps", []):
                     key = self._row_key(step)
                     self._ensure_row(key, step, status=step.get("status", "unknown"))
-                    if key in self.rows:
-                        duration = step.get("duration")
-                        if duration is not None:
-                            self.rows[key]["duration"] = f"{duration:.1f}s"
-                        self.rows[key]["job_records"] = step.get("jobs", [])
-                        self.rows[key]["jobs"] = (
-                            f"{len(self.rows[key]['job_records'])} planned"
-                            if self.dry_run
-                            else f"{step.get('jobs_successful', 0)}/{step.get('jobs_count', 0)}"
-                        )
+                    row = self.rows[key]
+                    if step.get("duration") is not None:
+                        row["duration"] = f"{step['duration']:.1f}s"
+                    row["job_records"] = step.get("jobs", [])
+                    row["jobs"] = (
+                        f"{len(row['job_records'])} planned" if self.dry_run
+                        else f"{step.get('jobs_successful', 0)}/{step.get('jobs_count', 0)}"
+                    )
                     table_dirty = True
 
         if table_dirty:
@@ -884,13 +811,9 @@ class RunScreen(Screen):
     def _ensure_row(self, key: str, data: Dict[str, Any], status: str) -> None:
         if key not in self.rows:
             self.rows[key] = {
-                "app": data.get("app", ""),
-                "step": data.get("step", ""),
-                "cluster": data.get("cluster", ""),
-                "status": status,
-                "duration": "",
-                "jobs": "",
-                "job_records": data.get("jobs", []),
+                "app": data.get("app", ""), "step": data.get("step", ""),
+                "cluster": data.get("cluster", ""), "status": status,
+                "duration": "", "jobs": "", "job_records": data.get("jobs", []),
             }
             self.row_order.append(key)
         else:
@@ -898,9 +821,7 @@ class RunScreen(Screen):
 
     def _refresh_table(self) -> None:
         table = self.query_one("#status_table", DataTable)
-        selected_key = None
-        selected_column = 0
-        selected_row = 0
+        selected_key, selected_column, selected_row = None, 0, 0
         try:
             if table.row_count:
                 coordinate = table.cursor_coordinate
@@ -911,15 +832,8 @@ class RunScreen(Screen):
         table.clear()
         for key in self.row_order:
             r = self.rows[key]
-            table.add_row(
-                r["app"],
-                r["step"],
-                r["cluster"],
-                status_text(r["status"]),
-                r["duration"],
-                r["jobs"],
-                key=key,
-            )
+            table.add_row(r["app"], r["step"], r["cluster"], status_text(r["status"]),
+                          r["duration"], r["jobs"], key=key)
         if table.row_count:
             restored_row = None
             if selected_key in self.rows:
@@ -928,14 +842,14 @@ class RunScreen(Screen):
             elif selected_row < table.row_count:
                 restored_row = selected_row
             if restored_row is not None:
-                table.move_cursor(
-                    row=restored_row,
-                    column=min(selected_column, 5),
-                    animate=False,
-                )
+                table.move_cursor(row=restored_row, column=min(selected_column, 5), animate=False)
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         self.selected_row_key = str(event.row_key.value)
+
+    # ------------------------------------------------------------------
+    # Step jobs (resolved live, off the UI thread)
+    # ------------------------------------------------------------------
 
     def action_view_step_jobs(self) -> None:
         key = self.selected_row_key
@@ -946,124 +860,124 @@ class RunScreen(Screen):
                 key = str(row_key)
         except Exception:
             pass
-        if not key or not self.rows.get(key, {}).get("job_records"):
+        row = self.rows.get(key or "")
+        if not row or not row.get("job_records"):
             self.notify("Select a step with recorded jobs to inspect.", severity="information")
             return
-        self._open_step_jobs(key)
+        self._load_step_view(key)
 
-    def _open_step_jobs(self, key: str) -> None:
-        row = self.rows.get(key)
-        if not row or not row.get("job_records"):
-            return
-        records = row["job_records"]
-        recorded_project = next(
-            (record.get("project_root") for record in records if record.get("project_root")),
-            None,
+    @work(thread=True, exclusive=True, group="step_jobs")
+    def _load_step_view(self, key: str) -> None:
+        row = self.rows[key]
+        project = self.application_projects.get(row["app"]) or next(
+            (r.get("project_root") for r in row["job_records"] if r.get("project_root")), None
         )
-        project = Path(recorded_project) if recorded_project else self.application_projects.get(row["app"])
-        if project is None:
-            self.notify(f"Could not locate the application project for {row['app']}.", severity="error")
+        if not project:
+            self.app.call_from_thread(self.notify, f"Could not locate the project for {row['app']}.", severity="error")
             return
-        self.app.push_screen(
-            CampaignJobsScreen(
-                project_root=project,
-                cluster_name=row["cluster"],
-                exp_dirs=[record["exp_dir"] for record in records if record.get("exp_dir")],
-                read_only=True,
-            )
-        )
+        snapshot = DEFAULT_JOBS_CACHE.snapshot(Path(project), row["cluster"], refresh=True)
+        view = StepView(app=row["app"], step=row["step"], cluster=row["cluster"],
+                        recorded_status=row["status"], status=row["status"], project_dir=project,
+                        snapshot_error=snapshot.error)
+        for rec in row["job_records"]:
+            k = job_key(rec, row["cluster"])
+            live = None if snapshot.error else snapshot.jobs.get(k)
+            if live is not None:
+                view.jobs.append(JobView(key=k, cluster=k[0], config=k[1], tag=k[2],
+                                         status=str(live.status), exp_dir=live.exp_dir,
+                                         job_id=live.job_id, resolved=True))
+        self.app.call_from_thread(open_step_jobs, self.app, view)
 
     # ------------------------------------------------------------------
     # Controls
     # ------------------------------------------------------------------
 
+    def _clear_pending(self, key: str) -> None:
+        before = len(self.pending)
+        self.pending = [p for p in self.pending if self._row_key(p) != key]
+        if len(self.pending) != before:
+            self._update_attention()
+
+    def _update_attention(self) -> None:
+        has = bool(self.pending) and not self.finished
+        for button_id in ("#retry_btn", "#continue_btn", "#skip_btn"):
+            self.query_one(button_id, Button).disabled = not has
+        label = self.query_one("#attention_label", Static)
+        if has:
+            p = self.pending[0]
+            more = f" (+{len(self.pending) - 1} more waiting)" if len(self.pending) > 1 else ""
+            label.update(rich_escape(f"Needs attention: {p.get('app')}/{p.get('step')} on {p.get('cluster')}{more}"))
+        else:
+            label.update("")
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "pause_btn":
+        button = event.button.id
+        if button == "pause_btn":
             if self.control.is_paused:
                 self.control.resume()
                 event.button.label = "Pause"
             else:
                 self.control.request_pause()
                 event.button.label = "Resume"
-
-        elif event.button.id == "cancel_btn":
+        elif button == "cancel_btn":
             self.request_campaign_cancel()
-
-        elif event.button.id in ("retry_btn", "continue_btn", "skip_btn"):
-            resolution = {
-                "retry_btn": "retry",
-                "continue_btn": "continue",
-                "skip_btn": "skip",
-            }[event.button.id]
-            if resolution == "retry" and self.pending_step_resolution:
-                jobs = self._pending_retry_jobs(self.pending_step_resolution)
-                if jobs:
-                    detail = self.pending_step_resolution
-                    title = (
-                        f"Retry {detail.get('app')}/{detail.get('step')} "
-                        f"on {detail.get('cluster')}?"
-                    )
-                    self.app.push_screen(
-                        ConfirmCampaignRerunScreen(
-                            title,
-                            "Retry forces a fresh launch of this step's job definitions. "
-                            "Existing job records and directories are retained; matching job "
-                            "definitions may be submitted again.",
-                            jobs,
-                        ),
-                        self._on_retry_confirmation,
-                    )
-                    return
-            self._resolve_step(resolution)
-
-        elif event.button.id == "back_btn":
-            if self.finished:
-                self.app.pop_screen()
+        elif button in ("retry_btn", "continue_btn", "skip_btn") and self.pending:
+            detail = self.pending[0]
+            if button == "retry_btn":
+                self._prepare_retry(detail)  # fresh live job list, then confirm
+            else:
+                self._resolve_step("continue" if button == "continue_btn" else "skip", detail)
+        elif button == "back_btn" and self.finished:
+            self.app.pop_screen()
 
     def action_try_back(self) -> None:
         if self.finished:
             self.app.pop_screen()
 
-    def _on_retry_confirmation(self, confirmed: bool) -> None:
+    @work(thread=True, exclusive=True, group="retry_prepare")
+    def _prepare_retry(self, detail: Dict[str, Any]) -> None:
+        """List what a retry would actually re-submit, from the live project."""
+        project = self.application_projects.get(detail.get("app", ""))
+        jobs: List[Dict[str, Any]] = []
+        if project:
+            snapshot = load_project_snapshot(Path(project), detail["cluster"], update_scheduler=True)
+            for rec in detail.get("jobs", []):
+                k = job_key(rec, detail["cluster"])
+                status = snapshot.status_of(k)
+                if status != "COMPLETED":
+                    live = snapshot.jobs.get(k)
+                    jobs.append({**rec, "app": detail["app"], "step": detail["step"], "status": status,
+                                 "exp_dir": live.exp_dir if live else rec.get("exp_dir"),
+                                 "job_id": live.job_id if live else rec.get("job_id")})
+        self.app.call_from_thread(self._confirm_retry, detail, jobs)
+
+    def _confirm_retry(self, detail: Dict[str, Any], jobs: List[Dict[str, Any]]) -> None:
+        title = f"Retry {detail.get('app')}/{detail.get('step')} on {detail.get('cluster')}?"
+        description = (
+            "The step's script runs again and its jobs are re-evaluated against the project: "
+            "COMPLETED jobs (including ones you ran by hand) are kept; running jobs are followed; "
+            "only the jobs listed below are submitted again."
+        )
+        self.app.push_screen(
+            ConfirmCampaignRerunScreen(title, description, jobs),
+            lambda confirmed: self._on_retry_confirmation(confirmed, detail),
+        )
+
+    def _on_retry_confirmation(self, confirmed: bool, detail: Dict[str, Any]) -> None:
         if confirmed:
-            self._resolve_step("retry")
+            self._resolve_step("retry", detail)
         else:
             self.query_one("#log_view", RichLog).write(
                 "[yellow]Retry cancelled; choose another resolution or retry later.[/yellow]"
             )
 
-    @staticmethod
-    def _pending_retry_jobs(detail: Dict[str, Any]) -> List[Dict[str, Any]]:
-        jobs = _recorded_step_jobs(detail)
-        unique_jobs = []
-        seen = set()
-        for job in jobs:
-            status = _recorded_job_status(job)
-            if status == "COMPLETED":
-                continue
-            job["status"] = status
-            key = (
-                str(job.get("cluster", detail.get("cluster", ""))),
-                str(job.get("job_id") or ""),
-                str(job.get("exp_dir") or ""),
-                str(job.get("config") or ""),
-                str(job.get("tag") or ""),
-            )
-            if key in seen:
-                continue
-            seen.add(key)
-            unique_jobs.append(job)
-        return unique_jobs
-
-    def _resolve_step(self, resolution: str) -> None:
-        self.control.request_resolution(resolution)
-        self.awaiting_resolution = False
-        self.pending_step_resolution = None
-        self.query_one("#pause_btn", Button).disabled = False
-        for button_id in ("#retry_btn", "#continue_btn", "#skip_btn"):
-            self.query_one(button_id, Button).disabled = True
+    def _resolve_step(self, resolution: str, detail: Dict[str, Any]) -> None:
+        key = self._row_key(detail)
+        self.control.request_resolution(resolution, key)
+        self._clear_pending(key)
         self.query_one("#log_view", RichLog).write(
-            f"[cyan]{resolution.capitalize()} selected; campaign resuming…[/cyan]"
+            Text(f"{resolution.capitalize()} selected for {detail.get('app')}/{detail.get('step')} "
+                 f"on {detail.get('cluster')}; campaign resuming…", style="cyan")
         )
 
     def request_campaign_cancel(self, exit_after: bool = False) -> None:
@@ -1073,125 +987,19 @@ class RunScreen(Screen):
             return
         self._exit_after_campaign = self._exit_after_campaign or exit_after
         self.control.request_cancel()
-        self.query_one("#cancel_btn", Button).disabled = True
-        self.query_one("#pause_btn", Button).disabled = True
-        self.query_one("#retry_btn", Button).disabled = True
-        self.query_one("#continue_btn", Button).disabled = True
-        self.query_one("#skip_btn", Button).disabled = True
+        for button_id in ("#cancel_btn", "#pause_btn", "#retry_btn", "#continue_btn", "#skip_btn"):
+            self.query_one(button_id, Button).disabled = True
         message = (
-            "Cancellation requested; waiting for submitted jobs to stop before exiting…"
-            if exit_after else "Cancellation requested…"
+            "Cancellation requested; waiting for the campaign's own submitted jobs to stop before exiting…"
+            if exit_after else "Cancellation requested… (only jobs submitted by this campaign are cancelled)"
         )
         self.query_one("#log_view", RichLog).write(f"[bold magenta]{message}[/bold magenta]")
 
 
 # ============================================================================
-# History Screen
+# Campaign State Screen
 # ============================================================================
 
-
-class HistoryScreen(Screen):
-    """Browse previous campaign runs and resume / re-run failed apps."""
-
-    CSS = """
-    #history_list { height: 1fr; border: solid $accent; }
-    #detail_panel { height: 10; border: solid $accent; padding: 1; }
-    #history_controls { height: 3; align: center middle; }
-    """
-
-    def __init__(
-        self,
-        *,
-        config_file: Path,
-        results_dir: Path,
-        clusters: List[str],
-        dry_run: bool,
-        verbose: bool,
-    ) -> None:
-        super().__init__()
-        self.config_file = Path(config_file)
-        self.results_dir = Path(results_dir)
-        self.clusters = clusters
-        self.dry_run = dry_run
-        self.verbose = verbose
-
-        self.summaries: List[Dict[str, Any]] = []
-        self.selected: Optional[Dict[str, Any]] = None
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Static(f"Previous runs in [cyan]{self.results_dir}[/cyan]")
-        yield ListView(id="history_list")
-        yield Static("Select a run to see details.", id="detail_panel")
-        with Horizontal(id="history_controls"):
-            yield Button("Open selected campaign", id="open_campaign_btn", disabled=True)
-            yield Button("Back", id="back_btn")
-        yield Footer()
-
-    def on_mount(self) -> None:
-        list_view = self.query_one("#history_list", ListView)
-        logs = list_campaign_logs(self.results_dir)
-        if not logs:
-            list_view.append(ListItem(Label("No previous campaign logs found.")))
-            return
-
-        for log_file in logs:
-            summary = load_campaign_log_summary(log_file)
-            if summary is None:
-                continue
-            self.summaries.append(summary)
-            status = "OK" if summary["failed_steps"] == 0 else f"{summary['failed_steps']} failed"
-            label = (
-                f"{summary.get('campaign_name') + '  |  ' if summary.get('campaign_name') else ''}"
-                f"{summary['campaign_id']}  "
-                f"[{summary['completed_steps']}/{summary['total_steps']} steps]  "
-                f"({status})  clusters={','.join(summary['clusters_processed'])}"
-            )
-            list_view.append(ListItem(Label(label)))
-
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        index = event.list_view.index
-        if index is None or index >= len(self.summaries):
-            return
-        self.selected = self.summaries[index]
-
-        detail = self.query_one("#detail_panel", Static)
-        s = self.selected
-        failed_apps = ", ".join(s["failed_apps"]) if s["failed_apps"] else "(none)"
-        project_lines = "\n".join(
-            f"  {name}: {path}"
-            for name, path in s.get("application_projects", {}).items()
-        ) or "  (none recorded)"
-        detail.update(
-            f"Campaign: {campaign_display_label(s.get('campaign_name'), s['campaign_id'])}\n"
-            f"Started: {s['campaign_start']}   Ended: {s['campaign_end']}\n"
-            f"Steps: {s['completed_steps']} completed / {s['failed_steps']} failed / {s['total_steps']} total\n"
-            f"Failed apps: {failed_apps}\n"
-            f"Application projects:\n{project_lines}\n"
-            f"Log file: {s['log_file']}"
-        )
-
-        self.query_one("#open_campaign_btn", Button).disabled = False
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "back_btn":
-            self.app.pop_screen()
-            return
-
-        if self.selected is None:
-            return
-
-        if event.button.id == "open_campaign_btn":
-            self.app.push_screen(
-                CampaignStateScreen(
-                    Path(self.selected["log_file"]),
-                    config_file=self.config_file,
-                    results_dir=self.results_dir,
-                    clusters=self.clusters or self.selected["clusters_processed"],
-                    dry_run=self.dry_run,
-                    verbose=self.verbose,
-                )
-            )
 
 class CampaignStateScreen(Screen):
     """Campaign detail page with inspection and resume/rerun actions."""
@@ -1199,10 +1007,15 @@ class CampaignStateScreen(Screen):
     CSS = """
     #state_header { height: auto; padding: 1; }
     #state_table { height: 1fr; }
-    #state_detail { height: 5; border: solid $accent; padding: 1; }
+    #state_detail { height: 9; border: solid $accent; padding: 0 1; }
     #state_controls { height: 6; }
     .state_control_row { height: 3; align: center middle; }
     """
+
+    BINDINGS = [
+        Binding("r", "refresh_state", "Refresh from scheduler"),
+        Binding("j", "view_step_jobs", "View step jobs"),
+    ]
 
     def __init__(
         self,
@@ -1216,401 +1029,65 @@ class CampaignStateScreen(Screen):
     ) -> None:
         super().__init__()
         self.log_file = Path(log_file)
-        config_path = Path(config_file).expanduser() if config_file else None
-        self.config_file = config_path if config_path and config_path.is_file() else None
         self.results_dir = Path(results_dir) if results_dir else self.log_file.parent
         self.clusters = clusters or []
         self.dry_run = dry_run
         self.verbose = verbose
+        self.state: Dict[str, Any] = {}
+        self.error: Optional[str] = None
         try:
             self.state = json.loads(self.log_file.read_text())
-            self.error = None
         except (OSError, json.JSONDecodeError) as exc:
-            self.state = {}
             self.error = str(exc)
+
+        # Prefer the config the campaign was started with; fall back to the one
+        # given by the caller (e.g. when the journal's file was moved).
+        candidates = [Path(self.state["config_file"])] if self.state.get("config_file") else []
+        if config_file:
+            candidates.append(Path(config_file).expanduser())
+        self.config_file: Optional[Path] = next((p for p in candidates if p.is_file()), None)
         try:
-            self.campaign_config = (
-                load_campaign_config(self.config_file) if self.config_file else None
-            )
+            self.campaign_config = load_campaign_config(self.config_file) if self.config_file else None
         except CampaignRunnerError:
             self.campaign_config = None
-        self._sequential_steps: Dict[Tuple[str, str], bool] = {}
 
+        self.views: List[StepView] = []
+        self.view_by_key: Dict[str, StepView] = {}
+        self.lock_owner: Optional[str] = None
+        self._last_load = 0.0
+        self._sequential: Dict[Tuple[str, str], bool] = {}
+
+    # ------------------------------------------------------------------
     def compose(self) -> ComposeResult:
         yield Header()
-        if self.error:
-            yield Static(f"Could not read campaign journal: {self.error}", id="state_header")
-        else:
-            yield Static(
-                f"Campaign [cyan]{campaign_display_label(self.state.get('campaign_name'), self.state.get('campaign_id', 'unknown'))}[/cyan]  "
-                f"Started: {self.state.get('campaign_start', 'unknown')}  "
-                f"Ended: {self.state.get('campaign_end') or 'incomplete'}\n"
-                f"Clusters: {', '.join(self.state.get('clusters_processed', []))}\n"
-                f"Journal: {self.log_file}", id="state_header"
-            )
-            table = DataTable(id="state_table")
-            yield table
-            yield Static("Select a step to inspect its error and job counts.", id="state_detail")
+        yield Static(self._header_text(), id="state_header")
+        if not self.error:
+            yield DataTable(id="state_table")
+            yield Static("Loading live job state…", id="state_detail")
         with Vertical(id="state_controls"):
             with Horizontal(classes="state_control_row"):
-                yield Button("Resume / apply edits", id="state_resume_btn", disabled=self.error is not None or self.config_file is None)
-                yield Button("Re-run failed apps", id="state_rerun_btn", disabled=self.error is not None or self.config_file is None or not self._failed_apps())
-                yield Button("Edit selection", id="state_edit_selection_btn", disabled=self.error is not None or self.config_file is None)
+                yield Button("Resume / apply edits", id="state_resume_btn", disabled=True)
+                yield Button("Re-run failed apps", id="state_rerun_btn", disabled=True)
+                yield Button("Edit selection", id="state_edit_selection_btn", disabled=True)
             with Horizontal(classes="state_control_row"):
+                yield Button("Refresh (query scheduler)", id="state_refresh_btn", disabled=self.error is not None)
                 yield Button("View Step Jobs", id="state_view_jobs_btn", disabled=True)
                 yield Button("Back", id="state_back_btn")
         yield Footer()
 
-    def _failed_apps(self) -> List[str]:
-        failed = []
-        application_projects = self.state.get("application_projects", {})
-        for app_name, app_data in self.state.get("execution", {}).items():
-            if any(
-                record.get("status") in (StepStatus.FAILED.value, StepStatus.CANCELLED.value)
-                or any(
-                    _recorded_job_status(job, application_projects.get(app_name)) != "COMPLETED"
-                    for job in _recorded_step_jobs(record)
-                )
-                for step in app_data.get("steps", {}).values()
-                for record in step.values()
-            ):
-                failed.append(app_name)
-        return failed
-
-    def _step_is_sequential(self, app_name: str, step_name: str) -> bool:
-        key = (app_name, step_name)
-        if key in self._sequential_steps:
-            return self._sequential_steps[key]
-        sequential = False
-        if self.campaign_config is not None:
-            app = next((app for app in self.campaign_config.apps if app.name == app_name), None)
-            step = next((step for step in app.steps if step.name == step_name), None) if app else None
-            if app is not None and step is not None and step.jobs:
-                try:
-                    jobs_yaml = yaml.safe_load((app.dir / step.jobs).read_text()) or {}
-                    sequential = bool(jobs_yaml.get("sequential", False))
-                except (OSError, yaml.YAMLError, AttributeError):
-                    pass
-        self._sequential_steps[key] = sequential
-        return sequential
-
-    @staticmethod
-    def _job_runtime_from_record(
-        job: Dict[str, Any], application_project: Optional[str] = None
-    ) -> Optional[float]:
-        try:
-            runtime = job.get("runtime_seconds")
-            if runtime is not None:
-                return max(0.0, float(runtime))
-        except (TypeError, ValueError):
-            pass
-
-        resolved = resolve_recorded_job(job, application_project)
-        if resolved is None:
-            return None
-        return resolved.get_run_time()
-
-    def _display_step_duration(self, app_name: str, step_name: str, record: Dict[str, Any]) -> float:
-        fallback = float(record.get("duration_seconds", 0) or 0)
-        jobs = record.get("jobs") or []
-        if record.get("status") != StepStatus.COMPLETED.value or not jobs:
-            return fallback
-        if any(str(job.get("status", "")).upper() != "COMPLETED" for job in jobs):
-            return fallback
-        application_project = self.state.get("application_projects", {}).get(app_name)
-        runtimes = [
-            self._job_runtime_from_record(job, application_project) for job in jobs
-        ]
-        if not runtimes or any(runtime is None for runtime in runtimes):
-            return fallback
-        values = [float(runtime) for runtime in runtimes if runtime is not None]
-        return sum(values) if self._step_is_sequential(app_name, step_name) else max(values)
-
-    async def on_screen_resume(self) -> None:
-        """Refresh state after a resume/rerun returns to this campaign page."""
-        try:
-            self.state = json.loads(self.log_file.read_text())
-        except (OSError, json.JSONDecodeError):
-            return
-        self.query_one("#state_header", Static).update(
-            f"Campaign [cyan]{campaign_display_label(self.state.get('campaign_name'), self.state.get('campaign_id', 'unknown'))}[/cyan]  "
-            f"Started: {self.state.get('campaign_start', 'unknown')}  "
-            f"Ended: {self.state.get('campaign_end') or 'incomplete'}\n"
-            f"Clusters: {', '.join(self.state.get('clusters_processed', []))}\n"
-            f"Journal: {self.log_file}"
+    def _header_text(self) -> str:
+        if self.error:
+            return f"Could not read campaign journal: {rich_escape(self.error)}"
+        s = self.state
+        config = rich_escape(str(self.config_file)) if self.config_file else "[red]not found[/red]"
+        lock = f"\n[bold red]In use by {rich_escape(self.lock_owner)}[/bold red]" if self.lock_owner else ""
+        return (
+            f"Campaign [cyan]{campaign_display_label(s.get('campaign_name'), s.get('campaign_id', 'unknown'))}[/cyan]  "
+            f"Started: {rich_escape(str(s.get('campaign_start', 'unknown')))}  "
+            f"Ended: {rich_escape(str(s.get('campaign_end') or 'incomplete'))}\n"
+            f"Clusters: {rich_escape(', '.join(s.get('clusters_processed', [])))}   Config: {config}\n"
+            f"Journal: {rich_escape(str(self.log_file))}{lock}"
         )
-        table = self.query_one("#state_table", DataTable)
-        table.clear()
-        self._row_details = []
-        application_projects = self.state.get("application_projects", {})
-        for app_name, app_data in self.state.get("execution", {}).items():
-            for step_name, cluster_logs in app_data.get("steps", {}).items():
-                for cluster, record in cluster_logs.items():
-                    table.add_row(
-                        app_name, step_name, cluster,
-                        _display_recorded_step_status(record, application_projects.get(app_name)),
-                        f"{self._display_step_duration(app_name, step_name, record):.1f}s",
-                        "/".join(map(str, _recorded_job_counts(
-                            record, application_projects.get(app_name)
-                        ))),
-                        record.get("error_message") or "",
-                    )
-                    record["_campaign_app"] = app_name
-                    record["_campaign_cluster"] = cluster
-                    self._row_details.append(record)
-        if not self._row_details:
-            table.add_row("—", "—", "—", "No steps recorded", "—", "—", "")
-        self.query_one("#state_resume_btn", Button).disabled = self.config_file is None
-        self.query_one("#state_rerun_btn", Button).disabled = (
-            self.config_file is None or not bool(self._failed_apps())
-        )
-
-    def _start_resume(self, rerun_failed: bool = False) -> None:
-        if self.config_file is None:
-            self.notify("A campaign config file is required to resume.", severity="error")
-            return
-        target_clusters = self.clusters or self.state.get("clusters_processed", [])
-        saved_selection = self.state.get("selection") or None
-        rerun_plan = (
-            self._failed_rerun_plan(target_clusters, saved_selection)
-            if rerun_failed else saved_selection
-        )
-        failed_apps = list(rerun_plan["steps_by_application"]) if rerun_plan else []
-        jobs = (
-            rerun_plan["jobs"] if rerun_failed and rerun_plan else
-            self._jobs_for_resume(
-                applications=None,
-                clusters=target_clusters,
-                incomplete_only=True,
-                selection=saved_selection,
-            )
-        )
-        if jobs:
-            if rerun_failed:
-                title = f"Re-run {len(jobs)} incomplete job(s)?"
-                description = (
-                    "Only the listed non-COMPLETED jobs will be submitted again. Completed jobs "
-                    "are kept and will be skipped."
-                )
-            else:
-                title = f"Resume with {len(jobs)} non-COMPLETED job(s)?"
-                description = (
-                    "Only jobs whose current status is not COMPLETED will be submitted again. "
-                    "Completed jobs will be reused."
-                )
-            self.app.push_screen(
-                ConfirmCampaignRerunScreen(
-                    title,
-                    description,
-                    jobs,
-                    steps=rerun_plan["steps"] if rerun_plan else None,
-                ),
-                lambda confirmed: self._on_history_rerun_confirmation(
-                    confirmed, rerun_failed, rerun_plan
-                ),
-            )
-            return
-        if rerun_failed and rerun_plan and not rerun_plan["steps"]:
-            self.notify(
-                "No incomplete campaign work exists on the selected clusters.",
-                severity="information",
-            )
-            return
-        if rerun_failed and rerun_plan and rerun_plan["steps"]:
-            self.app.push_screen(
-                ConfirmCampaignRerunScreen(
-                    f"Retry {len(rerun_plan['steps'])} incomplete step(s)?",
-                    "No non-COMPLETED jobs were recorded for these steps. The step scripts "
-                    "will be retried; completed jobs will be skipped.",
-                    [],
-                    steps=rerun_plan["steps"],
-                ),
-                lambda confirmed: self._on_history_rerun_confirmation(
-                    confirmed, True, rerun_plan
-                ),
-            )
-            return
-        self._launch_resume(rerun_failed, rerun_plan)
-
-    def _failed_rerun_plan(
-        self,
-        clusters: List[str],
-        selection: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        cluster_filter = set(clusters)
-        steps_by_application: Dict[str, List[str]] = {}
-        affected_clusters = set()
-        incomplete_jobs: List[Dict[str, Any]] = []
-        affected_steps: List[Dict[str, Any]] = []
-        clusters_by_app_step: Dict[str, Dict[str, List[str]]] = {}
-        application_projects = self.state.get("application_projects", {})
-        for app_name, app_data in self.state.get("execution", {}).items():
-            selected_apps = selection.get("applications") if selection else None
-            if selected_apps and app_name not in selected_apps:
-                continue
-            selected_app_steps = (selection or {}).get("steps_by_application", {}).get(app_name)
-            for step_name, cluster_logs in app_data.get("steps", {}).items():
-                if selected_app_steps is not None and step_name not in selected_app_steps:
-                    continue
-                for cluster, step_record in cluster_logs.items():
-                    if cluster_filter and cluster not in cluster_filter:
-                        continue
-                    selected_clusters = (
-                        (selection or {}).get("clusters_by_step", {})
-                        .get(app_name, {})
-                        .get(step_name)
-                    )
-                    if selected_clusters is not None and cluster not in selected_clusters:
-                        continue
-                    jobs = _recorded_step_jobs(step_record)
-                    unfinished = [
-                        job for job in jobs
-                        if _recorded_job_status(
-                            job, application_projects.get(app_name)
-                        ) != "COMPLETED"
-                    ]
-                    for job in unfinished:
-                        job["status"] = _recorded_job_status(job)
-                    step_status = str(step_record.get("status", "")).upper()
-                    if not unfinished and step_status not in {
-                        StepStatus.FAILED.value.upper(),
-                        StepStatus.CANCELLED.value.upper(),
-                    }:
-                        continue
-                    steps_by_application.setdefault(app_name, [])
-                    if step_name not in steps_by_application[app_name]:
-                        steps_by_application[app_name].append(step_name)
-                    affected_clusters.add(cluster)
-                    app_cluster_steps = clusters_by_app_step.setdefault(app_name, {})
-                    app_step_clusters = app_cluster_steps.setdefault(step_name, [])
-                    if cluster not in app_step_clusters:
-                        app_step_clusters.append(cluster)
-                    affected_steps.append({
-                        "app": app_name,
-                        "step": step_name,
-                        "cluster": cluster,
-                        "status": step_record.get("status", "unknown"),
-                    })
-                    for job in unfinished:
-                        incomplete_jobs.append({
-                            **job,
-                            "app": app_name,
-                            "step": step_name,
-                            "cluster": job.get("cluster") or cluster,
-                        })
-        return {
-            "applications": list(steps_by_application),
-            "steps_by_application": steps_by_application,
-            "clusters_by_step": clusters_by_app_step,
-            "clusters": sorted(affected_clusters),
-            "jobs": incomplete_jobs,
-            "steps": affected_steps,
-        }
-
-    def _jobs_for_resume(
-        self,
-        *,
-        applications: Optional[List[str]],
-        clusters: List[str],
-        incomplete_only: bool,
-        selection: Optional[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        app_filter = set(applications) if applications is not None else None
-        cluster_filter = set(clusters)
-        application_projects = self.state.get("application_projects", {})
-        jobs = []
-        for app_name, app_data in self.state.get("execution", {}).items():
-            if app_filter is not None and app_name not in app_filter:
-                continue
-            selected_apps = (selection or {}).get("applications")
-            if selected_apps and app_name not in selected_apps:
-                continue
-            selected_app_steps = (selection or {}).get("steps_by_application", {}).get(app_name)
-            for step_name, cluster_logs in app_data.get("steps", {}).items():
-                if selected_app_steps is not None and step_name not in selected_app_steps:
-                    continue
-                for cluster, step_record in cluster_logs.items():
-                    if cluster_filter and cluster not in cluster_filter:
-                        continue
-                    selected_clusters = (
-                        (selection or {}).get("clusters_by_step", {})
-                        .get(app_name, {})
-                        .get(step_name)
-                    )
-                    if selected_clusters is not None and cluster not in selected_clusters:
-                        continue
-                    for job in _recorded_step_jobs(step_record):
-                        status = _recorded_job_status(
-                            job, application_projects.get(app_name)
-                        )
-                        if incomplete_only and status == "COMPLETED":
-                            continue
-                        jobs.append({
-                            **job,
-                            "status": status,
-                            "app": app_name,
-                            "step": step_name,
-                            "cluster": job.get("cluster") or cluster,
-                        })
-        return jobs
-
-    def _on_history_rerun_confirmation(
-        self, confirmed: bool, rerun_failed: bool, rerun_plan: Optional[Dict[str, Any]]
-    ) -> None:
-        if confirmed:
-            self._launch_resume(rerun_failed, rerun_plan)
-        else:
-            self.notify("Campaign rerun cancelled.", severity="information")
-
-    def _launch_resume(
-        self, rerun_failed: bool, rerun_plan: Optional[Dict[str, Any]] = None
-    ) -> None:
-        applications = rerun_plan["applications"] if rerun_failed and rerun_plan else None
-        if rerun_failed and rerun_plan:
-            applications = rerun_plan["applications"]
-        else:
-            applications = rerun_plan.get("applications") if rerun_plan else None
-        steps_by_application = (
-            rerun_plan["steps_by_application"] if rerun_failed and rerun_plan else None
-        )
-        if not rerun_failed and rerun_plan:
-            steps_by_application = rerun_plan.get("steps_by_application")
-        clusters_by_step = rerun_plan.get("clusters_by_step") if rerun_plan else None
-        selected_clusters = (
-            rerun_plan["clusters"] if rerun_failed and rerun_plan
-            else self._selection_clusters(rerun_plan)
-        )
-        if selected_clusters and self.clusters:
-            clusters = [cluster for cluster in selected_clusters if cluster in self.clusters]
-        else:
-            clusters = selected_clusters or self.clusters or self.state.get("clusters_processed", [])
-        self.app.push_screen(
-            RunScreen(
-                mode="resume",
-                config_file=self.config_file,
-                results_dir=self.results_dir,
-                clusters=clusters,
-                dry_run=self.dry_run,
-                verbose=self.verbose,
-                resume_mode="auto",
-                force_apps=[],
-                log_file=self.log_file,
-                applications=applications,
-                steps_by_application=steps_by_application,
-                clusters_by_step=clusters_by_step,
-            )
-        )
-
-    @staticmethod
-    def _selection_clusters(selection: Optional[Dict[str, Any]]) -> List[str]:
-        if not selection:
-            return []
-        return sorted({
-            cluster
-            for app_steps in (selection.get("clusters_by_step") or {}).values()
-            for step_clusters in app_steps.values()
-            for cluster in step_clusters
-        })
 
     def on_mount(self) -> None:
         if self.error:
@@ -1618,78 +1095,194 @@ class CampaignStateScreen(Screen):
         table = self.query_one("#state_table", DataTable)
         table.add_columns("App", "Step", "Cluster", "Status", "Duration", "Jobs", "Error")
         table.cursor_type = "row"
-        self._row_details = []
-        application_projects = self.state.get("application_projects", {})
-        for app_name, app_data in self.state.get("execution", {}).items():
-            for step_name, cluster_logs in app_data.get("steps", {}).items():
-                for cluster, record in cluster_logs.items():
-                    table.add_row(
-                        app_name, step_name, cluster,
-                        _display_recorded_step_status(record, application_projects.get(app_name)),
-                        f"{self._display_step_duration(app_name, step_name, record):.1f}s",
-                        "/".join(map(str, _recorded_job_counts(
-                            record, application_projects.get(app_name)
-                        ))),
-                        record.get("error_message") or "",
-                    )
-                    self._row_details.append(record)
-                    self._row_details[-1]["_campaign_app"] = app_name
-                    self._row_details[-1]["_campaign_cluster"] = cluster
-        if not self._row_details:
-            table.add_row("—", "—", "—", "No steps recorded", "—", "—", "")
+        self._load_state(refresh=True)
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        index = event.cursor_row
-        if index >= len(getattr(self, "_row_details", [])):
+    def on_screen_resume(self) -> None:
+        """Re-read everything after returning from a run / selection edit."""
+        if self.error or time.monotonic() - self._last_load < 1.0:
             return
-        record = self._row_details[index]
-        self.query_one("#state_view_jobs_btn", Button).disabled = not bool(record.get("jobs"))
-        errors = "; ".join(record.get("job_errors", [])) or "None"
-        self.query_one("#state_detail", Static).update(
-            f"Step error: {record.get('error_message') or 'None'}\n"
-            f"Jobs: {record.get('jobs_successful', 0)} successful, "
-            f"{record.get('jobs_failed', 0)} failed, {record.get('jobs_count', 0)} total\n"
-            f"Job errors: {errors}"
+        DEFAULT_JOBS_CACHE.clear()
+        self._load_state(refresh=False)
+
+    def action_refresh_state(self) -> None:
+        if not self.error:
+            self.notify("Querying schedulers…")
+            self._load_state(refresh=True)
+
+    # ------------------------------------------------------------------
+    # Loading (worker thread) -> applying (UI thread)
+    # ------------------------------------------------------------------
+
+    def _sequential_lookup(self, app_name: str, step_name: str) -> Optional[bool]:
+        """Journals written before `jobs_sequential` existed: read the jobs YAML."""
+        key = (app_name, step_name)
+        if key in self._sequential:
+            return self._sequential[key]
+        sequential = None
+        if self.campaign_config is not None:
+            app = next((a for a in self.campaign_config.apps if a.name == app_name), None)
+            step = next((s for s in app.steps if s.name == step_name), None) if app else None
+            if app is not None and step is not None and step.jobs:
+                try:
+                    sequential = bool((yaml.safe_load((app.dir / step.jobs).read_text()) or {}).get("sequential", False))
+                except (OSError, yaml.YAMLError, AttributeError):
+                    pass
+        self._sequential[key] = sequential  # type: ignore[assignment]
+        return sequential
+
+    @work(thread=True, exclusive=True, group="state_load")
+    def _load_state(self, refresh: bool, then: Optional[str] = None) -> None:
+        try:
+            state = json.loads(self.log_file.read_text())
+            views = build_campaign_view(
+                state, cache=DEFAULT_JOBS_CACHE, refresh=refresh, sequential_lookup=self._sequential_lookup,
+            )
+            owner = journal_lock_owner(self.log_file)
+        except Exception as exc:  # report, do not die silently
+            self.app.call_from_thread(self.notify, f"Could not load campaign state: {exc}", severity="error")
+            return
+        self.app.call_from_thread(self._apply_state, state, views, owner, then)
+
+    def _apply_state(self, state: Dict[str, Any], views: List[StepView], owner: Optional[str], then: Optional[str]) -> None:
+        self._last_load = time.monotonic()
+        self.state, self.views, self.lock_owner = state, views, owner
+        self.view_by_key = {v.key: v for v in views}
+        self.query_one("#state_header", Static).update(self._header_text())
+        table = self.query_one("#state_table", DataTable)
+        keep = None
+        try:
+            if table.row_count:
+                keep = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+        except Exception:
+            pass
+        table.clear()
+        for v in views:
+            table.add_row(
+                v.app, v.step, v.cluster, status_text(v.status), f"{v.duration_seconds:.1f}s",
+                f"{v.jobs_completed}/{v.jobs_total}", v.error_message or "", key=v.key,
+            )
+        if not views:
+            self.query_one("#state_detail", Static).update("No steps recorded.")
+        elif keep in self.view_by_key:
+            table.move_cursor(row=[v.key for v in views].index(keep), animate=False)
+        usable = self.config_file is not None and not owner
+        self.query_one("#state_resume_btn", Button).disabled = not usable
+        self.query_one("#state_rerun_btn", Button).disabled = not (usable and any(v.needs_work for v in views))
+        self.query_one("#state_edit_selection_btn", Button).disabled = not usable
+        self._show_highlighted()
+        if then == "resume":
+            self._start_resume(rerun_failed=False)
+        elif then == "rerun":
+            self._start_resume(rerun_failed=True)
+
+    # ------------------------------------------------------------------
+    # Selection / details
+    # ------------------------------------------------------------------
+
+    def _highlighted_view(self) -> Optional[StepView]:
+        try:
+            table = self.query_one("#state_table", DataTable)
+            key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+        except Exception:
+            return None
+        return self.view_by_key.get(str(key)) if key else None
+
+    def _show_highlighted(self) -> None:
+        view = self._highlighted_view()
+        self.query_one("#state_view_jobs_btn", Button).disabled = not (view and view.exp_dirs)
+        if view is not None:
+            self.query_one("#state_detail", Static).update(step_detail_text(view))
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if event.data_table.id == "state_table":
+            self._show_highlighted()
+
+    def action_view_step_jobs(self) -> None:
+        open_step_jobs(self.app, self._highlighted_view())
+
+    # ------------------------------------------------------------------
+    # Resume / re-run
+    # ------------------------------------------------------------------
+
+    def _start_resume(self, rerun_failed: bool = False) -> None:
+        """Plan from the live views loaded a moment ago, confirm, then launch."""
+        if self.config_file is None:
+            self.notify("A campaign config file is required to resume.", severity="error")
+            return
+        if self.lock_owner:
+            self.notify(f"This campaign is in use by {self.lock_owner}.", severity="error")
+            return
+        target_clusters = self.clusters or self.state.get("clusters_processed", [])
+        saved_selection = self.state.get("selection") or None
+        plan: Optional[Dict[str, Any]] = None
+        if rerun_failed:
+            plan = plan_incomplete_work(self.views, clusters=target_clusters, selection=saved_selection)
+            jobs, steps = plan["jobs"], plan["steps"]
+            if not steps:
+                self.notify("No incomplete campaign work exists on the selected clusters.", severity="information")
+                return
+            title = f"Re-run {len(steps)} incomplete step(s)?"
+            description = (
+                "Only the listed steps run again. Jobs that are COMPLETED now (including ones you "
+                "ran by hand) are kept; running jobs are followed; the non-COMPLETED jobs below "
+                "are submitted again."
+            )
+        else:
+            jobs, steps = plan_resume_jobs(self.views, clusters=target_clusters, selection=saved_selection), None
+            title = f"Resume with {len(jobs)} non-COMPLETED job(s)?"
+            description = (
+                "Steps whose definition is unchanged and whose jobs are all COMPLETED now are skipped. "
+                "Only jobs that are not COMPLETED are submitted again."
+            )
+        if jobs or steps:
+            self.app.push_screen(
+                ConfirmCampaignRerunScreen(title, description, jobs, steps=steps),
+                lambda confirmed: self._launch_resume(plan, target_clusters) if confirmed
+                else self.notify("Campaign rerun cancelled.", severity="information"),
+            )
+        else:
+            self._launch_resume(plan, target_clusters)
+
+    def _launch_resume(self, plan: Optional[Dict[str, Any]], target_clusters: List[str]) -> None:
+        if plan is not None:
+            clusters = [c for c in plan["clusters"] if not self.clusters or c in self.clusters]
+            applications, steps_by_app, clusters_by_step = (
+                plan["applications"], plan["steps_by_application"], plan["clusters_by_step"],
+            )
+        else:  # the runner applies the journal's saved selection
+            clusters, applications, steps_by_app, clusters_by_step = target_clusters, None, None, None
+        self.app.push_screen(
+            RunScreen(
+                mode="resume", config_file=self.config_file, results_dir=self.results_dir,
+                clusters=clusters, dry_run=self.dry_run, verbose=self.verbose,
+                resume_mode="auto", force_apps=[], log_file=self.log_file,
+                applications=applications, steps_by_application=steps_by_app,
+                clusters_by_step=clusters_by_step,
+            )
         )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "state_back_btn":
+        button = event.button.id
+        if button == "state_back_btn":
             self.app.pop_screen()
-        elif event.button.id == "state_resume_btn":
-            self._start_resume()
-        elif event.button.id == "state_rerun_btn":
-            self._start_resume(rerun_failed=True)
-        elif event.button.id == "state_edit_selection_btn":
-            if self.config_file is None:
-                return
+        elif button == "state_refresh_btn":
+            self.action_refresh_state()
+        elif button in ("state_resume_btn", "state_rerun_btn"):
+            # Re-read the live state first: the user may have changed things
+            # since this page was opened.
+            self.notify("Checking live job state…")
+            self._load_state(refresh=True, then="resume" if button == "state_resume_btn" else "rerun")
+        elif button == "state_edit_selection_btn" and self.config_file is not None:
             self.app.push_screen(
                 CampaignSelectionScreen(
-                    config_file=self.config_file,
-                    results_dir=self.results_dir,
+                    config_file=self.config_file, results_dir=self.results_dir,
                     clusters=self.state.get("clusters_processed") or self.clusters,
-                    dry_run=self.dry_run,
-                    verbose=self.verbose,
-                    selection=self.state.get("selection"),
-                    edit_log=self.log_file,
+                    dry_run=self.dry_run, verbose=self.verbose,
+                    selection=self.state.get("selection"), edit_log=self.log_file,
                 )
             )
-        elif event.button.id == "state_view_jobs_btn":
-            index = self.query_one("#state_table", DataTable).cursor_row
-            if index >= len(getattr(self, "_row_details", [])):
-                return
-            record = self._row_details[index]
-            app_name = record.get("_campaign_app")
-            project = self.state.get("application_projects", {}).get(app_name)
-            job_records = record.get("jobs", [])
-            if project and job_records:
-                self.app.push_screen(
-                    CampaignJobsScreen(
-                        project_root=Path(project),
-                        cluster_name=record.get("_campaign_cluster"),
-                        exp_dirs=[job["exp_dir"] for job in job_records if job.get("exp_dir")],
-                        read_only=True,
-                    )
-                )
+        elif button == "state_view_jobs_btn":
+            self.action_view_step_jobs()
 
 
 # ============================================================================
@@ -1734,8 +1327,9 @@ class MenuScreen(Screen):
         self._verbose = verbose
         self.summaries: List[Dict[str, Any]] = []
         self.selected_summary: Optional[Dict[str, Any]] = None
-        self.selected_state: Dict[str, Any] = {}
-        self.step_records: List[Dict[str, Any]] = []
+        self.views: List[StepView] = []
+        self.view_by_key: Dict[str, StepView] = {}
+        self._last_history_load = 0.0
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -1772,12 +1366,11 @@ class MenuScreen(Screen):
                 yield Button("View selected step jobs", id="view_jobs_btn", disabled=True)
         yield Footer()
 
-    async def on_mount(self) -> None:
-        """Populate campaign state and prefill suggested cluster names."""
+    def on_mount(self) -> None:
         table = self.query_one("#campaign_steps", DataTable)
         table.add_columns("App", "Step", "Cluster", "Status", "Jobs", "Error")
         table.cursor_type = "row"
-        await self._refresh_campaign_history()
+        self._load_history(refresh=False)
         if parse_clusters(self._clusters):
             return
         config_path = Path(self._config_file).expanduser()
@@ -1792,113 +1385,92 @@ class MenuScreen(Screen):
             self.query_one("#clusters_input", Input).value = ",".join(clusters)
             self._set_status(f"Loaded {len(clusters)} cluster(s) from app whitelists.")
 
-    async def on_screen_resume(self) -> None:
-        await self._refresh_campaign_history()
+    def on_screen_resume(self) -> None:
+        if time.monotonic() - self._last_history_load < 1.0:
+            return
+        DEFAULT_JOBS_CACHE.clear()
+        self._load_history(refresh=False)
 
     def _read_form(self):
-        config_file = self.query_one("#config_input", Input).value.strip()
-        results_dir = self.query_one("#results_input", Input).value.strip()
-        clusters_raw = self.query_one("#clusters_input", Input).value.strip()
-        dry_run = self.query_one("#dry_run_switch", Switch).value
-        verbose = self.query_one("#verbose_switch", Switch).value
-        return config_file, results_dir, clusters_raw, dry_run, verbose
+        return (
+            self.query_one("#config_input", Input).value.strip(),
+            self.query_one("#results_input", Input).value.strip(),
+            self.query_one("#clusters_input", Input).value.strip(),
+            self.query_one("#dry_run_switch", Switch).value,
+            self.query_one("#verbose_switch", Switch).value,
+        )
 
     def _set_status(self, message: str) -> None:
-        self.query_one("#status_msg", Static).update(message)
+        self.query_one("#status_msg", Static).update(rich_escape(message))
 
-    async def _refresh_campaign_history(self) -> None:
+    # ------------------------------------------------------------------
+    # History (worker thread -> UI)
+    # ------------------------------------------------------------------
+
+    @work(thread=True, exclusive=True, group="history")
+    def _load_history(self, refresh: bool) -> None:
+        results_dir = Path(self.query_one("#results_input", Input).value).expanduser()
+        summaries = []
+        for log_file in list_campaign_logs(results_dir):
+            summary = load_campaign_log_summary(log_file, cache=DEFAULT_JOBS_CACHE, refresh=refresh)
+            if summary is not None:
+                summaries.append(summary)
+        self.app.call_from_thread(self._apply_history, summaries)
+
+    async def _apply_history(self, summaries: List[Dict[str, Any]]) -> None:
+        self._last_history_load = time.monotonic()
+        keep = self.selected_summary.get("log_file") if self.selected_summary else None
         list_view = self.query_one("#campaign_history_list", ListView)
         await list_view.clear()
-        self.summaries = []
-        selected_log = self.selected_summary.get("log_file") if self.selected_summary else None
-        selected_index = None
-        results_dir = Path(self.query_one("#results_input", Input).value).expanduser()
-        for log_file in list_campaign_logs(results_dir):
-            summary = load_campaign_log_summary(log_file)
-            if summary is None:
-                continue
-            self.summaries.append(summary)
-            status = "OK" if summary["failed_steps"] == 0 else f"{summary['failed_steps']} failed"
-            label = (
-                f"{summary.get('campaign_name') + '  |  ' if summary.get('campaign_name') else ''}"
-                f"{summary['campaign_id']}  [{summary['completed_steps']}/{summary['total_steps']} steps]  "
-                f"({status})  clusters={','.join(summary['clusters_processed'])}"
-            )
-            list_view.append(ListItem(Label(label)))
-            if str(summary["log_file"]) == str(selected_log):
-                selected_index = len(self.summaries) - 1
-        if selected_index is not None:
-            list_view.index = selected_index
-            self._select_campaign(self.summaries[selected_index])
-        elif self.summaries:
-            list_view.index = 0
-            self._select_campaign(self.summaries[0])
-        elif not self.summaries:
+        self.summaries = summaries
+        for summary in summaries:
+            list_view.append(ListItem(Label(summary_label(summary), markup=False)))
+        index = next((i for i, s in enumerate(summaries) if s["log_file"] == keep), 0 if summaries else None)
+        if index is None:
             self._select_campaign(None)
+            return
+        list_view.index = index
+        self._select_campaign(summaries[index])
 
     def _select_campaign(self, summary: Optional[Dict[str, Any]]) -> None:
-        previous_log = self.selected_summary.get("log_file") if self.selected_summary else None
-        preserve_step_key = None
-        table = self.query_one("#campaign_steps", DataTable)
-        if summary and str(summary.get("log_file")) == str(previous_log) and table.row_count:
-            try:
-                preserve_step_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
-            except Exception:
-                pass
         self.selected_summary = summary
-        table.clear()
-        self.step_records = []
-        self.selected_state = {}
+        self.query_one("#campaign_steps", DataTable).clear()
+        self.views, self.view_by_key = [], {}
+        self.query_one("#view_jobs_btn", Button).disabled = True
+        self.query_one("#open_campaign_btn", Button).disabled = summary is None
         if summary is None:
             self.query_one("#campaign_detail", Static).update("No campaign journals found.")
-            self.query_one("#open_campaign_btn", Button).disabled = True
-            self.query_one("#view_jobs_btn", Button).disabled = True
             return
+        self.query_one("#campaign_detail", Static).update("Loading live job state…")
+        self._load_selected(summary)
+
+    @work(thread=True, exclusive=True, group="menu_view")
+    def _load_selected(self, summary: Dict[str, Any]) -> None:
         try:
-            self.selected_state = json.loads(Path(summary["log_file"]).read_text())
-        except (OSError, json.JSONDecodeError) as exc:
-            self.query_one("#campaign_detail", Static).update(f"Could not read journal: {exc}")
-            self.query_one("#open_campaign_btn", Button).disabled = True
-            self.query_one("#view_jobs_btn", Button).disabled = True
+            state = json.loads(Path(summary["log_file"]).read_text())
+            views = build_campaign_view(state, cache=DEFAULT_JOBS_CACHE)
+        except Exception as exc:
+            self.app.call_from_thread(self.query_one("#campaign_detail", Static).update,
+                                      Text(f"Could not read journal: {exc}"))
             return
+        self.app.call_from_thread(self._apply_selected, summary, views)
+
+    def _apply_selected(self, summary: Dict[str, Any], views: List[StepView]) -> None:
+        if not self.selected_summary or self.selected_summary["log_file"] != summary["log_file"]:
+            return  # the user moved on while this was loading
+        self.views, self.view_by_key = views, {v.key: v for v in views}
         failed_apps = ", ".join(summary["failed_apps"]) if summary["failed_apps"] else "(none)"
-        self.query_one("#campaign_detail", Static).update(
-            f"Campaign: {campaign_display_label(summary.get('campaign_name'), summary['campaign_id'])} "
-            f" | Started: {summary['campaign_start']}\n"
+        self.query_one("#campaign_detail", Static).update(Text(
+            f"Campaign: {summary.get('campaign_name') or ''} ({summary['campaign_id']}) | Started: {summary['campaign_start']}\n"
             f"Steps: {summary['completed_steps']}/{summary['total_steps']} complete, "
-            f"{summary['failed_steps']} failed  |  Failed apps: {failed_apps}\n"
+            f"{summary['failed_steps']} need work  |  Apps needing work: {failed_apps}\n"
             f"Journal: {summary['log_file']}"
-        )
-        for app_name, app_data in self.selected_state.get("execution", {}).items():
-            for step_name, cluster_logs in app_data.get("steps", {}).items():
-                for cluster, record in cluster_logs.items():
-                    row = dict(record)
-                    row["_campaign_app"] = app_name
-                    row["_campaign_step"] = step_name
-                    row["_campaign_cluster"] = cluster
-                    self.step_records.append(row)
-                    table.add_row(
-                        app_name,
-                        step_name,
-                        cluster,
-                        _display_recorded_step_status(
-                            record,
-                            self.selected_state.get("application_projects", {}).get(app_name),
-                        ),
-                        "/".join(map(str, _recorded_job_counts(
-                            record,
-                            self.selected_state.get("application_projects", {}).get(app_name),
-                        ))),
-                        record.get("error_message") or "",
-                        key=f"{app_name}|{step_name}|{cluster}",
-                    )
-        self.query_one("#open_campaign_btn", Button).disabled = False
-        self.query_one("#view_jobs_btn", Button).disabled = True
-        if preserve_step_key is not None:
-            try:
-                table.move_cursor(row=table.get_row_index(preserve_step_key), animate=False)
-            except Exception:
-                pass
+        ))
+        table = self.query_one("#campaign_steps", DataTable)
+        table.clear()
+        for v in views:
+            table.add_row(v.app, v.step, v.cluster, status_text(v.status),
+                          f"{v.jobs_completed}/{v.jobs_total}", v.error_message or "", key=v.key)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if event.list_view.id != "campaign_history_list":
@@ -1907,63 +1479,52 @@ class MenuScreen(Screen):
         if index is not None and index < len(self.summaries):
             self._select_campaign(self.summaries[index])
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        if event.data_table.id == "campaign_steps":
-            record = self.step_records[event.cursor_row] if event.cursor_row < len(self.step_records) else {}
-            self.query_one("#view_jobs_btn", Button).disabled = not bool(record.get("jobs"))
+    def _highlighted_view(self) -> Optional[StepView]:
+        try:
+            table = self.query_one("#campaign_steps", DataTable)
+            key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+        except Exception:
+            return None
+        return self.view_by_key.get(str(key)) if key else None
 
-    def _open_selected_step_jobs(self) -> None:
-        if not self.step_records:
-            return
-        index = self.query_one("#campaign_steps", DataTable).cursor_row
-        if index >= len(self.step_records):
-            return
-        record = self.step_records[index]
-        app_name = record.get("_campaign_app")
-        project = self.selected_state.get("application_projects", {}).get(app_name)
-        jobs = record.get("jobs", [])
-        if project and jobs:
-            self.app.push_screen(
-                CampaignJobsScreen(
-                    project_root=Path(project),
-                    cluster_name=record.get("_campaign_cluster"),
-                    exp_dirs=[job["exp_dir"] for job in jobs if job.get("exp_dir")],
-                    read_only=True,
-                )
-            )
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if event.data_table.id == "campaign_steps":
+            view = self._highlighted_view()
+            self.query_one("#view_jobs_btn", Button).disabled = not (view and view.exp_dirs)
 
     def _open_selected_campaign(self) -> None:
         if self.selected_summary is None:
             return
         summary = self.selected_summary
         config_file, results_dir, clusters_raw, dry_run, verbose = self._read_form()
-        clusters = parse_clusters(clusters_raw) or summary["clusters_processed"]
         self.app.push_screen(
             CampaignStateScreen(
                 Path(summary["log_file"]),
-                config_file=Path(config_file) if config_file and Path(config_file).is_file() else None,
+                config_file=Path(config_file) if config_file else None,
                 results_dir=Path(results_dir) if results_dir else Path(summary["log_file"]).parent,
-                clusters=clusters,
+                clusters=parse_clusters(clusters_raw) or summary["clusters_processed"],
                 dry_run=dry_run,
                 verbose=verbose,
             )
         )
 
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
+    def on_button_pressed(self, event: Button.Pressed) -> None:
         config_file, results_dir, clusters_raw, dry_run, verbose = self._read_form()
+        button = event.button.id
 
-        if event.button.id == "refresh_campaigns_btn":
-            await self._refresh_campaign_history()
-            self._set_status("Campaign list refreshed.")
+        if button == "refresh_campaigns_btn":
+            DEFAULT_JOBS_CACHE.clear()
+            self._load_history(refresh=True)
+            self._set_status("Refreshing campaigns (querying schedulers)…")
             return
-        if event.button.id == "open_campaign_btn":
+        if button == "open_campaign_btn":
             self._open_selected_campaign()
             return
-        if event.button.id == "view_jobs_btn":
-            self._open_selected_step_jobs()
+        if button == "view_jobs_btn":
+            open_step_jobs(self.app, self._highlighted_view())
             return
 
-        if event.button.id == "suggest_btn":
+        if button == "suggest_btn":
             if not config_file:
                 self._set_status("Enter a config file path first.")
                 return
@@ -1980,6 +1541,8 @@ class MenuScreen(Screen):
                 self._set_status("No cluster whitelists found in config; enter clusters manually.")
             return
 
+        if button != "start_btn":
+            return
         if not config_file:
             self._set_status("Config file is required.")
             return
@@ -1989,26 +1552,20 @@ class MenuScreen(Screen):
         if not results_dir:
             self._set_status("Results directory is required.")
             return
-
         clusters = parse_clusters(clusters_raw)
-
-        if event.button.id == "start_btn":
-            if not clusters:
-                self._set_status("Enter at least one cluster.")
-                return
-            try:
-                self.app.push_screen(
-                    CampaignSelectionScreen(
-                        config_file=Path(config_file),
-                        results_dir=Path(results_dir),
-                        clusters=clusters,
-                        dry_run=dry_run,
-                        verbose=verbose,
-                    )
+        if not clusters:
+            self._set_status("Enter at least one cluster.")
+            return
+        try:
+            self.app.push_screen(
+                CampaignSelectionScreen(
+                    config_file=Path(config_file), results_dir=Path(results_dir),
+                    clusters=clusters, dry_run=dry_run, verbose=verbose,
                 )
-            except CampaignRunnerError as e:
-                self._set_status(f"Failed to load campaign config: {e}")
-                return
+            )
+        except CampaignRunnerError as e:
+            self._set_status(f"Failed to load campaign config: {e}")
+
 
 # ============================================================================
 # App
@@ -2032,11 +1589,8 @@ class CampaignTUIApp(App):
     ) -> None:
         super().__init__()
         self._initial = dict(
-            config_file=config_file,
-            results_dir=results_dir,
-            clusters=clusters,
-            dry_run=dry_run,
-            verbose=verbose,
+            config_file=config_file, results_dir=results_dir, clusters=clusters,
+            dry_run=dry_run, verbose=verbose,
         )
 
     def on_mount(self) -> None:
@@ -2066,16 +1620,28 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run_campaign_tui(argv: Optional[List[str]] = None) -> int:
-    # parser = build_arg_parser()
-    # args = parser.parse_args(argv)
-
-    app = CampaignTUIApp(
-        # config_file=args.config,
-        # results_dir=args.results_dir,
-        # clusters=args.clusters,
-        # dry_run=args.dry_run,
-        # verbose=args.verbose,
-    )
-    app.run()
+def run_campaign_tui(
+    argv: Optional[List[str]] = None,
+    *,
+    config_file: Optional[str] = None,
+    results_dir: Optional[str] = None,
+    clusters: Optional[str] = None,
+    dry_run: Optional[bool] = None,
+    verbose: Optional[bool] = None,
+) -> int:
+    """Launch the TUI. Defaults come from ``argv`` (if given), then keyword overrides."""
+    options: Dict[str, Any] = {}
+    if argv is not None:
+        args = build_arg_parser().parse_args(argv)
+        options = dict(config_file=args.config, results_dir=args.results_dir, clusters=args.clusters,
+                       dry_run=args.dry_run, verbose=args.verbose)
+    overrides = dict(config_file=config_file, results_dir=results_dir, clusters=clusters,
+                     dry_run=dry_run, verbose=verbose)
+    options.update({k: v for k, v in overrides.items() if v is not None})
+    CampaignTUIApp(**options).run()
     return 0
+
+
+if __name__ == "__main__":
+    import sys
+    raise SystemExit(run_campaign_tui(sys.argv[1:]))

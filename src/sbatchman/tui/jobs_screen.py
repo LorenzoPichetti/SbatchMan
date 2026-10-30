@@ -1432,7 +1432,9 @@ class JobsScreen(Screen):
             metadata_path = self.experiments_root / exp_dir / "metadata.yaml"
             if metadata_path.exists():
                 job_data = yaml.safe_load(open(metadata_path, "r"))
-                job_data.setdefault("project_root", str(self.experiments_root.parent.resolve()))
+                # Resolve from this local project copy; copied metadata may
+                # still contain the source machine's absolute path.
+                job_data["project_root"] = str(self.experiments_root.parent.resolve())
                 return Job(**job_data)
         except Exception:
             pass

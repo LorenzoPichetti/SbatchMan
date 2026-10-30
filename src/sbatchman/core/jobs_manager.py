@@ -182,8 +182,12 @@ def _load_job_metadata(metadata_path: Path, variables: Optional[Dict[str, Any]] 
     with open(metadata_path, 'r') as f:
       job_dict = yaml.load(f, Loader=SafeLoader)
       if job_dict:
-        if not job_dict.get("project_root"):
-          job_dict["project_root"] = _project_root_for_metadata(metadata_path)
+        # The metadata may have been copied from another machine and retain
+        # that machine's absolute project_root. The metadata file's location
+        # is authoritative for the local clone.
+        local_project_root = _project_root_for_metadata(metadata_path)
+        if local_project_root:
+          job_dict["project_root"] = local_project_root
         if variables:
           job_vars = job_dict.get('variables') or {}
           match = True
@@ -426,8 +430,9 @@ def job_by_id(
       if not job_dict:
         return None
 
-      if not job_dict.get("project_root"):
-        job_dict["project_root"] = _project_root_for_metadata(metadata_path)
+      local_project_root = _project_root_for_metadata(metadata_path)
+      if local_project_root:
+        job_dict["project_root"] = local_project_root
 
       if str(job_dict.get("job_id")) != target_id:
         return None
