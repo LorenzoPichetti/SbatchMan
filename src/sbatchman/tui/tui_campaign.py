@@ -59,6 +59,7 @@ from sbatchman.core.campaign import (
     CampaignControl,
     CampaignEvent,
     EventType,
+    count_job_statuses,
     CampaignRunnerError,
     StepView,
     JobView,
@@ -75,7 +76,6 @@ from sbatchman.core.campaign import (
     journal_lock_owner,
     run_campaign,
     run_campaign_with_existing_log,
-    DEFAULT_JOBS_CACHE,
 )
 from sbatchman.tui.jobs_screen import JobsScreen
 
@@ -139,7 +139,7 @@ def step_detail_text(view: StepView) -> Text:
     """Detail of one step, entirely from live data."""
     text = Text()
     text.append(f"Step error: {view.error_message or 'None'}\n")
-    text.append(f"Jobs (live): {view.jobs_completed}/{view.jobs_total} completed")
+    text.append(f"Jobs (live): {format_job_status_counts([view])}")
     if view.recorded_status != view.status:
         text.append(f"   (journal says: {view.recorded_status})", style="dim")
     text.append("\n")
@@ -153,6 +153,38 @@ def step_detail_text(view: StepView) -> Text:
     if len(bad) > 6:
         text.append(f"  ... and {len(bad) - 6} more\n", style="dim")
     return text
+
+
+_ACTIVE_JOB_STATUSES = {"RUNNING", "PENDING", "QUEUED", "CONFIGURING", "SUBMITTED"}
+_JOB_STATUS_ORDER = (
+    "RUNNING", "PENDING", "QUEUED", "CONFIGURING", "SUBMITTED", "COMPLETED",
+    "FAILED", "TIMEOUT", "CANCELLED", "FAILED_SUBMISSION", "MISSING", "UNKNOWN",
+)
+
+
+def sort_running_steps_first(views: List[StepView]) -> List[StepView]:
+    """Keep active job batches at the top, preserving order within each group."""
+    return sorted(views, key=lambda view: (
+        0 if any(job.status.upper() in _ACTIVE_JOB_STATUSES for job in view.jobs)
+        or view.status.lower() == "running" else 1
+    ))
+
+
+def format_job_status_counts(views: List[StepView]) -> str:
+    counts: Dict[str, int] = {}
+    for view in views:
+        for job in view.jobs:
+            status = job.status.upper()
+            counts[status] = counts.get(status, 0) + 1
+    return format_status_counts(counts)
+
+
+def format_status_counts(counts: Dict[str, int]) -> str:
+    if not counts:
+        return "no recorded jobs"
+    ordered = [status for status in _JOB_STATUS_ORDER if status in counts]
+    ordered.extend(sorted(set(counts) - set(ordered)))
+    return " | ".join(f"{status.lower()} {counts[status]}" for status in ordered)
 
 
 def open_step_jobs(app: App, view: Optional[StepView]) -> None:
@@ -200,12 +232,16 @@ class ConfirmCampaignRerunScreen(ModalScreen[bool]):
         description: str,
         jobs: List[Dict[str, Any]],
         steps: Optional[List[Dict[str, Any]]] = None,
+        jobs_heading: str = "Jobs that are not COMPLETED right now (will be submitted again):",
+        confirm_label: str = "Confirm rerun",
     ) -> None:
         super().__init__()
         self._title_text = title
         self._description_text = description
         self._jobs = jobs
         self._steps = steps or []
+        self._jobs_heading = jobs_heading
+        self._confirm_label = confirm_label
 
     def compose(self) -> ComposeResult:
         esc = lambda v, d="unknown": rich_escape(str(v if v not in (None, "") else d))
@@ -222,7 +258,7 @@ class ConfirmCampaignRerunScreen(ModalScreen[bool]):
                             classes="rerun_job",
                         )
                 if self._jobs:
-                    yield Static("Jobs that are not COMPLETED right now (will be submitted again):",
+                    yield Static(self._jobs_heading,
                                  classes="rerun_job_heading")
                 for index, job in enumerate(self._jobs, start=1):
                     command = job.get("command")
@@ -236,7 +272,7 @@ class ConfirmCampaignRerunScreen(ModalScreen[bool]):
                         classes="rerun_job",
                     )
             with Horizontal(id="rerun_buttons"):
-                yield Button("Confirm rerun", variant="error", id="rerun_confirm_btn")
+                yield Button(self._confirm_label, variant="error", id="rerun_confirm_btn")
                 yield Button("Cancel", id="rerun_cancel_btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -247,6 +283,42 @@ class ConfirmCampaignRerunScreen(ModalScreen[bool]):
 
     def action_cancel(self) -> None:
         self.dismiss(False)
+
+
+class ResumeIncompleteChoiceScreen(ModalScreen[Optional[bool]]):
+    """Ask whether terminal non-COMPLETED jobs should be submitted again."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+    CSS = """
+    ResumeIncompleteChoiceScreen { align: center middle; }
+    #resume_choice_box { width: 76; height: auto; border: round $accent; background: $surface; padding: 1 2; }
+    #resume_choice_buttons { height: 3; align: center middle; }
+    #resume_choice_buttons Button { margin: 0 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="resume_choice_box"):
+            yield Static("Re-run non-COMPLETED experiments?", classes="rerun_job_heading")
+            yield Static(
+                "Yes submits jobs whose latest matching attempt ended unsuccessfully. No keeps "
+                "those attempts without resubmitting them. Jobs that have not been submitted "
+                "yet can still be launched; queued and running jobs are followed."
+            )
+            with Horizontal(id="resume_choice_buttons"):
+                yield Button("Yes, re-run", variant="error", id="resume_yes_btn")
+                yield Button("No, keep attempts", id="resume_no_btn")
+                yield Button("Cancel", id="resume_cancel_btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "resume_yes_btn":
+            self.dismiss(True)
+        elif event.button.id == "resume_no_btn":
+            self.dismiss(False)
+        else:
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 class CampaignExitScreen(ModalScreen[str]):
@@ -523,19 +595,23 @@ class CampaignSelectionScreen(Screen):
             self.app.pop_screen()
             self.app.notify("Campaign selection saved to its journal.", severity="information")
             return
-        self.app.switch_screen(
-            RunScreen(
-                mode="new",
-                config_file=self.config_file,
-                results_dir=self.results_dir,
-                clusters=sorted(selected_campaign_clusters),
-                dry_run=self.dry_run,
-                verbose=self.verbose,
-                applications=selected_apps,
-                steps_by_application=steps_by_app,
-                clusters_by_step=clusters_by_app_step,
-                campaign_selection=campaign_selection,
-            )
+        run_options = {
+            "mode": "new",
+            "config_file": self.config_file,
+            "results_dir": self.results_dir,
+            "clusters": sorted(selected_campaign_clusters),
+            "dry_run": self.dry_run,
+            "verbose": self.verbose,
+            "applications": selected_apps,
+            "steps_by_application": steps_by_app,
+            "clusters_by_step": clusters_by_app_step,
+            "campaign_selection": campaign_selection,
+        }
+        self.app.push_screen(
+            ResumeIncompleteChoiceScreen(),
+            lambda rerun: self.app.switch_screen(
+                RunScreen(**run_options, rerun_non_completed=rerun)
+            ) if rerun is not None else self.app.notify("Campaign start cancelled.", severity="information"),
         )
 
 
@@ -573,6 +649,7 @@ class RunScreen(Screen):
         steps_by_application: Optional[Dict[str, List[str]]] = None,
         clusters_by_step: Optional[Dict[str, Dict[str, List[str]]]] = None,
         campaign_selection: Optional[Dict[str, Any]] = None,
+        rerun_non_completed: bool = True,
     ) -> None:
         super().__init__()
         self.mode = mode
@@ -592,6 +669,7 @@ class RunScreen(Screen):
         self.steps_by_application = steps_by_application
         self.clusters_by_step = clusters_by_step
         self.campaign_selection = campaign_selection
+        self.rerun_non_completed = rerun_non_completed
         self.log_file = Path(log_file) if log_file else None
         self.campaign_id: Optional[str] = None
         if self.log_file is not None:
@@ -646,7 +724,7 @@ class RunScreen(Screen):
 
     def on_mount(self) -> None:
         table = self.query_one("#status_table", DataTable)
-        table.add_columns("App", "Step", "Cluster", "Status", "Duration", "Jobs")
+        table.add_columns("App", "Step", "Cluster", "Status", "Duration", "Job status counts")
         table.cursor_type = "row"
         self.query_one("#job_progress", ProgressBar).update(total=100, progress=0)
         self.set_interval(0.15, self._drain_queue)
@@ -671,6 +749,7 @@ class RunScreen(Screen):
                     force_apps=self.force_apps, event_queue=self.event_queue, control=self.control,
                     console_output=False, applications=self.applications,
                     steps_by_application=self.steps_by_application, clusters_by_step=self.clusters_by_step,
+                    rerun_non_completed=self.rerun_non_completed,
                 )
             else:
                 self.success = run_campaign(
@@ -679,6 +758,7 @@ class RunScreen(Screen):
                     event_queue=self.event_queue, control=self.control, console_output=False,
                     applications=self.applications, steps_by_application=self.steps_by_application,
                     clusters_by_step=self.clusters_by_step, campaign_selection=self.campaign_selection,
+                    rerun_non_completed=self.rerun_non_completed,
                 )
         except CampaignRunnerError as e:
             self._log_error(f"Fatal error: {e}")
@@ -777,21 +857,23 @@ class RunScreen(Screen):
                 table_dirty = True
 
             elif event.type == EventType.STEP_PROGRESS:
-                completed = data.get("completed", 0)
-                succeeded = data.get("succeeded", completed)
+                terminal = data.get("completed", 0)
+                succeeded = data.get("succeeded", 0)
                 total = data.get("total", 0) or 1
+                status_counts = data.get("status_counts") or count_job_statuses(data.get("jobs", []))
                 self.query_one("#progress_label", Static).update(
                     rich_escape(f"Following jobs for {data.get('app')}/{data.get('step')} on "
-                                f"{data.get('cluster')}: {completed}/{total} finished")
+                                f"{data.get('cluster')}: {terminal}/{total} terminal, "
+                                f"{succeeded} completed | {format_status_counts(status_counts)}")
                 )
-                self.query_one("#job_progress", ProgressBar).update(total=total, progress=completed)
+                self.query_one("#job_progress", ProgressBar).update(total=total, progress=terminal)
                 key = self._row_key(data)
-                if key in self.rows:
-                    self.rows[key]["jobs"] = f"{succeeded}/{total}"
-                    self.rows[key]["job_records"] = data.get("jobs", [])
-                    if data.get("duration") is not None:
-                        self.rows[key]["duration"] = f"{data['duration']:.1f}s"
-                    table_dirty = True
+                self._ensure_row(key, data, status="running")
+                self.rows[key]["jobs"] = format_status_counts(status_counts)
+                self.rows[key]["job_records"] = data.get("jobs", [])
+                if data.get("duration") is not None:
+                    self.rows[key]["duration"] = f"{data['duration']:.1f}s"
+                table_dirty = True
 
             elif event.type == EventType.STEP_END:
                 key = self._row_key(data)
@@ -804,7 +886,8 @@ class RunScreen(Screen):
                 if self.dry_run:
                     row["jobs"] = f"{len(row['job_records'])} planned"
                 elif "jobs_count" in data:
-                    row["jobs"] = f"{data.get('jobs_successful', 0)}/{data.get('jobs_count', 0)}"
+                    counts = data.get("jobs_status_counts") or count_job_statuses(row["job_records"])
+                    row["jobs"] = format_status_counts(counts)
                 table_dirty = True
 
             elif event.type == EventType.STEP_NEEDS_ATTENTION:
@@ -846,7 +929,9 @@ class RunScreen(Screen):
                     row["job_records"] = step.get("jobs", [])
                     row["jobs"] = (
                         f"{len(row['job_records'])} planned" if self.dry_run
-                        else f"{step.get('jobs_successful', 0)}/{step.get('jobs_count', 0)}"
+                        else format_status_counts(
+                            step.get("jobs_status_counts") or count_job_statuses(row["job_records"])
+                        )
                     )
                     table_dirty = True
 
@@ -861,7 +946,7 @@ class RunScreen(Screen):
             self.rows[key] = {
                 "app": data.get("app", ""), "step": data.get("step", ""),
                 "cluster": data.get("cluster", ""), "status": status,
-                "duration": "", "jobs": "", "job_records": data.get("jobs", []),
+                "duration": "", "jobs": "no recorded jobs", "job_records": data.get("jobs", []),
             }
             self.row_order.append(key)
         else:
@@ -923,7 +1008,7 @@ class RunScreen(Screen):
         if not project:
             self.app.call_from_thread(self.notify, f"Could not locate the project for {row['app']}.", severity="error")
             return
-        snapshot = DEFAULT_JOBS_CACHE.snapshot(Path(project), row["cluster"], refresh=True)
+        snapshot = load_project_snapshot(Path(project), row["cluster"], update_scheduler=True)
         view = StepView(app=row["app"], step=row["step"], cluster=row["cluster"],
                         recorded_status=row["status"], status=row["status"], project_dir=project,
                         snapshot_error=snapshot.error)
@@ -1154,7 +1239,7 @@ class CampaignStateScreen(Screen):
         if self.error:
             return
         table = self.query_one("#state_table", DataTable)
-        table.add_columns("App", "Step", "Cluster", "Status", "Duration", "Jobs", "Error")
+        table.add_columns("App", "Step", "Cluster", "Status", "Duration", "Jobs", "Job statuses", "Error")
         table.cursor_type = "row"
         self._load_state(refresh=True)
 
@@ -1162,8 +1247,7 @@ class CampaignStateScreen(Screen):
         """Re-read everything after returning from a run / selection edit."""
         if self.error or time.monotonic() - self._last_load < 1.0:
             return
-        DEFAULT_JOBS_CACHE.clear()
-        self._load_state(refresh=False)
+        self._load_state(refresh=True)
 
     def action_refresh_state(self) -> None:
         if not self.error:
@@ -1196,7 +1280,7 @@ class CampaignStateScreen(Screen):
         try:
             state = json.loads(self.log_file.read_text())
             views = build_campaign_view(
-                state, cache=DEFAULT_JOBS_CACHE, refresh=refresh, sequential_lookup=self._sequential_lookup,
+                state, refresh=refresh, sequential_lookup=self._sequential_lookup,
             )
             owner = journal_lock_owner(self.log_file)
         except Exception as exc:  # report, do not die silently
@@ -1211,21 +1295,28 @@ class CampaignStateScreen(Screen):
         self.query_one("#state_header", Static).update(self._header_text())
         table = self.query_one("#state_table", DataTable)
         keep = None
+        scroll_y = table.scroll_y
         try:
             if table.row_count:
                 keep = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
         except Exception:
             pass
         table.clear()
-        for v in views:
+        ordered_views = sort_running_steps_first(views)
+        for v in ordered_views:
             table.add_row(
                 v.app, v.step, v.cluster, status_text(v.status), f"{v.duration_seconds:.1f}s",
-                f"{v.jobs_completed}/{v.jobs_total}", v.error_message or "", key=v.key,
+                f"{v.jobs_completed}/{v.jobs_total}", format_job_status_counts([v]),
+                v.error_message or "", key=v.key,
             )
         if not views:
             self.query_one("#state_detail", Static).update("No steps recorded.")
         elif keep in self.view_by_key:
-            table.move_cursor(row=[v.key for v in views].index(keep), animate=False)
+            table.move_cursor(row=[v.key for v in ordered_views].index(keep), animate=False)
+        try:
+            table.scroll_to(y=scroll_y, animate=False)
+        except Exception:
+            pass
         usable = self.config_file is not None and not owner
         self.query_one("#state_resume_btn", Button).disabled = not usable
         self.query_one("#state_rerun_btn", Button).disabled = not (usable and any(v.needs_work for v in views))
@@ -1273,6 +1364,18 @@ class CampaignStateScreen(Screen):
         if self.lock_owner:
             self.notify(f"This campaign is in use by {self.lock_owner}.", severity="error")
             return
+        if not rerun_failed:
+            self.app.push_screen(
+                ResumeIncompleteChoiceScreen(),
+                lambda rerun: self._prepare_resume(rerun_non_completed=rerun)
+                if rerun is not None else self.notify("Resume cancelled.", severity="information"),
+            )
+            return
+        self._prepare_resume(rerun_non_completed=True, rerun_failed=True)
+
+    def _prepare_resume(
+        self, *, rerun_non_completed: bool, rerun_failed: bool = False
+    ) -> None:
         target_clusters = self.clusters or self.state.get("clusters_processed", [])
         saved_selection = self.state.get("selection") or None
         plan: Optional[Dict[str, Any]] = None
@@ -1293,18 +1396,26 @@ class CampaignStateScreen(Screen):
             title = f"Resume with {len(jobs)} non-COMPLETED job(s)?"
             description = (
                 "Steps whose definition is unchanged and whose jobs are all COMPLETED now are skipped. "
-                "Only jobs that are not COMPLETED are submitted again."
+                + ("Failed jobs may be submitted again." if rerun_non_completed else
+                   "Failed jobs stay as they are; only missing jobs are submitted.")
             )
         if jobs or steps:
             self.app.push_screen(
-                ConfirmCampaignRerunScreen(title, description, jobs, steps=steps),
-                lambda confirmed: self._launch_resume(plan, target_clusters) if confirmed
+                ConfirmCampaignRerunScreen(
+                    title, description, jobs, steps=steps,
+                    jobs_heading=("Jobs that may be submitted again:" if rerun_non_completed
+                                  else "Existing non-COMPLETED jobs (will not be resubmitted):"),
+                    confirm_label="Confirm rerun" if rerun_non_completed else "Resume without rerunning",
+                ),
+                lambda confirmed: self._launch_resume(plan, target_clusters, rerun_non_completed) if confirmed
                 else self.notify("Campaign rerun cancelled.", severity="information"),
             )
         else:
-            self._launch_resume(plan, target_clusters)
+            self._launch_resume(plan, target_clusters, rerun_non_completed)
 
-    def _launch_resume(self, plan: Optional[Dict[str, Any]], target_clusters: List[str]) -> None:
+    def _launch_resume(
+        self, plan: Optional[Dict[str, Any]], target_clusters: List[str], rerun_non_completed: bool
+    ) -> None:
         if plan is not None:
             clusters = [c for c in plan["clusters"] if not self.clusters or c in self.clusters]
             applications, steps_by_app, clusters_by_step = (
@@ -1317,6 +1428,7 @@ class CampaignStateScreen(Screen):
                 mode="resume", config_file=self.config_file, results_dir=self.results_dir,
                 clusters=clusters, dry_run=self.dry_run, verbose=self.verbose,
                 resume_mode="auto", force_apps=[], log_file=self.log_file,
+                rerun_non_completed=rerun_non_completed,
                 applications=applications, steps_by_application=steps_by_app,
                 clusters_by_step=clusters_by_step,
             )
@@ -1429,7 +1541,7 @@ class MenuScreen(Screen):
 
     def on_mount(self) -> None:
         table = self.query_one("#campaign_steps", DataTable)
-        table.add_columns("App", "Step", "Cluster", "Status", "Jobs", "Error")
+        table.add_columns("App", "Step", "Cluster", "Status", "Jobs", "Job statuses", "Error")
         table.cursor_type = "row"
         self._load_history(refresh=False)
         if parse_clusters(self._clusters):
@@ -1449,7 +1561,6 @@ class MenuScreen(Screen):
     def on_screen_resume(self) -> None:
         if time.monotonic() - self._last_history_load < 1.0:
             return
-        DEFAULT_JOBS_CACHE.clear()
         self._load_history(refresh=False)
 
     def _read_form(self):
@@ -1473,7 +1584,7 @@ class MenuScreen(Screen):
         results_dir = Path(self.query_one("#results_input", Input).value).expanduser()
         summaries = []
         for log_file in list_campaign_logs(results_dir):
-            summary = load_campaign_log_summary(log_file, cache=DEFAULT_JOBS_CACHE, refresh=refresh)
+            summary = load_campaign_log_summary(log_file, refresh=refresh)
             if summary is not None:
                 summaries.append(summary)
         self.app.call_from_thread(self._apply_history, summaries)
@@ -1509,7 +1620,7 @@ class MenuScreen(Screen):
     def _load_selected(self, summary: Dict[str, Any]) -> None:
         try:
             state = json.loads(Path(summary["log_file"]).read_text())
-            views = build_campaign_view(state, cache=DEFAULT_JOBS_CACHE)
+            views = build_campaign_view(state, refresh=True)
         except Exception as exc:
             self.app.call_from_thread(self.query_one("#campaign_detail", Static).update,
                                       Text(f"Could not read journal: {exc}"))
@@ -1519,19 +1630,36 @@ class MenuScreen(Screen):
     def _apply_selected(self, summary: Dict[str, Any], views: List[StepView]) -> None:
         if not self.selected_summary or self.selected_summary["log_file"] != summary["log_file"]:
             return  # the user moved on while this was loading
+        scroll_table = self.query_one("#campaign_steps", DataTable)
+        scroll_y = scroll_table.scroll_y
+        keep = None
+        try:
+            if scroll_table.row_count:
+                keep = scroll_table.coordinate_to_cell_key(scroll_table.cursor_coordinate).row_key.value
+        except Exception:
+            pass
+        views = sort_running_steps_first(views)
         self.views, self.view_by_key = views, {v.key: v for v in views}
         failed_apps = ", ".join(summary["failed_apps"]) if summary["failed_apps"] else "(none)"
         self.query_one("#campaign_detail", Static).update(Text(
             f"Campaign: {summary.get('campaign_name') or ''} ({summary['campaign_id']}) | Started: {summary['campaign_start']}\n"
             f"Steps: {summary['completed_steps']}/{summary['total_steps']} complete, "
             f"{summary['failed_steps']} need work  |  Apps needing work: {failed_apps}\n"
+            f"Jobs: {format_job_status_counts(views)}\n"
             f"Journal: {summary['log_file']}"
         ))
-        table = self.query_one("#campaign_steps", DataTable)
+        table = scroll_table
         table.clear()
         for v in views:
             table.add_row(v.app, v.step, v.cluster, status_text(v.status),
-                          f"{v.jobs_completed}/{v.jobs_total}", v.error_message or "", key=v.key)
+                          f"{v.jobs_completed}/{v.jobs_total}", format_job_status_counts([v]),
+                          v.error_message or "", key=v.key)
+        if keep in self.view_by_key:
+            table.move_cursor(row=[v.key for v in views].index(keep), animate=False)
+        try:
+            table.scroll_to(y=scroll_y, animate=False)
+        except Exception:
+            pass
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if event.list_view.id != "campaign_history_list":
@@ -1574,7 +1702,6 @@ class MenuScreen(Screen):
         button = event.button.id
 
         if button == "refresh_campaigns_btn":
-            DEFAULT_JOBS_CACHE.clear()
             self._load_history(refresh=True)
             self._set_status("Refreshing campaigns (querying schedulers)…")
             return

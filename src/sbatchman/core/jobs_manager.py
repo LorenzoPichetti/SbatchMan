@@ -7,7 +7,6 @@ import concurrent.futures
 from contextvars import copy_context
 from pathlib import Path
 import pandas as pd
-from dataclasses import asdict
 import yaml
 try:
   from yaml import CSafeLoader as SafeLoader
@@ -19,12 +18,6 @@ from sbatchman.config.project_config import get_archive_dir, get_experiments_dir
 from sbatchman.core.job import Job
 from sbatchman.core.status import TERMINAL_STATES, Status
 from sbatchman.exceptions import ArchiveExistsError
-
-JOBS_CACHE = {}
-
-def clean_jobs_cache():
-  global JOBS_CACHE
-  JOBS_CACHE = {}
 
 def job_exists(
   command: str,
@@ -61,7 +54,6 @@ def find_existing_job(
   ignore_archived: bool = False,
   ignore_conf_in_dup_check: bool = False,
   ignore_commands_in_dup_check: bool = False,
-  refresh: bool = False,
 ) -> Tuple[Optional[Dict[str, Any]], str]:
   """
   Return metadata for an identical existing job and its source, if found.
@@ -71,30 +63,13 @@ def find_existing_job(
     - ignore_conf_in_dup_check
     - ignore_commands_in_dup_check
   """
-  global JOBS_CACHE
+  # Always read metadata from disk. Jobs may be launched or retried by a
+  # separate SbatchMan process, so a process-local cache can miss the newest
+  # attempt and make the wrong duplicate decision.
+  candidates = _load_existing_job_candidates(
+    cluster_name, config_name, tag, ignore_archived, ignore_conf_in_dup_check
+  )
 
-  # Cache key depends on whether config is part of the duplicate logic
-  if ignore_conf_in_dup_check:
-    cache_key = (cluster_name, tag)
-  else:
-    cache_key = (cluster_name, config_name, tag)
-
-  if cache_key not in JOBS_CACHE and not refresh:
-    JOBS_CACHE[cache_key] = _load_existing_job_candidates(
-      cluster_name, config_name, tag, ignore_archived, ignore_conf_in_dup_check
-    )
-
-  if refresh:
-    candidates = _load_existing_job_candidates(
-      cluster_name, config_name, tag, ignore_archived, ignore_conf_in_dup_check
-    )
-  else:
-    candidates = JOBS_CACHE[cache_key]
-
-  # Prefer a completed match when recovery is allowed to replace non-completed
-  # jobs. Multiple attempts may share the same config/tag, and encountering a
-  # cancelled attempt first must not cause an already completed attempt to run
-  # again.
   matching_candidates = []
   for job_dict, source in candidates:
 
@@ -111,18 +86,16 @@ def find_existing_job(
     ):
       matching_candidates.append((job_dict, source))
 
-  completed_match = next(
-    (
-      (job_dict, source)
-      for job_dict, source in matching_candidates
-      if str(job_dict.get("status", "")).upper() == Status.COMPLETED.value
-    ),
-    None,
-  )
-  if completed_match is not None:
-    return completed_match
   if matching_candidates:
-    return matching_candidates[0]
+    # Several attempts can share a cluster/config/tag. Use the latest one so
+    # a manual rerun is detected even when an older attempt completed.
+    return max(
+      matching_candidates,
+      key=lambda item: (
+        str(item[0].get("queued_timestamp", "") or ""),
+        0 if item[1] == "active" else 1,
+      ),
+    )
 
   return None, ''
 
@@ -167,15 +140,6 @@ def _load_existing_job_candidates(
         continue
   return candidates
 
-
-def register_job(job: Job):
-  """
-  Registers a new job in the cache to avoid disk reads on subsequent checks.
-  """
-  global JOBS_CACHE
-  cache_key = (job.cluster_name, job.config_name, job.tag)
-  if cache_key in JOBS_CACHE:
-    JOBS_CACHE[cache_key].append((asdict(job), "active"))
 
 def _load_job_metadata(metadata_path: Path, variables: Optional[Dict[str, Any]] = None) -> Optional[Job]:
   try:

@@ -162,7 +162,7 @@ class EventType(Enum):
 
     STEP_START = "step_start"              # data={"app", "cluster", "step"}
     STEP_SKIPPED = "step_skipped"          # data={"app", "cluster", "step", "reason"}
-    STEP_PROGRESS = "step_progress"        # data={"app","cluster","step","completed","succeeded","total","jobs","duration"}
+    STEP_PROGRESS = "step_progress"        # data={"app","cluster","step","completed","succeeded","total","jobs","status_counts","duration"}
     STEP_END = "step_end"                  # data={"app","cluster","step","status","duration",...}
     STEP_NEEDS_ATTENTION = "step_needs_attention"  # data={"app", "cluster", "step", "error", "jobs"}
 
@@ -911,6 +911,15 @@ def _status_str(value: Any) -> str:
     return str(value).upper() if value is not None else "UNKNOWN"
 
 
+def count_job_statuses(records: Iterable[Dict[str, Any]]) -> Dict[str, int]:
+    """Count job records by their latest known status."""
+    counts: Dict[str, int] = {}
+    for record in records:
+        status = _status_str(record.get("last_known_status") or record.get("status"))
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
 def _job_recency(job: Any) -> Tuple[str, int, str]:
     """Sort key: newest queued job wins; on ties an active job beats an archived one."""
     return (
@@ -930,7 +939,6 @@ class ProjectSnapshot:
     all_jobs: List[Any] = field(default_factory=list)
     error: Optional[str] = None      # project could not be read: nothing can be said about jobs
     warning: Optional[str] = None    # e.g. scheduler refresh failed; listing is still valid
-    taken_at: float = 0.0
 
     def status_of(self, key: JobKey) -> str:
         if self.error:
@@ -949,7 +957,7 @@ def load_project_snapshot(
     Failures never fall back to stale data: they are reported in ``error``.
     """
     project_dir = Path(project_dir).resolve()
-    snapshot = ProjectSnapshot(project_dir=project_dir, cluster=str(cluster), taken_at=time.monotonic())
+    snapshot = ProjectSnapshot(project_dir=project_dir, cluster=str(cluster))
     if not project_dir.is_dir():
         snapshot.error = f"SbatchMan project directory not found: {project_dir}"
         return snapshot
@@ -984,52 +992,6 @@ def load_project_snapshot(
     return snapshot
 
 
-class ProjectJobsCache:
-    """Short-lived cache of project snapshots shared by UI code.
-
-    One directory scan per (project, cluster) serves every job lookup, instead
-    of one scan (plus scheduler query) per job.
-    """
-
-    def __init__(self, max_age: float = 5.0) -> None:
-        self.max_age = max_age
-        self._guard = threading.Lock()
-        self._locks: Dict[Tuple[str, str], threading.Lock] = {}
-        self._entries: Dict[Tuple[str, str], ProjectSnapshot] = {}
-
-    def snapshot(
-        self,
-        project_dir: Path,
-        cluster: str,
-        *,
-        refresh: bool = False,
-        update_scheduler: bool = False,
-    ) -> ProjectSnapshot:
-        key = (str(Path(project_dir).resolve()), str(cluster))
-        with self._guard:
-            lock = self._locks.setdefault(key, threading.Lock())
-        with lock:
-            entry = self._entries.get(key)
-            if (
-                entry is not None
-                and not refresh
-                and not update_scheduler
-                and not entry.error
-                and time.monotonic() - entry.taken_at < self.max_age
-            ):
-                return entry
-            entry = load_project_snapshot(Path(key[0]), key[1], update_scheduler=update_scheduler)
-            self._entries[key] = entry
-            return entry
-
-    def clear(self) -> None:
-        with self._guard:
-            self._entries.clear()
-
-
-DEFAULT_JOBS_CACHE = ProjectJobsCache()
-
-
 def _record_project(record: Dict[str, Any], application_project: Optional[str]) -> Optional[str]:
     # The application's project (from the journal) is authoritative; the
     # per-job value is only a fallback for journals that lack it.
@@ -1039,7 +1001,6 @@ def _record_project(record: Dict[str, Any], application_project: Optional[str]) 
 def resolve_recorded_job(
     job: Dict[str, Any],
     application_project: Optional[str] = None,
-    cache: Optional[ProjectJobsCache] = None,
     snapshot: Optional[ProjectSnapshot] = None,
 ) -> Optional[Any]:
     """Return the current live job for a recorded job's identity, if any."""
@@ -1048,14 +1009,13 @@ def resolve_recorded_job(
         project = _record_project(job, application_project)
         if not project or not key[0]:
             return None
-        snapshot = (cache or DEFAULT_JOBS_CACHE).snapshot(Path(project), key[0])
+        snapshot = load_project_snapshot(Path(project), key[0])
     return None if snapshot.error else snapshot.jobs.get(key)
 
 
 def current_recorded_job_status(
     job: Dict[str, Any],
     application_project: Optional[str] = None,
-    cache: Optional[ProjectJobsCache] = None,
     snapshot: Optional[ProjectSnapshot] = None,
 ) -> str:
     """Live status of a recorded job: COMPLETED, RUNNING, ..., MISSING (project
@@ -1068,7 +1028,7 @@ def current_recorded_job_status(
         project = _record_project(job, application_project)
         if not project or not key[0]:
             return "UNKNOWN"
-        snapshot = (cache or DEFAULT_JOBS_CACHE).snapshot(Path(project), key[0])
+        snapshot = load_project_snapshot(Path(project), key[0])
     return snapshot.status_of(key)
 
 
@@ -1206,7 +1166,6 @@ def build_step_view(
 def build_campaign_view(
     state: Dict[str, Any],
     *,
-    cache: Optional[ProjectJobsCache] = None,
     refresh: bool = False,
     sequential_lookup: Optional[Callable[[str, str], Optional[bool]]] = None,
     max_workers: int = 8,
@@ -1216,7 +1175,6 @@ def build_campaign_view(
     One snapshot per (project, cluster); with ``refresh`` the scheduler is
     queried once per snapshot. Blocking: call from a worker thread.
     """
-    cache = cache or DEFAULT_JOBS_CACHE
     projects = state.get("application_projects", {}) or {}
 
     def project_for(app_name: str, record: Dict[str, Any]) -> Optional[str]:
@@ -1236,7 +1194,7 @@ def build_campaign_view(
     if wanted:
         with ThreadPoolExecutor(max_workers=min(max_workers, len(wanted))) as pool:
             futures = {
-                pool.submit(cache.snapshot, Path(p), c, refresh=refresh, update_scheduler=refresh): (p, c)
+                pool.submit(load_project_snapshot, Path(p), c, update_scheduler=refresh): (p, c)
                 for p, c in wanted
             }
             for future in as_completed(futures):
@@ -1528,9 +1486,9 @@ def _has_non_completed_jobs(jobs: List[Dict[str, Any]], snapshot: Optional[Proje
     return any(str(j.get("last_known_status") or j.get("status", "")).upper() != "COMPLETED" for j in jobs)
 
 
-def get_failed_apps(state: ExecutionState, cache: Optional[ProjectJobsCache] = None) -> List[str]:
+def get_failed_apps(state: ExecutionState) -> List[str]:
     """Names of apps with at least one step needing work (live)."""
-    return summarize_views(build_campaign_view(execution_state_to_dict(state), cache=cache))["failed_apps"]
+    return summarize_views(build_campaign_view(execution_state_to_dict(state)))["failed_apps"]
 
 
 def build_status_rows(state: ExecutionState) -> List[Dict[str, Any]]:
@@ -1558,7 +1516,6 @@ def list_campaign_logs(results_dir: Path) -> List[Path]:
 
 def load_campaign_log_summary(
     log_file: Path,
-    cache: Optional[ProjectJobsCache] = None,
     refresh: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Summary dict for a history list, with step counts resolved live.
@@ -1570,7 +1527,7 @@ def load_campaign_log_summary(
             data = json.load(f)
     except Exception:
         return None
-    summary = summarize_views(build_campaign_view(data, cache=cache, refresh=refresh))
+    summary = summarize_views(build_campaign_view(data, refresh=refresh))
     return {
         "log_file": str(log_file),
         "campaign_id": data.get("campaign_id"),
@@ -1600,7 +1557,7 @@ def monitor_jobs(
     max_wait: float = 86400,
     logger: Optional[logging.Logger] = None,
     control: Optional[CampaignControl] = None,
-    on_progress: Optional[Callable[[int, int, int], None]] = None,
+    on_progress: Optional[Callable[[int, int, int, Dict[str, int]], None]] = None,
     on_snapshot: Optional[Callable[[ProjectSnapshot, Dict[JobKey, str]], None]] = None,
 ) -> Dict[JobKey, str]:
     """Poll the project until every job identity in ``keys`` is terminal.
@@ -1610,7 +1567,8 @@ def monitor_jobs(
     to an archive or replaced is followed to its latest incarnation. Jobs that
     appear in the project but are not tracked are reported once and ignored.
 
-    ``on_progress(terminal, succeeded, total)``; ``on_snapshot(snapshot, statuses)``.
+    ``on_progress(terminal, succeeded, total, status_counts)``;
+    ``on_snapshot(snapshot, statuses)``.
     Cancellation cancels only jobs whose exp_dir is in ``owned_exp_dirs``
     (those submitted by the campaign), never jobs started by the user.
     """
@@ -1718,7 +1676,10 @@ def monitor_jobs(
         terminal = sum(s in TERMINAL_STATES for s in statuses.values())
         succeeded = sum(s == "COMPLETED" for s in statuses.values())
         if on_progress is not None:
-            on_progress(terminal, succeeded, len(keys))
+            status_counts: Dict[str, int] = {}
+            for status in statuses.values():
+                status_counts[status] = status_counts.get(status, 0) + 1
+            on_progress(terminal, succeeded, len(keys), status_counts)
 
         if terminal == len(keys):
             logger.info(f"All {len(keys)} job(s) reached terminal state")
@@ -1793,6 +1754,7 @@ class CampaignRunner:
         clusters_by_step: Optional[Dict[str, Dict[str, List[str]]]] = None,
         campaign_selection: Optional[Dict[str, Any]] = None,
         config_sha256: Optional[str] = None,
+        rerun_non_completed: bool = True,
     ):
         self.config = config
         self.clusters_by_step = clusters_by_step or {}
@@ -1800,6 +1762,7 @@ class CampaignRunner:
         self.log_file = Path(log_file).resolve()
         self.verbose = verbose
         self.dry_run = dry_run
+        self.rerun_non_completed = rerun_non_completed
         self.config_file = Path(config_file).resolve() if config_file else None
         # Hash of the FULL campaign definition (before any app/step selection).
         self.config_sha256 = config_sha256 or campaign_input_hash(self.config_file, config)
@@ -1856,6 +1819,7 @@ class CampaignRunner:
                     "status": log.status, "duration": log.duration_seconds,
                     "jobs": self._jobs_copy(log), "jobs_count": log.jobs_count,
                     "jobs_successful": log.jobs_successful,
+                    "jobs_status_counts": count_job_statuses(log.jobs),
                 }
                 for app_name, app_steps in self.state.execution.items()
                 for step_name, cluster_logs in app_steps.items()
@@ -2139,7 +2103,7 @@ class CampaignRunner:
                         ignore_archived=options["ignore_archived"] and fresh,
                         ignore_conf_in_dup_check=options["ignore_conf_in_dup_check"],
                         ignore_commands_in_dup_check=options["ignore_commands_in_dup_check"],
-                        rerun_non_completed=True,
+                        rerun_non_completed=self.rerun_non_completed,
                     )
                 except Exception as exc:
                     raise JobExecutionError(
@@ -2254,7 +2218,7 @@ class CampaignRunner:
                     EventType.STEP_END, app=app.name, cluster=cluster, step=step.name,
                     status=log.status, duration=log.duration_seconds, jobs=self._jobs_copy(log),
                     jobs_count=log.jobs_count, jobs_successful=log.jobs_successful,
-                    jobs_failed=log.jobs_failed,
+                    jobs_failed=log.jobs_failed, jobs_status_counts=count_job_statuses(log.jobs),
                 )
                 if success:
                     break
@@ -2304,7 +2268,7 @@ class CampaignRunner:
                         EventType.STEP_END, app=app.name, cluster=cluster, step=step.name,
                         status=log.status, duration=log.duration_seconds, jobs=self._jobs_copy(log),
                         jobs_count=log.jobs_count, jobs_successful=log.jobs_successful,
-                        jobs_failed=log.jobs_failed,
+                        jobs_failed=log.jobs_failed, jobs_status_counts=count_job_statuses(log.jobs),
                     )
                     break
 
@@ -2501,7 +2465,7 @@ class CampaignRunner:
                 ignore_commands_in_dup_check=options["ignore_commands_in_dup_check"],
                 working_directory=app.dir,
                 return_details=True,
-                rerun_non_completed=True,
+                rerun_non_completed=self.rerun_non_completed,
             )
         except Exception as exc:
             raise JobExecutionError(
@@ -2550,11 +2514,13 @@ class CampaignRunner:
             j["exp_dir"] for attempt in log.job_attempts for j in attempt.get("jobs", []) if j.get("exp_dir")
         }
 
-        def on_progress(terminal: int, succeeded: int, total: int) -> None:
+        def on_progress(
+            terminal: int, succeeded: int, total: int, status_counts: Dict[str, int]
+        ) -> None:
             self._emit(
                 EventType.STEP_PROGRESS, app=app.name, cluster=cluster, step=step.name,
                 completed=terminal, succeeded=succeeded, total=total,
-                jobs=self._jobs_copy(log), duration=step_duration(),
+                jobs=self._jobs_copy(log), status_counts=status_counts, duration=step_duration(),
             )
 
         def on_snapshot(snapshot: ProjectSnapshot, statuses: Dict[JobKey, str]) -> None:
@@ -2751,6 +2717,7 @@ def run_campaign(
     steps_by_application: Optional[Dict[str, List[str]]] = None,
     clusters_by_step: Optional[Dict[str, Dict[str, List[str]]]] = None,
     campaign_selection: Optional[Dict[str, Any]] = None,
+    rerun_non_completed: bool = True,
 ) -> bool:
     """Run a campaign from a YAML config.
 
@@ -2773,6 +2740,7 @@ def run_campaign(
                     event_queue=event_queue, control=control, console_output=console_output,
                     applications=applications, steps=steps, steps_by_application=steps_by_application,
                     clusters_by_step=clusters_by_step,
+                    rerun_non_completed=rerun_non_completed,
                 )
             logger.warning(f"No previous campaign journal in {results_dir}; starting a new campaign")
 
@@ -2791,6 +2759,7 @@ def run_campaign(
             event_queue=event_queue, control=control, console_output=console_output,
             config_file=config_file, clusters_by_step=clusters_by_step,
             campaign_selection=campaign_selection, config_sha256=full_hash,
+            rerun_non_completed=rerun_non_completed,
         )
         success = runner.run_campaign(clusters=clusters, resume=False, resume_mode=resume_mode,
                                       force_apps=force_apps or [])
@@ -2819,6 +2788,7 @@ def run_campaign_with_existing_log(
     steps: Optional[List[str]] = None,
     steps_by_application: Optional[Dict[str, List[str]]] = None,
     clusters_by_step: Optional[Dict[str, Dict[str, List[str]]]] = None,
+    rerun_non_completed: bool = True,
 ) -> bool:
     """Resume the campaign recorded in ``log_file`` (updated in place).
 
@@ -2860,6 +2830,7 @@ def run_campaign_with_existing_log(
             config=config, results_dir=log_file.parent, log_file=log_file, verbose=verbose,
             dry_run=dry_run, event_queue=event_queue, control=control, console_output=console_output,
             config_file=config_file, clusters_by_step=clusters_by_step, config_sha256=full_hash,
+            rerun_non_completed=rerun_non_completed,
         )
         return runner.run_campaign(clusters=clusters, resume=True, resume_mode=resume_mode,
                                    force_apps=force_apps or [])

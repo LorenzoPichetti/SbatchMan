@@ -15,7 +15,8 @@ from rich.console import Console
 from sbatchman.core.variables import extract_used_vars, substitute, load_variable_values, resolve_map_variable, map_info_to_vars, get_var_path_filename, warn_undereferenced_map_variables
 from sbatchman.core.config_manager import load_local_config, create_configs_from_file, create_configs_from_data
 from sbatchman.core.job import Job, Status
-from sbatchman.core.jobs_manager import job_exists, find_existing_job, register_job, count_active_jobs
+from sbatchman.core.status import TERMINAL_STATES
+from sbatchman.core.jobs_manager import job_exists, find_existing_job, count_active_jobs
 from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError, SbatchManError
 from sbatchman.config.global_config import get_cluster_name, get_max_queued_jobs
 from sbatchman.config.project_config import get_project_config_dir, get_project_root, get_scheduler_from_cluster_and_config_name
@@ -185,9 +186,6 @@ def job_submit(
 
   job.write_metadata()
   
-  # Register in cache to speed up subsequent checks in the same process
-  register_job(job)
-
   try:
     # 5. Submit the job using the scheduler's own logic
     if scheduler == 'slurm':
@@ -308,15 +306,14 @@ def launch_job(
       ignore_archived=ignore_archived,
       ignore_conf_in_dup_check=ignore_conf_in_dup_check,
       ignore_commands_in_dup_check=ignore_commands_in_dup_check,
-      refresh=rerun_non_completed,
     )
-    if (
-      existing_job is not None
-      and not (
-        rerun_non_completed
-        and str(existing_job.get("status", "")).upper() != Status.COMPLETED.value
-      )
-    ):
+    existing_status = str(existing_job.get("status", "")).upper() if existing_job else ""
+    can_rerun_terminal = (
+      rerun_non_completed
+      and existing_status in TERMINAL_STATES
+      and existing_status != Status.COMPLETED.value
+    )
+    if existing_job is not None and not can_rerun_terminal:
       raise JobExistsError(
         f"An identical job already exists{'' if where == 'active' else '(in some archive)'} for config '{config_name}'{'(ignored)'if ignore_conf_in_dup_check else ''} with tag '{tag}'. " +
         ("\nUse '--force' to submit it anyway." if where == 'active' else "\nUse '--ignore-archived or -ia' to ignore archived jobs."),
@@ -457,8 +454,10 @@ def _merge_dicts(base, override):
 
 def _should_skip_job(
   job_tag: str,
+  job_category: Optional[str],
   var_dict: Dict[str, Any],
   filter_tags: Optional[List[str]],
+  filter_categories: Optional[List[str]],
   filter_variables: Optional[Dict[str, Any]],
 ) -> bool:
   """
@@ -481,6 +480,11 @@ def _should_skip_job(
       return True
   
   # Check variable filter
+  if filter_categories is not None and not any(
+    fnmatch.fnmatch(job_category or "", pattern) for pattern in filter_categories
+  ):
+    return True
+
   if filter_variables is not None:
     for key, value in filter_variables.items():
       if key not in var_dict:
@@ -527,6 +531,7 @@ def launch_jobs_from_file(
   launch_summary: Optional[Dict[str, Any]] = None,
   return_details: bool = False,
   rerun_non_completed: bool = False,
+  filter_categories: Optional[List[str]] = None,
 ) -> Union[List[Job], LaunchResult]:
   """  Launches jobs based on a YAML configuration file.
   Args:
@@ -534,6 +539,7 @@ def launch_jobs_from_file(
     force: If True, will overwrite existing jobs with the same configuration.
     dry_run: If True, will return the list of jobs but will not launch them (warning: won't work for sequential jobs)
     filter_tags: If provided, only launch jobs whose tag matches one of these values.
+    filter_categories: If provided, only launch jobs whose category matches one of these wildcard patterns.
     filter_variables: If provided, only launch jobs where variables match all key=value pairs.
     return_details: Return a LaunchResult with submitted and duplicate-skipped job details.
     rerun_non_completed: Submit a new job when an otherwise matching existing job
@@ -713,6 +719,7 @@ def launch_jobs_from_file(
         previous_job_id,
         dry_run=dry_run,
         filter_tags=filter_tags,
+        filter_categories=filter_categories,
         filter_variables=filter_variables,
         ignore_archived=ignore_archived,
         ignore_conf_in_dup_check=ignore_conf_in_dup_check,
@@ -769,6 +776,7 @@ def launch_jobs_from_file(
           previous_job_id,
           dry_run=dry_run,
           filter_tags=filter_tags,
+          filter_categories=filter_categories,
           filter_variables=filter_variables,
           ignore_archived=ignore_archived,
           ignore_conf_in_dup_check=ignore_conf_in_dup_check,
@@ -813,6 +821,7 @@ def _launch_job_combinations(
   working_directory: Optional[Path] = None,
   launch_summary: Optional[Dict[str, Any]] = None,
   rerun_non_completed: bool = False,
+  filter_categories: Optional[List[str]] = None,
 ) -> Optional[int]:
     """
     Generates and launches jobs for all combinations of variables.
@@ -829,14 +838,14 @@ def _launch_job_combinations(
       return
     
     # Determine which variables are actually used in the templates
-    used_vars = extract_used_vars(config_template, command_template, tag, preprocess_template, postprocess_template, check_template)
+    used_vars = extract_used_vars(config_template, command_template, tag, category, preprocess_template, postprocess_template, check_template)
 
     map_names = [
       name for name, value in variables.items()
       if isinstance(value, dict) and '__map__' in value
     ]
     warn_undereferenced_map_variables(
-      [config_template, command_template, tag, preprocess_template, postprocess_template, check_template],
+      [config_template, command_template, tag, category, preprocess_template, postprocess_template, check_template],
       map_names,
       context=f"job configuration '{config_template}'",
     )
@@ -850,7 +859,7 @@ def _launch_job_combinations(
         if k in used_vars:
           # Find the key variable for this map by searching templates
           key_var = None
-          for template in [config_template, command_template, tag, preprocess_template, postprocess_template, check_template]:
+          for template in [config_template, command_template, tag, category, preprocess_template, postprocess_template, check_template]:
             if isinstance(template, str):
               pattern = re.compile(rf"\{{{k}\[(\w+)\]\}}")
               match = pattern.search(template)
@@ -888,7 +897,7 @@ def _launch_job_combinations(
       # Check if this job should be skipped based on filters
       if launch_summary is not None:
         launch_summary["candidates"] += 1
-      if _should_skip_job(job_tag, {}, filter_tags, filter_variables):
+      if _should_skip_job(job_tag, job_category, {}, filter_tags, filter_categories, filter_variables):
         if launch_summary is not None:
           launch_summary["filtered"] += 1
         return previous_job_id
@@ -972,7 +981,7 @@ def _launch_job_combinations(
           # Check if this job should be skipped based on filters
           if launch_summary is not None:
             launch_summary["candidates"] += 1
-          if _should_skip_job(job_tag, final_vars, filter_tags, filter_variables):
+          if _should_skip_job(job_tag, job_category, final_vars, filter_tags, filter_categories, filter_variables):
             if launch_summary is not None:
               launch_summary["filtered"] += 1
             continue
@@ -1029,7 +1038,7 @@ def _launch_job_combinations(
         # Check if this job should be skipped based on filters
         if launch_summary is not None:
           launch_summary["candidates"] += 1
-        if _should_skip_job(job_tag, var_dict, filter_tags, filter_variables):
+        if _should_skip_job(job_tag, job_category, var_dict, filter_tags, filter_categories, filter_variables):
           if launch_summary is not None:
             launch_summary["filtered"] += 1
           continue
