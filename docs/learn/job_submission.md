@@ -84,6 +84,7 @@ The inline `configs` mapping uses the same structure as a standalone configurati
     - `SBATCHMAN_JOB_DIR` -> directory where the job data will be saved.
     - `SBATCHMAN_JOB_TAG` -> the tag of the current job.
     - `SBATCHMAN_JOB_CONFIG` -> the config name of the job.
+    - `SBATCHMAN_CLUSTER_NAME` -> the cluster name selected for this job, including any per-job `cluster_name` override.
 
 #### The `config_jobs` Block
 

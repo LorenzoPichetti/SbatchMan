@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import threading
 import os
+import shlex
 import tempfile
 from pathlib import Path
 from dataclasses import asdict, dataclass
@@ -97,7 +98,8 @@ class BaseConfig(ABC):
       'export SBATCHMAN_WD={CWD}',
       'export SBATCHMAN_JOB_DIR={EXP_DIR}',
       'export SBATCHMAN_JOB_TAG={JOB_TAG}',
-      'export SBATCHMAN_JOB_CONFIG={CONFIG}\n',
+      'export SBATCHMAN_JOB_CONFIG={CONFIG}',
+      f'export SBATCHMAN_CLUSTER_NAME={shlex.quote(self.cluster_name)}\n',
     ]
 
     start_timestamp = ['echo "start_timestamp: \'$(date +%Y%m%d_%H%M%S.%N)\'" >> "{EXP_DIR}/metadata.yaml"\n']
