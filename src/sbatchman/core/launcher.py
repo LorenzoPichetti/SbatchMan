@@ -489,8 +489,10 @@ def _should_skip_job(
     for key, value in filter_variables.items():
       if key not in var_dict:
         return True
-      # Convert both to string for comparison (variables from CLI are strings)
-      if str(var_dict[key]) != str(value):
+      # CLI filters may provide several accepted values for one variable.
+      # Keep scalar values working for callers such as campaign execution.
+      accepted_values = value if isinstance(value, (list, tuple, set)) else [value]
+      if not any(str(var_dict[key]) == str(accepted) for accepted in accepted_values):
         return True
   
   return False

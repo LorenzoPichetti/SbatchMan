@@ -18,6 +18,16 @@ To launch a batch of jobs, use the `launch` command with the `--file` option:
 ```bash
 sbatchman launch --file experiments.yaml
 ```
+Use `--variable` / `-v` to select values from the generated batch. Repeat the option with the same variable to allow multiple values; filters on different variables are combined:
+
+```bash
+sbatchman launch --file experiments.yaml \
+  -v model=gpt4 -v model=llama \
+  -v dataset=small
+```
+
+This selects jobs whose `model` is either `gpt4` or `llama` and whose `dataset` is `small`.
+
 !!! note
     The `launch` command will NOT run again "identical" jobs unless forced or if previous jobs are archived. 
 

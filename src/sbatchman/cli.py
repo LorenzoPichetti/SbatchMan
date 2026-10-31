@@ -271,7 +271,7 @@ def launch(
   postprocess: Optional[str] = typer.Option(None, "--postprocess", help="Command to run after the main job (optional)."),
   dry_run: bool = typer.Option(False, "--dry-run", help="If set, will show the list of jobs but will not launch them (warning: won't work for sequential jobs)"),
   force: bool = typer.Option(False, "--force", help="Force submission even if identical jobs already exist."),
-  variable: Optional[List[str]] = typer.Option(None, "--variable", "-v", help="Only launch jobs where variable matches value (e.g. model=gpt4). Can be used multiple times. Only applicable with --file."),
+  variable: Optional[List[str]] = typer.Option(None, "--variable", "-v", help="Filter jobs by variable (e.g. -v model=gpt4). Repeat a variable to allow multiple values; different variables are combined (AND). Only applicable with --file."),
   ignore_archived: bool = typer.Option(False, "--ignore-archived", "-ia", help="If True, do not check for duplicates in jobs archives."),
   ignore_conf_in_dup_check: bool = typer.Option(False, "--ignore-conf-in-dup-check", "-ic", help="If True, jobs with the same tag are considered duplicates even if they use different configs."),
   ignore_commands_in_dup_check: bool = typer.Option(True, "--ignore-commands-in-dup-check", "-icomm", help="By default, duplicate checks ignore command, preprocess, and postprocess. Use --compare-commands-in-dup-check to include them."),
@@ -291,7 +291,7 @@ def launch(
           console.print(f"[bold red]Invalid variable format: {var}. Must be key=value[/bold red]")
           raise typer.Exit(1)
         key, value = var.split("=", 1)
-        filter_variables_dict[key] = value
+        filter_variables_dict.setdefault(key, []).append(value)
 
     # Call the API/launcher
     if file:
