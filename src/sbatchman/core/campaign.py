@@ -769,7 +769,7 @@ def parse_jobs_args(arguments: List[str]) -> Dict[str, Any]:
         if "=" not in value:
             raise ConfigurationError(f"Invalid jobs_args variable '{value}'; expected key=value")
         key, val = value.split("=", 1)
-        variables[key] = val
+        variables.setdefault(key, []).append(val)
 
     return {
         "filter_tags": options.tag or None,
@@ -786,7 +786,17 @@ def _normalize_jobs_args(value: Any, label: str) -> List[str]:
         value = shlex.split(value)
     if not isinstance(value, list) or not all(isinstance(arg, str) for arg in value):
         raise ConfigurationError(f"{label} must be a string or list of strings")
-    return value
+    # YAML list entries are already argv tokens, but users often carry over
+    # shell quoting (e.g. '"trial_*"') to protect wildcards. Remove only a
+    # complete pair of shell quotes, preserving whitespace inside a token.
+    normalized = []
+    for arg in value:
+        if len(arg) >= 2 and arg[0] == arg[-1] and arg[0] in "'\"":
+            parsed = shlex.split(arg)
+            if len(parsed) == 1:
+                arg = parsed[0]
+        normalized.append(arg)
+    return normalized
 
 
 def resolve_jobs_args(arguments: Any, cluster: str) -> Dict[str, Any]:

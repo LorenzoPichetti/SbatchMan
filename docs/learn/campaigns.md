@@ -17,10 +17,10 @@ apps:
         script: make
       - name: small-runs
         jobs: runs.yaml
-        jobs_args: ["-v", "dataset=small", "-t", "trial_*"]
+        jobs_args: "-v dataset=small -t 'trial_*'"
       - name: large-runs
         jobs: runs.yaml
-        jobs_args: ["-v", "dataset=large"]
+        jobs_args: "-v dataset=large"
 ```
 
 The optional top-level `name` gives the campaign a human-readable label. It is saved in the journal and shown in the TUI alongside the unique campaign ID.
@@ -43,17 +43,17 @@ Applications and steps remain ordered within each cluster. By default clusters a
 
 ## Batch arguments
 
-`jobs_args` passes launch filters and duplicate-check options to a jobs step. It can be a YAML list of strings, a quoted command-like string, or a map with shared `default` arguments and per-cluster arguments:
+`jobs_args` passes launch filters and duplicate-check options to a jobs step. A command-like string is the concise form; shell quotes group arguments and are removed during parsing, so quote wildcard filters to keep them literal. A YAML list of argument strings is also supported. Both forms can be placed in a map with shared `default` arguments and per-cluster arguments:
 
 ```yaml
-jobs_args: ["-v", "dataset=small", "-t", "trial_*"]
+jobs_args: "-v dataset=small -t 'trial_*'"
 
 jobs_args:
-  default: ["-v", "dataset=small", "-t", "trial_*"]
-  cpu-b: ["-v", "dataset=large", "--force"]
+  default: "-v dataset=small -t 'trial_*'"
+  cpu-b: "-v dataset=large --force"
 ```
 
-The shared arguments apply to every cluster. A matching cluster entry is layered on top: tag filters are added, a cluster variable replaces the shared value for the same variable name, and flags such as `--force` or `-ia` are enabled if present in either list. Supported options are `-t/--tag`, `-v/--variable key=value`, `--force`, `-ia/--ignore-archived`, `-ic/--ignore-conf-in-dup-check`, and `-icomm/--ignore-commands-in-dup-check`. Repeat `-t` or `-v` to provide multiple filters. Campaign retries force submission automatically; `--force` is useful for a normal first attempt.
+The shared arguments apply to every cluster. A matching cluster entry is layered on top: tag filters are added, a cluster variable replaces the shared value for the same variable name, and flags such as `--force` or `-ia` are enabled if present in either entry. Supported options are `-t/--tag`, `-v/--variable key=value`, `--force`, `-ia/--ignore-archived`, `-ic/--ignore-conf-in-dup-check`, and `-icomm/--ignore-commands-in-dup-check`. Repeat `-t` or `-v` to provide multiple filters; repeated `-v` values for the same variable are alternatives, while different variables are combined. Campaign retries force submission automatically; `--force` is useful for a normal first attempt.
 
 ## Results and monitoring
 
