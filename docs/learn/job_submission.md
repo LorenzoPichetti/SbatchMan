@@ -26,7 +26,7 @@ sbatchman launch --file experiments.yaml \
   -v dataset=small
 ```
 
-This selects jobs whose `model` is either `gpt4` or `llama` and whose `dataset` is `small`.
+This selects jobs whose `model` is either `gpt4` or `llama` and whose `dataset` is `small`. If a job does not define one of the filtered variables, that variable filter does not exclude the job; filters are checked only against variables present on that job.
 
 !!! note
     The `launch` command will NOT run again "identical" jobs unless forced or if previous jobs are archived. 

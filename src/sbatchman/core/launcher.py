@@ -505,7 +505,9 @@ def _should_skip_job(
   if filter_variables is not None:
     for key, value in filter_variables.items():
       if key not in var_dict:
-        return True
+        # A template may not define every variable named by the filter. Such
+        # a filter is irrelevant to that job; only compare keys it has.
+        continue
       # CLI filters may provide several accepted values for one variable.
       # Keep scalar values working for callers such as campaign execution.
       accepted_values = value if isinstance(value, (list, tuple, set)) else [value]
