@@ -18,6 +18,7 @@ apps:
       - name: small-runs
         jobs: runs.yaml
         jobs_args: "-v dataset=small -t 'trial_*'"
+        parallel_clusters: false # Override campaign setting for this step
       - name: large-runs
         jobs: runs.yaml
         jobs_args: "-v dataset=large"
@@ -29,7 +30,7 @@ The YAML file may define multiple applications. `dir`, config files, job files, 
 
 `cluster_whitelist` optionally limits an application to named clusters. With no whitelist, it runs on every selected cluster. A blacklist is unnecessary: select the clusters for the campaign, then use a whitelist when an application should run on only some of them.
 
-Applications and steps remain ordered within each cluster. By default clusters are processed serially; set the top-level `parallel_clusters: true` to run the selected clusters concurrently. Jobs within a batch may also run concurrently according to their jobs YAML and scheduler. Each worker gets its own selected cluster and application project context. Scripts invoking SbatchMan inherit that scoped context.
+Applications and steps remain ordered within each cluster. By default clusters are processed serially; set the top-level `parallel_clusters: true` to run the selected clusters concurrently. A step may set its own `parallel_clusters: true` or `false` to override the campaign default. For example, with campaign-level parallelism enabled, setting it to `false` on a compile step makes that step run on one cluster at a time, while later steps can still run concurrently. Jobs within a batch may also run concurrently according to their jobs YAML and scheduler. Each worker gets its own selected cluster and application project context. Scripts invoking SbatchMan inherit that scoped context.
 
 ## Runtime behavior
 

@@ -204,6 +204,7 @@ class StepConfig:
     jobs: Optional[str] = None    # Path to jobs YAML file
     jobs_args: Any = field(default_factory=list)  # list[str] or {default/cluster: list[str]}
     on_fails: str = "terminate"   # terminate | continue | skip
+    parallel_clusters: Optional[bool] = None
 
     def __post_init__(self):
         """Validate on_fails value."""
@@ -728,6 +729,9 @@ def load_step_config(step_data: dict) -> StepConfig:
             raise ConfigurationError(f"Step '{name}' missing both 'script' and 'jobs'")
 
         on_fails = step_data.get("on_fails", "terminate")
+        parallel_clusters = step_data.get("parallel_clusters")
+        if parallel_clusters is not None and not isinstance(parallel_clusters, bool):
+            raise ConfigurationError(f"Step '{name}' parallel_clusters must be true or false")
         jobs_args = step_data.get("jobs_args", [])
         if isinstance(jobs_args, dict):
             if not all(isinstance(cluster, str) for cluster in jobs_args):
@@ -741,7 +745,10 @@ def load_step_config(step_data: dict) -> StepConfig:
         if jobs_args and not jobs:
             raise ConfigurationError(f"Step '{name}' has jobs_args but no jobs file")
 
-        return StepConfig(name=name, script=script, jobs=jobs, jobs_args=jobs_args, on_fails=on_fails)
+        return StepConfig(
+            name=name, script=script, jobs=jobs, jobs_args=jobs_args,
+            on_fails=on_fails, parallel_clusters=parallel_clusters,
+        )
 
     except CampaignRunnerError:
         raise
@@ -1783,6 +1790,10 @@ class CampaignRunner:
         self._resuming = False
         self._checkpoint_lock = threading.RLock()
         self._app_setup_locks = {app.name: threading.Lock() for app in config.apps}
+        self._step_cluster_locks = {
+            (app.name, step.name): threading.Lock()
+            for app in config.apps for step in app.steps
+        }
 
         self.logger = setup_logger(
             __name__, verbose, console_output=console_output, event_queue=event_queue,
@@ -1973,7 +1984,10 @@ class CampaignRunner:
     def _execute_clusters(
         self, clusters: List[str], previous_state: Optional[ExecutionState], force_apps: List[str]
     ) -> None:
-        if self.config.parallel_clusters and len(clusters) > 1:
+        any_parallel_steps = self.config.parallel_clusters or any(
+            step.parallel_clusters is True for app in self.config.apps for step in app.steps
+        )
+        if any_parallel_steps and len(clusters) > 1:
             self.logger.info(f"Running {len(clusters)} clusters concurrently")
             with ThreadPoolExecutor(max_workers=len(clusters), thread_name_prefix="campaign-cluster") as pool:
                 futures = {
@@ -2217,7 +2231,17 @@ class CampaignRunner:
             while True:
                 self._emit(EventType.STEP_START, app=app.name, cluster=cluster, step=step.name)
                 try:
-                    success = self._execute_step(app, step, cluster)
+                    parallel_clusters = (
+                        self.config.parallel_clusters
+                        if step.parallel_clusters is None else step.parallel_clusters
+                    )
+                    if parallel_clusters:
+                        success = self._execute_step(app, step, cluster)
+                    else:
+                        # Cluster workers may run concurrently for other steps;
+                        # serialize this step across clusters when requested.
+                        with self._step_cluster_locks[(app.name, step.name)]:
+                            success = self._execute_step(app, step, cluster)
                 except CampaignCancelledError:
                     raise
                 except StepExecutionError:
