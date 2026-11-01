@@ -16,7 +16,9 @@ from sbatchman.core.variables import extract_used_vars, substitute, load_variabl
 from sbatchman.core.config_manager import load_local_config, create_configs_from_file, create_configs_from_data
 from sbatchman.core.job import Job, Status
 from sbatchman.core.status import TERMINAL_STATES
-from sbatchman.core.jobs_manager import job_exists, find_existing_job, count_active_jobs
+from sbatchman.core.jobs_manager import (
+  job_exists, find_existing_job, count_active_jobs, delete_existing_terminal_job,
+)
 from sbatchman.exceptions import ConfigurationError, ClusterNameNotSetError, ConfigurationNotFoundError, JobExistsError, JobSubmitError, SbatchManError
 from sbatchman.config.global_config import get_cluster_name, get_max_queued_jobs
 from sbatchman.config.project_config import get_project_config_dir, get_project_root, get_scheduler_from_cluster_and_config_name
@@ -295,7 +297,9 @@ def launch_job(
   if not dry_run:
     wait_for_queue_slot(max_queued_jobs)
     
-  if not force:
+  # Campaign reruns must still inspect duplicates when `force` was requested:
+  # active matches are adopted, and failed terminal matches are cleaned first.
+  if not force or rerun_non_completed:
     existing_job, where = find_existing_job(
       command,
       config_name,
@@ -313,7 +317,20 @@ def launch_job(
       and existing_status in TERMINAL_STATES
       and existing_status != Status.COMPLETED.value
     )
-    if existing_job is not None and not can_rerun_terminal:
+    if can_rerun_terminal:
+      # Recheck the exact project record before deleting it. If it became
+      # queued/running since duplicate detection, leave it in place and adopt it.
+      deleted = delete_existing_terminal_job(
+        existing_job, where, ignore_conf_in_dup_check=ignore_conf_in_dup_check
+      )
+      if not deleted:
+        can_rerun_terminal = False
+    should_keep_existing = (
+      existing_job is not None
+      and not can_rerun_terminal
+      and (not force or (rerun_non_completed and existing_status != Status.COMPLETED.value))
+    )
+    if should_keep_existing:
       raise JobExistsError(
         f"An identical job already exists{'' if where == 'active' else '(in some archive)'} for config '{config_name}'{'(ignored)'if ignore_conf_in_dup_check else ''} with tag '{tag}'. " +
         ("\nUse '--force' to submit it anyway." if where == 'active' else "\nUse '--ignore-archived or -ia' to ignore archived jobs."),
@@ -545,7 +562,8 @@ def launch_jobs_from_file(
     filter_variables: If provided, only launch jobs where variables match all key=value pairs.
     return_details: Return a LaunchResult with submitted and duplicate-skipped job details.
     rerun_non_completed: Submit a new job when an otherwise matching existing job
-      is not COMPLETED; completed matches remain duplicate skips.
+      is terminal and not COMPLETED. The exact old job directory is deleted
+      first; queued/running jobs are kept as duplicates for the caller to adopt.
     launch_summary: Optional mutable mapping populated with candidate, filtered,
       duplicate, and submitted counts and duplicate job records.
   Returns:

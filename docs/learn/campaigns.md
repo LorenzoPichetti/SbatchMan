@@ -40,7 +40,7 @@ Applications and steps remain ordered within each cluster. By default clusters a
 - **Parallel clusters are independent flows.** Apps and steps keep their configured order within each cluster, but output and events from clusters may interleave. A failure stops that cluster's flow; other cluster workers may continue their work. Shared application project setup is serialized across clusters to avoid simultaneous config writes.
 - **A campaign step waits for its submitted batch.** Jobs launched by a jobs step are polled until terminal status or the polling time limit. A campaign Stop does not cancel that batch. Jobs discovered outside the batch being monitored are reported for review rather than added to it.
 - **Job-step duration comes from job runtimes.** Concurrent batches use the longest recorded job runtime; jobs marked `sequential: true` use the sum. Queue wait and campaign setup time are excluded. Script-only steps continue to use elapsed wall time.
-- **Resume reuses completed steps selectively.** A step is reused only if its definition and referenced config/job inputs still match and all its recorded jobs are `COMPLETED`. Jobs in any other state, including cancelled jobs, are submitted again. A changed step runs again, while later completed steps can still be reused if their own definitions match; rerun downstream work when it depends on changed outputs.
+- **Resume reuses completed steps selectively.** A step is reused only if its definition and referenced config/job inputs still match and all its recorded jobs are `COMPLETED` in the live project. Failed, cancelled, timed out, or otherwise terminal non-completed matches are selectively deleted from the project before a replacement is submitted. Queued and running matches are kept and adopted, including if their state changes while the retry is being prepared. A changed step runs again, while later completed steps can still be reused if their own definitions match; rerun downstream work when it depends on changed outputs.
 
 ## Batch arguments
 
@@ -68,7 +68,7 @@ campaign_results/
 └── SbatchMan/
 ```
 
-Each application project is shared across that application's selected clusters. Campaign job commands run with the application directory as their working directory, and `SBATCHMAN_WD` points there. Use normal SbatchMan commands in `<application-dir>/SbatchMan` to inspect jobs and output. The journal is checkpointed as the campaign progresses and records step definitions, attempts, job IDs, statuses, and manual resolutions.
+Each application project is shared across that application's selected clusters. Campaign job commands run with the application directory as their working directory, and `SBATCHMAN_WD` points there. Use normal SbatchMan commands in `<application-dir>/SbatchMan` to inspect jobs and output. The journal is checkpointed as the campaign progresses and records step definitions, job identities, attempts, and manual resolutions. It does not store job status or runtime snapshots; those are fetched from the application project whenever shown or used for decisions, so manual job changes are reflected.
 
 Export a journal and all of its application projects together:
 
@@ -82,7 +82,7 @@ The TUI monitors step and job progress and offers Retry, Continue, Skip, and Sto
 
 ## Resume, edits, and partial runs
 
-Resume a prior run from the TUI history. Resume and failed-app reruns update the selected journal in place, keeping the same campaign ID and history entry. Completed steps are reused only when their step definition and referenced application config/job files still match and every recorded job is `COMPLETED`; jobs in other states are submitted again. Changed or new steps run again; removed steps are omitted. Editing the YAML while a campaign is running does not change that in-memory run. Resume after editing to apply the new definition. Keep in mind that changing an earlier step may require rerunning later steps whose output depends on it.
+Resume a prior run from the TUI history. Resume and failed-app reruns update the selected journal in place, keeping the same campaign ID and history entry. Completed steps are reused only when their step definition and referenced application config/job files still match and the corresponding jobs are `COMPLETED` in the live project. Terminal non-completed matches are deleted before replacement jobs are submitted; queued or running matches are adopted. Changed or new steps run again; removed steps are omitted. Editing the YAML while a campaign is running does not change that in-memory run. Resume after editing to apply the new definition. Keep in mind that changing an earlier step may require rerunning later steps whose output depends on it.
 
 The CLI can run only selected applications or steps:
 

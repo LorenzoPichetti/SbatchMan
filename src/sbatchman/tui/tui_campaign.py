@@ -77,6 +77,7 @@ from sbatchman.core.campaign import (
     run_campaign,
     run_campaign_with_existing_log,
 )
+from sbatchman.core.status import TERMINAL_STATES
 from sbatchman.tui.jobs_screen import JobsScreen
 
 
@@ -158,7 +159,7 @@ def step_detail_text(view: StepView) -> Text:
 _ACTIVE_JOB_STATUSES = {"RUNNING", "PENDING", "QUEUED", "CONFIGURING", "SUBMITTED"}
 _JOB_STATUS_ORDER = (
     "RUNNING", "PENDING", "QUEUED", "CONFIGURING", "SUBMITTED", "COMPLETED",
-    "FAILED", "TIMEOUT", "CANCELLED", "FAILED_SUBMISSION", "MISSING", "UNKNOWN",
+    "FAILED", "TIMEOUT", "CANCELLED", "CHECK_FAIL", "FAILED_SUBMISSION", "MISSING", "UNKNOWN",
 )
 
 
@@ -185,6 +186,12 @@ def format_status_counts(counts: Dict[str, int]) -> str:
     ordered = [status for status in _JOB_STATUS_ORDER if status in counts]
     ordered.extend(sorted(set(counts) - set(ordered)))
     return " | ".join(f"{status.lower()} {counts[status]}" for status in ordered)
+
+
+def format_job_status_summary(counts: Dict[str, int]) -> str:
+    total = sum(counts.values())
+    finished = sum(count for status, count in counts.items() if status in TERMINAL_STATES)
+    return f"{finished}/{total} finished | {format_status_counts(counts)}"
 
 
 def open_step_jobs(app: App, view: Optional[StepView]) -> None:
@@ -858,18 +865,17 @@ class RunScreen(Screen):
 
             elif event.type == EventType.STEP_PROGRESS:
                 terminal = data.get("completed", 0)
-                succeeded = data.get("succeeded", 0)
                 total = data.get("total", 0) or 1
                 status_counts = data.get("status_counts") or count_job_statuses(data.get("jobs", []))
                 self.query_one("#progress_label", Static).update(
                     rich_escape(f"Following jobs for {data.get('app')}/{data.get('step')} on "
-                                f"{data.get('cluster')}: {terminal}/{total} terminal, "
-                                f"{succeeded} completed | {format_status_counts(status_counts)}")
+                                f"{data.get('cluster')}: "
+                                f"{format_job_status_summary(status_counts)}")
                 )
                 self.query_one("#job_progress", ProgressBar).update(total=total, progress=terminal)
                 key = self._row_key(data)
                 self._ensure_row(key, data, status="running")
-                self.rows[key]["jobs"] = format_status_counts(status_counts)
+                self.rows[key]["jobs"] = format_job_status_summary(status_counts)
                 self.rows[key]["job_records"] = data.get("jobs", [])
                 if data.get("duration") is not None:
                     self.rows[key]["duration"] = f"{data['duration']:.1f}s"
@@ -887,7 +893,20 @@ class RunScreen(Screen):
                     row["jobs"] = f"{len(row['job_records'])} planned"
                 elif "jobs_count" in data:
                     counts = data.get("jobs_status_counts") or count_job_statuses(row["job_records"])
-                    row["jobs"] = format_status_counts(counts)
+                    row["jobs"] = format_job_status_summary(counts)
+                if data.get("reused"):
+                    title = (
+                        f"Reusing completed project jobs for {data.get('app')}/{data.get('step')} "
+                        f"on {data.get('cluster')}:"
+                    )
+                    log.write(Text(title, style="bold green"))
+                    for job in row["job_records"]:
+                        details = f"  {job.get('config')} / {job.get('tag')}"
+                        if job.get("job_id") is not None:
+                            details += f" | ID {job['job_id']}"
+                        if job.get("exp_dir"):
+                            details += f" | {job['exp_dir']}"
+                        log.write(Text(f"{details} [{job.get('status', 'UNKNOWN')}]", style="green"))
                 table_dirty = True
 
             elif event.type == EventType.STEP_NEEDS_ATTENTION:
@@ -899,12 +918,9 @@ class RunScreen(Screen):
                 log.write(Text(
                     f"Needs attention: {data.get('app')}/{data.get('step')} on {data.get('cluster')}\n"
                     f"{data.get('error', '')}", style="bold yellow"))
-                for job in data.get("jobs", []):
-                    if str(job.get("last_known_status", "")).upper() != "COMPLETED":
-                        log.write(Text(f"  {job.get('config')} / {job.get('tag')} "
-                                       f"[{job.get('last_known_status')}] ({job.get('exp_dir')})"))
-                log.write(Text("  If you fix these jobs by hand, the campaign notices and continues "
-                               "on its own; or choose Retry / Continue / Skip.", style="dim"))
+                log.write(Text("  Job status is read from the application project when you inspect or retry. "
+                               "If you fix jobs by hand, the campaign notices and continues; or choose "
+                               "Retry / Continue / Skip.", style="dim"))
 
             elif event.type == EventType.PAUSED:
                 self.query_one("#pause_btn", Button).label = "Resume"
@@ -929,7 +945,7 @@ class RunScreen(Screen):
                     row["job_records"] = step.get("jobs", [])
                     row["jobs"] = (
                         f"{len(row['job_records'])} planned" if self.dry_run
-                        else format_status_counts(
+                        else format_job_status_summary(
                             step.get("jobs_status_counts") or count_job_statuses(row["job_records"])
                         )
                     )

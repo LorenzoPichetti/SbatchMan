@@ -18,9 +18,8 @@ Core principles (journal v2)
 * A logical job is identified by ``(cluster, config, tag)``. Several SbatchMan
   jobs (attempts, manual re-runs, archived copies) may share that identity;
   the one with the latest ``queued_timestamp`` is the *current* one.
-* Status, runtime and exp_dir shown to users are always resolved live from the
-  project. Values stored in the journal (``last_known_status`` ...) are only
-  hints and are never displayed as if they were live.
+* Status and runtime are read from the project whenever they are displayed or
+  used for decisions. They are not cached in the campaign journal.
 * Anything the user does by hand is valid: jobs already completed are adopted
   (never re-run), running jobs are followed, cancelled/failed jobs are re-run.
 """
@@ -237,9 +236,8 @@ class StepExecutionLog:
     """Log entry for single step execution on single cluster.
 
     ``jobs`` holds ONE record per logical job (cluster, config, tag). A record
-    carries identity (cluster/config/tag/command/scheduler) and hints
-    (exp_dir/job_id/archive_name/last_known_status/runtime_seconds). Hints may
-    be outdated; consumers must resolve the live job through its identity.
+    carries job identity and submission metadata. Live status and runtime are
+    always resolved from the application project through that identity.
     """
 
     status: str  # pending | running | completed | failed | skipped | cancelled
@@ -929,10 +927,12 @@ def _status_str(value: Any) -> str:
 
 
 def count_job_statuses(records: Iterable[Dict[str, Any]]) -> Dict[str, int]:
-    """Count job records by their latest known status."""
+    """Count explicit status values supplied by a fresh project read."""
     counts: Dict[str, int] = {}
     for record in records:
-        status = _status_str(record.get("last_known_status") or record.get("status"))
+        if record.get("status") is None:
+            continue
+        status = _status_str(record["status"])
         counts[status] = counts.get(status, 0) + 1
     return counts
 
@@ -1070,7 +1070,6 @@ class JobView:
     runtime_seconds: Optional[float] = None
     command: Optional[str] = None
     resolved: bool = False
-    last_known_status: Optional[str] = None
 
 
 @dataclass
@@ -1136,7 +1135,6 @@ def build_step_view(
             runtime_seconds=live.get_run_time() if live is not None else None,
             command=live.command if live is not None else rec.get("command"),
             resolved=live is not None,
-            last_known_status=rec.get("last_known_status") or rec.get("status"),
         ))
 
     if sequential is None:
@@ -1161,7 +1159,7 @@ def build_step_view(
     if has_jobs:
         done, total = sum(j.status == "COMPLETED" for j in jobs), len(jobs)
     else:
-        done, total = int(record.get("jobs_successful", 0) or 0), int(record.get("jobs_count", 0) or 0)
+        done, total = 0, 0
 
     duration = float(record.get("duration_seconds", 0) or 0)
     if complete and has_jobs and all(j.runtime_seconds is not None for j in jobs):
@@ -1351,10 +1349,32 @@ def execution_state_to_dict(state: ExecutionState) -> dict:
     for app_name, app_steps in state.execution.items():
         log_data["execution"][app_name] = {"steps": {}}
         for step_name, step_logs in app_steps.items():
-            log_data["execution"][app_name]["steps"][step_name] = {
-                cluster: asdict(log) for cluster, log in step_logs.items()
-            }
+            serialized_logs = {}
+            for cluster, log in step_logs.items():
+                serialized = asdict(log)
+                # Job status and runtime are live project data. Do not persist
+                # poll snapshots or aggregates in the campaign journal.
+                serialized.pop("jobs_successful", None)
+                serialized.pop("jobs_failed", None)
+                _strip_cached_job_state(serialized)
+                serialized_logs[cluster] = serialized
+            log_data["execution"][app_name]["steps"][step_name] = serialized_logs
     return log_data
+
+
+def _strip_cached_job_state(record: Dict[str, Any]) -> None:
+    for job in record.get("jobs") or []:
+        job.pop("last_known_status", None)
+        job.pop("runtime_seconds", None)
+        # Only dry-run status describes a plan; every other status is live.
+        if str(job.get("status", "")).upper() != "DRY RUN":
+            job.pop("status", None)
+    for attempt in record.get("job_attempts") or []:
+        for job in attempt.get("jobs") or []:
+            job.pop("last_known_status", None)
+            job.pop("runtime_seconds", None)
+            if str(job.get("status", "")).upper() != "DRY RUN":
+                job.pop("status", None)
 
 
 def recover_execution_state(log_file: Path) -> Optional[ExecutionState]:
@@ -1387,6 +1407,10 @@ def recover_execution_state(log_file: Path) -> Optional[ExecutionState]:
             for step_name, step_data in app_data.get("steps", {}).items():
                 state.execution[app_name][step_name] = {}
                 for cluster_name, log_data in step_data.items():
+                    log_data = dict(log_data)
+                    log_data.pop("jobs_successful", None)
+                    log_data.pop("jobs_failed", None)
+                    _strip_cached_job_state(log_data)
                     state.execution[app_name][step_name][cluster_name] = StepExecutionLog(
                         **{k: v for k, v in log_data.items() if k in known}
                     )
@@ -1497,10 +1521,8 @@ def is_step_completed(
 
 
 def _has_non_completed_jobs(jobs: List[Dict[str, Any]], snapshot: Optional[ProjectSnapshot] = None) -> bool:
-    """Whether any recorded job is not COMPLETED (live when a snapshot is given)."""
-    if snapshot is not None:
-        return any(current_recorded_job_status(j, snapshot=snapshot) != "COMPLETED" for j in jobs)
-    return any(str(j.get("last_known_status") or j.get("status", "")).upper() != "COMPLETED" for j in jobs)
+    """Whether any recorded job is not COMPLETED in the current project snapshot."""
+    return any(current_recorded_job_status(j, snapshot=snapshot) != "COMPLETED" for j in jobs)
 
 
 def get_failed_apps(state: ExecutionState) -> List[str]:
@@ -1509,17 +1531,16 @@ def get_failed_apps(state: ExecutionState) -> List[str]:
 
 
 def build_status_rows(state: ExecutionState) -> List[Dict[str, Any]]:
-    """Flatten an ExecutionState into row dicts (journal values, no live lookup)."""
+    """Flatten campaign steps with job status resolved from their projects."""
     rows: List[Dict[str, Any]] = []
-    for app_name, app_steps in state.execution.items():
-        for step_name, step_logs in app_steps.items():
-            for cluster, log in step_logs.items():
-                rows.append({
-                    "app": app_name, "step": step_name, "cluster": cluster,
-                    "status": log.status, "duration_seconds": log.duration_seconds,
-                    "jobs_count": log.jobs_count, "jobs_successful": log.jobs_successful,
-                    "jobs_failed": log.jobs_failed, "error_message": log.error_message,
-                })
+    for view in build_campaign_view(execution_state_to_dict(state)):
+        rows.append({
+            "app": view.app, "step": view.step, "cluster": view.cluster,
+            "status": view.status, "duration_seconds": view.duration_seconds,
+            "jobs_count": view.jobs_total, "jobs_successful": view.jobs_completed,
+            "jobs_failed": sum(job.status not in ("COMPLETED", "UNKNOWN") for job in view.jobs),
+            "error_message": view.error_message,
+        })
     return rows
 
 
@@ -1834,18 +1855,51 @@ class CampaignRunner:
     def _step_status_snapshot(self) -> List[Dict[str, Any]]:
         """Final per-cluster step data needed to reconcile the TUI."""
         with self._checkpoint_lock:
-            return [
+            steps = [
                 {
                     "app": app_name, "step": step_name, "cluster": cluster,
                     "status": log.status, "duration": log.duration_seconds,
                     "jobs": self._jobs_copy(log), "jobs_count": log.jobs_count,
-                    "jobs_successful": log.jobs_successful,
-                    "jobs_status_counts": count_job_statuses(log.jobs),
                 }
                 for app_name, app_steps in self.state.execution.items()
                 for step_name, cluster_logs in app_steps.items()
                 for cluster, log in cluster_logs.items()
             ]
+        for step in steps:
+            step["jobs_status_counts"] = self._live_job_status_counts(
+                step["app"], step["cluster"], step["jobs"]
+            )
+        return steps
+
+    def _live_job_status_counts(
+        self, app_name: str, cluster: str, jobs: List[Dict[str, Any]]
+    ) -> Dict[str, int]:
+        """Count statuses from the application's project, never journal hints."""
+        return count_job_statuses(self._live_job_records(app_name, cluster, jobs))
+
+    def _live_job_records(
+        self, app_name: str, cluster: str, jobs: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Resolve step job identities to current project records for display."""
+        unique_jobs = recorded_step_jobs({"jobs": jobs}, cluster)
+        if self.dry_run:
+            return unique_jobs
+        app = next((item for item in self.config.apps if item.name == app_name), None)
+        if app is None:
+            return [{**job, "status": "UNKNOWN"} for job in unique_jobs]
+        snapshot = load_project_snapshot(self._project_dir(app), cluster, update_scheduler=True)
+        records = []
+        for record in unique_jobs:
+            key = job_key(record, cluster)
+            live = None if snapshot.error else snapshot.jobs.get(key)
+            resolved = {**record, "status": snapshot.status_of(key)}
+            if live is not None:
+                resolved.update(
+                    job_id=live.job_id, exp_dir=live.exp_dir,
+                    archive_name=live.archive_name, command=live.command,
+                )
+            records.append(resolved)
+        return records
 
     def _checkpoint(self) -> None:
         """Persist the current journal atomically so interruption loses little state."""
@@ -2218,13 +2272,20 @@ class CampaignRunner:
             ):
                 self.logger.warning(f"Step changed: {step.name} (definition or input files changed); rerunning")
             if previous_state and not force and self._step_up_to_date(app, cluster, previous_step_log, current_step_hash):
-                self.logger.info(f"Step unchanged: {step.name} (completed, all jobs COMPLETED; skipping)")
-                self._emit(EventType.STEP_SKIPPED, app=app.name, cluster=cluster, step=step.name,
-                           reason="already completed")
+                self.logger.info(
+                    f"Step unchanged: {step.name} (all matching project jobs are COMPLETED; reusing them)"
+                )
                 with self._checkpoint_lock:
-                    self.state.execution.setdefault(app.name, {}).setdefault(step.name, {})[cluster] = (
-                        copy.deepcopy(previous_state.execution[app.name][step.name][cluster])
-                    )
+                    reused_log = copy.deepcopy(previous_state.execution[app.name][step.name][cluster])
+                    self.state.execution.setdefault(app.name, {}).setdefault(step.name, {})[cluster] = reused_log
+                live_jobs = self._live_job_records(app.name, cluster, reused_log.jobs)
+                self._emit(
+                    EventType.STEP_END, app=app.name, cluster=cluster, step=step.name,
+                    status=StepStatus.COMPLETED.value, duration=reused_log.duration_seconds,
+                    jobs=live_jobs, jobs_count=len(live_jobs),
+                    jobs_status_counts=count_job_statuses(live_jobs),
+                    reused=True,
+                )
                 continue
 
             self.logger.info(f"Step: {step.name}")
@@ -2251,8 +2312,8 @@ class CampaignRunner:
                 self._emit(
                     EventType.STEP_END, app=app.name, cluster=cluster, step=step.name,
                     status=log.status, duration=log.duration_seconds, jobs=self._jobs_copy(log),
-                    jobs_count=log.jobs_count, jobs_successful=log.jobs_successful,
-                    jobs_failed=log.jobs_failed, jobs_status_counts=count_job_statuses(log.jobs),
+                    jobs_count=log.jobs_count,
+                    jobs_status_counts=self._live_job_status_counts(app.name, cluster, log.jobs),
                 )
                 if success:
                     break
@@ -2301,8 +2362,8 @@ class CampaignRunner:
                     self._emit(
                         EventType.STEP_END, app=app.name, cluster=cluster, step=step.name,
                         status=log.status, duration=log.duration_seconds, jobs=self._jobs_copy(log),
-                        jobs_count=log.jobs_count, jobs_successful=log.jobs_successful,
-                        jobs_failed=log.jobs_failed, jobs_status_counts=count_job_statuses(log.jobs),
+                        jobs_count=log.jobs_count,
+                        jobs_status_counts=self._live_job_status_counts(app.name, cluster, log.jobs),
                     )
                     break
 
@@ -2329,7 +2390,6 @@ class CampaignRunner:
             "command": job.command, "scheduler": job.scheduler,
             "job_id": job.job_id, "exp_dir": job.exp_dir, "archive_name": job.archive_name,
             "project_root": job.project_root,
-            "last_known_status": _status_str(job.status),
             "submitted": True,
         }
 
@@ -2343,28 +2403,10 @@ class CampaignRunner:
             "command": existing.get("command"), "scheduler": existing.get("scheduler"),
             "job_id": existing.get("job_id"), "exp_dir": existing.get("exp_dir"),
             "archive_name": existing.get("archive_name"), "project_root": existing.get("project_root"),
-            "last_known_status": _status_str(existing.get("status") or "DUPLICATE"),
             "submitted": False, "adopted": True,
             "skipped_reason": duplicate.get("reason"), "duplicate_source": duplicate.get("source"),
             "_queued": str(existing.get("queued_timestamp") or ""),
         }
-
-    def _refresh_records_from_snapshot(
-        self, records: List[Dict[str, Any]], snapshot: ProjectSnapshot, cluster: str
-    ) -> None:
-        """Refresh the hints in the journal records from the live project."""
-        if snapshot.error:
-            return
-        for rec in records:
-            live = snapshot.jobs.get(job_key(rec, cluster))
-            if live is None:
-                continue
-            rec["last_known_status"] = _status_str(live.status)
-            rec["job_id"], rec["exp_dir"] = live.job_id, live.exp_dir
-            rec["archive_name"], rec["project_root"] = live.archive_name, live.project_root
-            runtime = live.get_run_time()
-            if runtime is not None:
-                rec["runtime_seconds"] = runtime
 
     def _execute_step(self, app: AppConfig, step: StepConfig, cluster: str) -> bool:
         """Execute single step (script + jobs). Returns True if successful."""
@@ -2374,9 +2416,15 @@ class CampaignRunner:
 
         def step_duration() -> float:
             wall_duration = time.time() - start_time
-            runtimes = [
-                float(r["runtime_seconds"]) for r in log.jobs if r.get("runtime_seconds") is not None
-            ]
+            runtimes = []
+            if step.jobs and not self.dry_run and log.jobs:
+                snapshot = load_project_snapshot(self._project_dir(app), cluster)
+                if not snapshot.error:
+                    for record in recorded_step_jobs({"jobs": log.jobs}, cluster):
+                        live = snapshot.jobs.get(job_key(record, cluster))
+                        runtime = live.get_run_time() if live is not None else None
+                        if runtime is not None:
+                            runtimes.append(float(runtime))
             if step.jobs and not self.dry_run and runtimes:
                 return sum(runtimes) if jobs_sequential else max(runtimes)
             return wall_duration
@@ -2557,15 +2605,11 @@ class CampaignRunner:
                 jobs=self._jobs_copy(log), status_counts=status_counts, duration=step_duration(),
             )
 
-        def on_snapshot(snapshot: ProjectSnapshot, statuses: Dict[JobKey, str]) -> None:
-            self._refresh_records_from_snapshot(log.jobs, snapshot, cluster)
-            self._checkpoint()
-
         self.logger.info(f"Following {len(keys)} job(s) until completion")
         statuses = monitor_jobs(
             keys, self._project_dir(app), cluster,
             owned_exp_dirs=owned, logger=self.logger, control=self.control,
-            on_progress=on_progress, on_snapshot=on_snapshot,
+            on_progress=on_progress,
         )
 
         passed = sum(s == "COMPLETED" for s in statuses.values())
@@ -2684,13 +2728,19 @@ class CampaignRunner:
         for app_name, app_steps in log_data["execution"].items():
             for step_logs in app_steps["steps"].values():
                 for cluster, log in step_logs.items():
+                    live_counts = self._live_job_status_counts(
+                        app_name, cluster, log.get("jobs", [])
+                    )
+                    step_jobs_total = sum(live_counts.values())
+                    step_jobs_successful = live_counts.get("COMPLETED", 0)
+                    step_jobs_failed = step_jobs_total - step_jobs_successful - live_counts.get("UNKNOWN", 0)
                     total_steps += 1
                     bad = log["status"] in ("failed", "cancelled")
                     completed_steps += log["status"] == "completed"
                     failed_steps += bad
-                    total_jobs += log["jobs_count"]
-                    successful_jobs += log["jobs_successful"]
-                    failed_jobs += log["jobs_failed"]
+                    total_jobs += step_jobs_total
+                    successful_jobs += step_jobs_successful
+                    failed_jobs += step_jobs_failed
                     stats = summary_by_cluster.setdefault(cluster, {}).setdefault(app_name, {
                         "steps_count": 0, "steps_completed": 0, "steps_failed": 0,
                         "jobs_total": 0, "jobs_successful": 0, "jobs_failed": 0,
@@ -2698,9 +2748,9 @@ class CampaignRunner:
                     stats["steps_count"] += 1
                     stats["steps_completed"] += log["status"] == "completed"
                     stats["steps_failed"] += bad
-                    stats["jobs_total"] += log["jobs_count"]
-                    stats["jobs_successful"] += log["jobs_successful"]
-                    stats["jobs_failed"] += log["jobs_failed"]
+                    stats["jobs_total"] += step_jobs_total
+                    stats["jobs_successful"] += step_jobs_successful
+                    stats["jobs_failed"] += step_jobs_failed
 
         self.logger.info("")
         self.logger.info("Execution summary")

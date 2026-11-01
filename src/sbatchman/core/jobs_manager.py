@@ -778,6 +778,73 @@ def delete_jobs(
 
   return len(jobs_to_delete)
 
+
+def delete_terminal_job(job: Job) -> bool:
+  """Delete one exact job directory if its current metadata is terminal and non-completed."""
+  status = str(getattr(job.status, "value", job.status)).upper()
+  if status not in TERMINAL_STATES or status == Status.COMPLETED.value:
+    return False
+
+  if job.archive_name:
+    root = get_archive_dir().resolve()
+    target = (root / job.archive_name / job.exp_dir).resolve()
+  else:
+    root = get_experiments_dir().resolve()
+    target = (root / job.exp_dir).resolve()
+  if root not in target.parents:
+    return False
+  if not target.is_dir():
+    return False
+
+  # Re-read metadata at the deletion point so a queued/running update since
+  # jobs_list() cannot be removed using the earlier Job object.
+  try:
+    with (target / "metadata.yaml").open("r") as metadata_file:
+      latest = yaml.safe_load(metadata_file) or {}
+  except OSError:
+    return False
+  latest_status = str(latest.get("status", "")).upper()
+  if latest_status not in TERMINAL_STATES or latest_status == Status.COMPLETED.value:
+    return False
+
+  shutil.rmtree(target)
+  parent = target.parent
+  while parent.is_dir() and not any(parent.iterdir()) and parent != root:
+    shutil.rmtree(parent)
+    parent = parent.parent
+  return True
+
+
+def delete_existing_terminal_job(
+  existing_job: Dict[str, Any],
+  source: str,
+  ignore_conf_in_dup_check: bool = False,
+) -> bool:
+  """Refresh and selectively delete the exact failed/cancelled duplicate.
+
+  Returns False if it has become completed, queued, running, or otherwise
+  non-terminal since duplicate detection, so the caller can adopt it instead.
+  """
+  cluster = existing_job.get("cluster_name")
+  tag = existing_job.get("tag")
+  jobs = jobs_list(
+    cluster_name=cluster,
+    config_name=None if ignore_conf_in_dup_check else existing_job.get("config_name"),
+    tag=tag,
+    archive_name=existing_job.get("archive_name") if source == "archive" else None,
+    from_active=source == "active",
+    from_archived=source == "archive",
+    update_jobs=True,
+  )
+  current = next(
+    (job for job in jobs if str(job.exp_dir) == str(existing_job.get("exp_dir"))),
+    None,
+  )
+  # It was removed externally after duplicate detection; a fresh submission is safe.
+  if current is None:
+    return True
+  return delete_terminal_job(current)
+
 def _update_single_job_status(job: Job) -> bool:
     """
     Helper function to update a single job's status.
