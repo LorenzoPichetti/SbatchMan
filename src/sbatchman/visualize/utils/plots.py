@@ -1,5 +1,6 @@
 """Built-in plot types + plugin loader. A plot fn is fn(df_data, config) -> [plotly trace dicts]."""
 import importlib.util
+import numbers
 from pathlib import Path
 from typing import List, Optional
 from .core import log
@@ -41,6 +42,16 @@ def _drop_unplottable(rows, ci, col, is_log):
     return [r for r in rows if r[ci[col]] is not None and r[ci[col]] > 0]
 
 
+def _line_x_sort_key(row, x_index):
+    """Sort line points by x, handling nulls and mixed SQLite value types."""
+    value = row[x_index]
+    if value is None:
+        return (2, "")
+    if isinstance(value, numbers.Number):
+        return (0, value)
+    return (1, str(value))
+
+
 def _ys(cfg):
     ys = cfg.get("y", [])
     return [ys] if isinstance(ys, str) else list(ys)
@@ -77,6 +88,10 @@ def _xy(df, cfg, kind):
         y_scale = cfg.get("y2_scale", "linear") if y in y2_cols else cfg.get("y_scale")
         y_log = y_scale in ("log", "log2")
         pts = _drop_unplottable(_drop_unplottable(gr, ci, x, lx), ci, y, y_log)
+        if kind == "line":
+            # Keep each series' x, y, marker, and error values aligned while
+            # ensuring connected line segments run in ascending x order.
+            pts = sorted(pts, key=lambda row: _line_x_sort_key(row, ci[x]))
         name = f"{label} — {y}" if (label and len(ys) > 1) else (label or y)
         xs, yv = [r[ci[x]] for r in pts], [r[ci[y]] for r in pts]
         # "_ycol" records which data column this trace's y-values came from,

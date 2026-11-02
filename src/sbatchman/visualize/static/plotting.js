@@ -169,6 +169,18 @@ export async function runGridPlot(tabId) {
   const missing = panels.findIndex(p => !p.database || !p.sql);
   if (missing !== -1) { setStatus(tabId, `Panel ${missing + 1}: set a database and SQL query`, 'err'); return; }
 
+  // Faceting expands one source panel into several rendered panels on the
+  // server, so there may be more previews than request payloads. Each
+  // generated preview still exports the source query that produced it.
+  const previewExportPayload = index => {
+    const panel = panels[index] || panels[0];
+    return panel && {
+      database: panel.database,
+      sql: panel.sql,
+      transform_script: panel.transform_script,
+    };
+  };
+
   setStatus(tabId, 'Running…', '');
   document.getElementById('btn-run').disabled = true;
   try {
@@ -189,7 +201,7 @@ export async function runGridPlot(tabId) {
       tab.state.plotted = true;
       setStatus(tabId, `OK — ${res.panel_count || panels.length} panel(s), Matplotlib rendered`, 'ok');
       clientLog(`Matplotlib grid rendered: "${tab.label}" — ${res.panel_count || panels.length} panel(s)`);
-      const labeled = (res.previews || []).map((df, i) => ({ label: `Panel ${i + 1}`, df, exportPayload: {database: panels[i].database, sql: panels[i].sql, transform_script: panels[i].transform_script} }));
+      const labeled = (res.previews || []).map((df, i) => ({ label: `Panel ${i + 1}`, df, exportPayload: previewExportPayload(i) }));
       const preview = document.getElementById(`preview-${tabId}`);
       deferDataPreview(preview, () => renderMultiPreview(preview, labeled));
       return;
@@ -220,7 +232,7 @@ export async function runGridPlot(tabId) {
     setStatus(tabId, `OK — ${panelCount} panel(s), ${res.traces.length} trace(s) total`, 'ok');
     clientLog(`Grid figure rendered: "${tab.label}" — ${panelCount} panel(s)`);
 
-    const labeled = (res.previews || []).map((df, i) => ({ label: `Panel ${i + 1}`, df, exportPayload: {database: panels[i].database, sql: panels[i].sql, transform_script: panels[i].transform_script} }));
+    const labeled = (res.previews || []).map((df, i) => ({ label: `Panel ${i + 1}`, df, exportPayload: previewExportPayload(i) }));
     const preview = document.getElementById(`preview-${tabId}`);
     deferDataPreview(preview, () => renderMultiPreview(preview, labeled));
   } catch (e) {
