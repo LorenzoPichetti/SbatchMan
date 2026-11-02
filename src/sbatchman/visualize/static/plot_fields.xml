@@ -8,5 +8,12 @@
       required="true"
       help="Numeric column used to determine each cell's color."
     />
+    <field
+      name="z_label"
+      label="Z axis label"
+      type="text"
+      placeholder="Color scale label"
+      help="Label shown beside the heatmap color scale."
+    />
   </plot>
 </plot-fields>

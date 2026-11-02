@@ -1,5 +1,6 @@
 """Built-in plot types + plugin loader. A plot fn is fn(df_data, config) -> [plotly trace dicts]."""
 import importlib.util
+import math
 import numbers
 from pathlib import Path
 from typing import List, Optional
@@ -190,8 +191,26 @@ def plot_heatmap(df, cfg):
     xs = sorted({r[ci[x]] for r in rows}); ys = sorted({r[ci[y]] for r in rows})
     xi, yi = {v: i for i, v in enumerate(xs)}, {v: i for i, v in enumerate(ys)}
     mat = [[None] * len(xs) for _ in ys]
-    for r in rows: mat[yi[r[ci[y]]]][xi[r[ci[x]]]] = r[ci[z]]
-    return [{"type": "heatmap", "x": xs, "y": ys, "z": mat, "colorscale": "Viridis"}]
+    for r in rows:
+        value = r[ci[z]]
+        if value is None or (isinstance(value, str) and value.strip().lower() in ("", "na", "n/a", "nan", "null")):
+            value = None
+        else:
+            try:
+                value = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Heatmap z column '{z}' must contain numbers or missing values; "
+                    f"found {value!r} at x={r[ci[x]]!r}, y={r[ci[y]]!r}."
+                ) from exc
+            if math.isnan(value):
+                value = None
+        mat[yi[r[ci[y]]]][xi[r[ci[x]]]] = value
+    trace = {"type": "heatmap", "x": xs, "y": ys, "z": mat, "colorscale": "Viridis"}
+    z_label = str(cfg.get("z_label") or "").strip()
+    if z_label:
+        trace["colorbar"] = {"title": {"text": z_label}}
+    return [trace]
 
 
 @register_plot("pie", "Pie / Donut", "Proportional breakdown", {"hole": 0})

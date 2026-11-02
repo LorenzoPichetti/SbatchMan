@@ -219,10 +219,19 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
             axis.set_xticks(range(1, len(labels) + 1), labels)
             handle = artists["bodies"][0] if artists["bodies"] else None
     elif kind == "heatmap":
-        image = axis.imshow(trace.get("z", []), aspect="auto", cmap="viridis", origin="lower")
+        # Heatmap gaps arrive as None from SQL NULL/NA values. Convert to a
+        # numeric masked array so Matplotlib leaves those cells blank instead
+        # of receiving an object-dtype matrix.
+        values = np.asarray(trace.get("z", []), dtype=float)
+        masked_values = np.ma.masked_invalid(values)
+        if masked_values.count():
+            image = axis.imshow(masked_values, aspect="auto", cmap="viridis", origin="lower")
+            colorbar = axis.figure.colorbar(image, ax=axis)
+            z_label = str(trace.get("colorbar", {}).get("title", {}).get("text") or "").strip()
+            if z_label:
+                colorbar.set_label(z_label)
         axis.set_xticks(range(len(trace.get("x", []))), [str(v) for v in trace.get("x", [])])
         axis.set_yticks(range(len(trace.get("y", []))), [str(v) for v in trace.get("y", [])])
-        axis.figure.colorbar(image, ax=axis)
     elif kind == "pie":
         wedges, _ = axis.pie(trace.get("values", []), labels=trace.get("labels", []),
                              colors=style.get("palette", styles.OKABE_ITO),
@@ -493,8 +502,13 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
                     color_map[color_key] = colors[len(color_map) % len(colors)]
                 if not style.get("recolor", True):
                     color_map[color_key] = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color") or colors[0]
-                result = _draw_trace(ax, right_ax, t, config, style, color_map[color_key],
-                                     bar_indexes.get(id(t), 0), len(bar_traces) or 1)
+                try:
+                    result = _draw_trace(ax, right_ax, t, config, style, color_map[color_key],
+                                         bar_indexes.get(id(t), 0), len(bar_traces) or 1)
+                except Exception as exc:
+                    title = str(config.get("title") or "").strip()
+                    panel_name = f" ({title})" if title else ""
+                    raise ValueError(f"Grid panel {i + 1}{panel_name}: {exc}") from exc
                 if result:
                     handles.append(result)
                     if name not in {n for _, n in all_handles}:

@@ -22,8 +22,11 @@ def _clean_paths(paths):
         raw = raw.strip()
         if not raw:
             continue
+        # Keep relative paths relative in the saved config and API response.
+        # Python resolves relative sys.path entries from the server process'
+        # current working directory, which is the directory it was started in.
         expanded = os.path.expandvars(os.path.expanduser(raw))
-        normalized = str(Path(expanded).resolve())
+        normalized = os.path.normpath(expanded)
         if normalized not in seen:
             cleaned.append(normalized)
             seen.add(normalized)
@@ -69,8 +72,12 @@ def add_script_paths_to_sys_path():
             pass
     existing = {str(Path(p or ".").resolve()) for p in sys.path}
     for path in paths:
-        if path not in existing:
+        # Compare using the server's startup/current directory so an
+        # equivalent absolute entry is not duplicated, but append the
+        # configured spelling to preserve relative-path behavior.
+        resolved = str(Path(path).resolve())
+        if resolved not in existing:
             sys.path.append(path)
-            existing.add(path)
+            existing.add(resolved)
             _MANAGED_SCRIPT_PATHS.add(path)
     _MANAGED_SCRIPT_PATHS.intersection_update(wanted)
