@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import base64
 
 from sbatchman.core.job import Job
 
@@ -197,9 +198,15 @@ class LogScreen(Screen):
     if copied:
       self.notify(f"Copied {self.focused_log.upper()} path: {path}")
     else:
-      # OSC 52 is the only clipboard route available to a remote TUI. The
-      # terminal may reject it, so don't claim success unconditionally.
-      self.app.copy_to_clipboard(text)
+      # OSC 52 is the clipboard route from a remote TUI to the local terminal.
+      # tmux filters OSC sequences by default; wrap it in tmux's passthrough
+      # envelope so terminals that support OSC 52 can receive it.
+      if os.environ.get("TMUX") and self.app._driver is not None:
+        encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
+        osc52 = f"\x1b]52;c;{encoded}\x07"
+        self.app._driver.write(f"\x1bPtmux;{osc52.replace(chr(27), chr(27) * 2)}\x1b\\")
+      else:
+        self.app.copy_to_clipboard(text)
       self.notify(f"Sent {self.focused_log.upper()} path to terminal clipboard: {path}")
 
   def on_mouse_down(self, event: MouseDown) -> None:
