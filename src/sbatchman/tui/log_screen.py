@@ -5,6 +5,10 @@ from textual.binding import Binding
 from textual.screen import Screen
 from textual.events import MouseDown
 from textual.message import Message
+import os
+import shutil
+import subprocess
+import sys
 
 from sbatchman.core.job import Job
 
@@ -168,8 +172,35 @@ class LogScreen(Screen):
   def action_copy_path(self) -> None:
     """Copy the full path of the currently focused log file."""
     path = (self._log_paths()[0 if self.focused_log == "stdout" else 1]).resolve()
-    self.app.copy_to_clipboard(str(path))
-    self.notify(f"Copied {self.focused_log.upper()} path: {path}")
+    text = str(path)
+
+    # Textual's OSC 52 clipboard request works through many terminal emulators,
+    # but some terminals disable it. Prefer the local desktop clipboard when
+    # this process is running in a graphical session. Over SSH, keep using OSC
+    # 52 so the remote machine doesn't receive the clipboard contents instead.
+    copied = False
+    if not (os.environ.get("SSH_TTY") or os.environ.get("SSH_CLIENT") or os.environ.get("SSH_CONNECTION")):
+      clipboard_commands = {
+        "darwin": [["pbcopy"]],
+        "win32": [["clip"]],
+        "linux": [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]],
+      }
+      for command in clipboard_commands.get(sys.platform, []):
+        if shutil.which(command[0]):
+          try:
+            subprocess.run(command, input=text, text=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            copied = True
+            break
+          except (OSError, subprocess.CalledProcessError):
+            continue
+
+    if copied:
+      self.notify(f"Copied {self.focused_log.upper()} path: {path}")
+    else:
+      # OSC 52 is the only clipboard route available to a remote TUI. The
+      # terminal may reject it, so don't claim success unconditionally.
+      self.app.copy_to_clipboard(text)
+      self.notify(f"Sent {self.focused_log.upper()} path to terminal clipboard: {path}")
 
   def on_mouse_down(self, event: MouseDown) -> None:
     # FIXME doesn't work...
