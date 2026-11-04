@@ -2,6 +2,8 @@ import re
 import shutil
 import subprocess
 import datetime
+import hashlib
+import json
 import itertools
 import time
 import yaml
@@ -30,6 +32,60 @@ from sbatchman.schedulers.slurm import slurm_submit
 console = Console(width=shutil.get_terminal_size().columns)
 
 DEFAULT_QUEUE_WAIT_INTERVAL = 30  # seconds to wait between queue checks
+
+
+def _config_source_fingerprint(config_file: Path) -> str:
+  """Fingerprint a config source and the variable files it includes."""
+  digest = hashlib.sha256()
+  config_file = config_file.resolve()
+  digest.update(str(config_file).encode())
+  digest.update(config_file.read_bytes())
+  try:
+    data = yaml.safe_load(config_file.read_text()) or {}
+  except yaml.YAMLError:
+    # Let create_configs_from_file provide the normal, user-facing YAML error.
+    return digest.hexdigest()
+  variable_files = data.get("include_variables") if isinstance(data, dict) else None
+  if isinstance(variable_files, str):
+    variable_files = [variable_files]
+  variable_values = [(data.get("variables", {}), config_file.parent)] if isinstance(data, dict) else []
+  if isinstance(variable_files, list):
+    for variable_file in variable_files:
+      path = Path(variable_file)
+      if not path.is_absolute():
+        path = config_file.parent / path
+      path = path.resolve()
+      digest.update(str(path).encode())
+      try:
+        content = path.read_bytes()
+        digest.update(content)
+        included = yaml.safe_load(content) or {}
+        if isinstance(included, dict):
+          variable_values.append((included, path.parent))
+      except OSError:
+        # Preserve the regular missing-file error from config generation.
+        digest.update(b"<missing>")
+  referenced_paths = set()
+  for variables, base_dir in variable_values:
+    if not isinstance(variables, dict):
+      continue
+    for value in variables.values():
+      if not isinstance(value, str):
+        continue
+      path = Path(value)
+      if not path.is_absolute():
+        path = base_dir / path
+      if path.is_file():
+        referenced_paths.add(path.resolve())
+      elif path.is_dir():
+        referenced_paths.update(p.resolve() for p in path.iterdir() if p.is_file())
+  for path in sorted(referenced_paths):
+    digest.update(str(path).encode())
+    try:
+      digest.update(path.read_bytes())
+    except OSError:
+      digest.update(b"<missing>")
+  return digest.hexdigest()
 
 
 @dataclass
@@ -648,10 +704,31 @@ def launch_jobs_from_file(
       emit(f'[cyan]Loading configs from file[/cyan] {conf_file.resolve().absolute()}')
       if not Path(conf_file).exists():
         raise ConfigurationError(f'Configuration file {conf_file} does NOT exist')
+      source = conf_file.resolve()
+      cache_dir = get_project_config_dir() / ".source_cache"
+      cache_path = cache_dir / f"{hashlib.sha256(str(source).encode()).hexdigest()}.json"
+      fingerprint = _config_source_fingerprint(source)
+      cached_outputs = []
+      if cache_path.is_file():
+        try:
+          cached = json.loads(cache_path.read_text())
+          if cached.get("fingerprint") == fingerprint:
+            cached_outputs = cached.get("outputs", [])
+        except (OSError, ValueError):
+          cached_outputs = []
+      if cached_outputs and all(Path(path).is_file() for path in cached_outputs):
+        emit(f"✅ Configurations from '[bold cyan]{source}[/bold cyan]' are unchanged; reusing existing configurations.")
+        continue
       try:
-        for c in create_configs_from_file(conf_file, True):
+        created = create_configs_from_file(conf_file, True)
+        for c in created:
           emit(f"✅ Configuration '[bold cyan]{c.name}[/bold cyan]' saved to {c.template_path}")
         emit(f"✅ Configurations from '[bold cyan]{conf_file.resolve().absolute()}[/bold cyan]' loaded successfully.")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps({
+          "fingerprint": fingerprint,
+          "outputs": [str(c.template_path.resolve()) for c in created],
+        }))
       except SbatchManError as e:
         emit(f"[bold red]Error:[/bold red] {e}")
         if quiet:
