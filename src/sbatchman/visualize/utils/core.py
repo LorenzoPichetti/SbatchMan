@@ -1,5 +1,6 @@
 """Server log, user-script execution, initial-workspace autoload."""
 import json
+import inspect
 import math
 import sys
 from datetime import datetime
@@ -42,6 +43,15 @@ def add_zoom_inset(ax, zoom_region, inset_position=(0.6, 0.6, 0.3, 0.3),
         "edgecolor": "black", "linestyle": "dashed", "linewidth": 1,
     }
     zoom_ax_kwargs = zoom_ax_kwargs or {}
+    # Keep a full snapshot of the parent y-axis. The inset toolkit and
+    # annotation artists can trigger Matplotlib's axis callbacks, so restoring
+    # only the data limits is not enough when a custom locator/formatter is
+    # in use.
+    original_ylim = ax.get_ylim()
+    original_y_locator = ax.yaxis.get_major_locator()
+    original_y_formatter = ax.yaxis.get_major_formatter()
+    original_y_minor_locator = ax.yaxis.get_minor_locator()
+    original_y_minor_formatter = ax.yaxis.get_minor_formatter()
     axins = inset_axes(
         ax, width="100%", height="100%", bbox_to_anchor=inset_position,
         bbox_transform=ax.transAxes, loc="lower left", borderpad=0,
@@ -78,7 +88,24 @@ def add_zoom_inset(ax, zoom_region, inset_position=(0.6, 0.6, 0.3, 0.3),
             width = (x2 - x1) * rect_scaling
             height = (y2 - y1) * rect_scaling
             x, y = x_center - width / 2, y_center - height / 2
-        ax.add_patch(Rectangle((x, y), width, height, fill=False, **rect_kwargs))
+        # add_patch updates the parent axes' data limits from the rectangle,
+        # which can autoscale its y-axis and change the original tick marks.
+        # The rectangle is an annotation in existing data coordinates, so add
+        # it as an artist without changing those limits.
+        rect = Rectangle((x, y), width, height, fill=False,
+                         transform=ax.transData, **rect_kwargs)
+        ax.add_artist(rect)
+
+    # Reinstate the parent axis state after the inset has been fully built.
+    ax.yaxis.set_major_locator(original_y_locator)
+    ax.yaxis.set_major_formatter(original_y_formatter)
+    ax.yaxis.set_minor_locator(original_y_minor_locator)
+    ax.yaxis.set_minor_formatter(original_y_minor_formatter)
+    ax.set_ylim(original_ylim)
+    # set_ylim disables y autoscaling. Keep it disabled: re-enabling it here
+    # lets the subsequent figure draw recompute limits from stale data bounds,
+    # which can shift the main ticks toward the inset's zoom region.
+    ax.set_autoscaley_on(False)
     return axins
 
 
@@ -144,12 +171,30 @@ def run_layout_script_with_hooks(source, layout, config, log_fn, df_data=None, t
 
 
 def load_tick_formatter(source):
-    """Compile a user tick formatter, which must define format_tick(value, axis)."""
+    """Compile a user tick formatter, optionally accepting a tick index."""
     ns = _exec(source, "<tick_formatter>", {"math": math, "pd": pd})
     formatter = ns.get("format_tick")
     if not callable(formatter):
         raise ValueError("Custom tick formatter must define format_tick(value, axis).")
     return formatter
+
+
+def call_tick_formatter(formatter, value, axis, index):
+    """Call a formatter with its tick index when its signature accepts it."""
+    try:
+        parameters = inspect.signature(formatter).parameters.values()
+    except (TypeError, ValueError):
+        return formatter(value, axis)
+    positional = [parameter for parameter in parameters
+                  if parameter.kind in (parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD)]
+    if any(parameter.kind == parameter.VAR_POSITIONAL for parameter in parameters) or len(positional) >= 3:
+        return formatter(value, axis, index)
+    if any(parameter.name == "index" and parameter.kind == parameter.KEYWORD_ONLY
+           for parameter in parameters):
+        return formatter(value, axis, index=index)
+    if any(parameter.kind == parameter.VAR_KEYWORD for parameter in parameters):
+        return formatter(value, axis, index=index)
+    return formatter(value, axis)
 
 
 _WORKSPACE = None

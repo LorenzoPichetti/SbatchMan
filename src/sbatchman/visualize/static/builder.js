@@ -349,8 +349,8 @@ export function builderColumnsHTML(id) {
       <label style="margin-top:5px">Y tick format</label>
       <input type="text" id="y-tickfmt-${id}" placeholder=".2f">
       <label style="margin-top:7px" data-tip="Optional Python formatter. When set, it takes precedence over the X/Y tick format strings above.">Custom tick formatter (Python)</label>
-      <textarea id="tick-formatter-${id}" class="tick-formatter-editor code-editor python-editor" spellcheck="false" aria-label="Python tick formatter" placeholder="def format_tick(value, axis):&#10;    return f'{value:g}'"></textarea>
-      <div class="script-hint">Define <code>format_tick(value, axis)</code>; <code>axis</code> is <code>'x'</code> or <code>'y'</code>. Return the label as a string. It is used for both plotting backends.</div>
+      <textarea id="tick-formatter-${id}" class="tick-formatter-editor code-editor python-editor" spellcheck="false" aria-label="Python tick formatter" placeholder="def format_tick(value, axis, index=None):&#10;    return f'{value:g}'"></textarea>
+      <div class="script-hint">Define <code>format_tick(value, axis)</code>; optionally accept a third <code>index</code> argument for the tick position. <code>axis</code> is <code>'x'</code> or <code>'y'</code>. Return the label as a string. It is used for both plotting backends.</div>
       <label style="margin-top:5px" data-tip="Where the legend sits. The 'inside' options give the compact, journal-figure look when there's an empty corner to put it in.">Legend position</label>
       <select id="legend-position-${id}">
         <option value="right">outside right</option>

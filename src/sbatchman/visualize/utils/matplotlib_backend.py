@@ -94,6 +94,36 @@ def _has_errorbars(trace, config):
     return config.get("error_style") != "band" and bool((trace.get("error_y") or {}).get("visible"))
 
 
+def _heatmap_axis(values, np, categorical=False):
+    """Return cell edges, tick positions, and labels for a heatmap axis.
+
+    Numeric coordinates use their real spacing. Text categories keep evenly
+    spaced cells with the category names as tick labels.
+    """
+    labels = [str(value) for value in values]
+    if categorical:
+        centers = None
+    else:
+        try:
+            centers = np.asarray(values, dtype=float)
+        except (TypeError, ValueError):
+            centers = None
+    if centers is not None and centers.size and np.isfinite(centers).all():
+        if centers.size == 1:
+            half_width = max(abs(centers[0]) * 0.05, 0.5)
+            edges = np.array([centers[0] - half_width, centers[0] + half_width])
+        else:
+            midpoints = (centers[:-1] + centers[1:]) / 2
+            edges = np.concatenate(([centers[0] - (midpoints[0] - centers[0])],
+                                    midpoints,
+                                    [centers[-1] + (centers[-1] - midpoints[-1])]))
+        return edges, centers, labels, None
+
+    centers = np.arange(len(values), dtype=float)
+    edges = np.arange(len(values) + 1, dtype=float) - 0.5
+    return edges, centers, labels, {float(index): value for index, value in enumerate(values)}
+
+
 def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_count=1):
     """Draw one Plotly-compatible trace; return its legend handle and label."""
     plt, Line2D, np, sns = _modules()
@@ -224,14 +254,22 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
         # of receiving an object-dtype matrix.
         values = np.asarray(trace.get("z", []), dtype=float)
         masked_values = np.ma.masked_invalid(values)
+        x_edges, x_ticks, x_labels, x_categories = _heatmap_axis(
+            trace.get("x", []), np, config.get("x_scale") == "category")
+        y_edges, y_ticks, y_labels, y_categories = _heatmap_axis(
+            trace.get("y", []), np, config.get("y_scale") == "category")
+        axis._sbatchman_category_tick_values = {
+            **({"x": x_categories} if x_categories is not None else {}),
+            **({"y": y_categories} if y_categories is not None else {}),
+        }
         if masked_values.count():
-            image = axis.imshow(masked_values, aspect="auto", cmap="viridis", origin="lower")
-            colorbar = axis.figure.colorbar(image, ax=axis)
+            mesh = axis.pcolormesh(x_edges, y_edges, masked_values, shading="flat", cmap="viridis")
+            colorbar = axis.figure.colorbar(mesh, ax=axis)
             z_label = str(trace.get("colorbar", {}).get("title", {}).get("text") or "").strip()
             if z_label:
                 colorbar.set_label(z_label)
-        axis.set_xticks(range(len(trace.get("x", []))), [str(v) for v in trace.get("x", [])])
-        axis.set_yticks(range(len(trace.get("y", []))), [str(v) for v in trace.get("y", [])])
+        axis.set_xticks(x_ticks, x_labels)
+        axis.set_yticks(y_ticks, y_labels)
     elif kind == "pie":
         wedges, _ = axis.pie(trace.get("values", []), labels=trace.get("labels", []),
                              colors=style.get("palette", styles.OKABE_ITO),
@@ -310,12 +348,22 @@ def _style_axes(ax, right_ax, config, style, title=""):
     tick_formatter_source = config.get("tick_formatter", "")
     if isinstance(tick_formatter_source, str) and tick_formatter_source.strip():
         from matplotlib.ticker import FuncFormatter
-        from .core import load_tick_formatter
+        from .core import call_tick_formatter, load_tick_formatter
         formatter = load_tick_formatter(tick_formatter_source)
+        category_values = getattr(ax, "_sbatchman_category_tick_values", {})
+
+        def format_axis_tick(value, axis_name, index):
+            mapping = category_values.get(axis_name)
+            if mapping:
+                index = round(value)
+                if abs(value - index) < 1e-8 and index in mapping:
+                    value = mapping[index]
+            return str(call_tick_formatter(formatter, value, axis_name, index))
+
         ax.xaxis.set_major_formatter(FuncFormatter(
-            lambda value, _position: str(formatter(value, "x"))))
+            lambda value, position: format_axis_tick(value, "x", int(position))))
         ax.yaxis.set_major_formatter(FuncFormatter(
-            lambda value, _position: str(formatter(value, "y"))))
+            lambda value, position: format_axis_tick(value, "y", int(position))))
     for axis in ("x", "y"):
         vals = config.get(f"_mpl_{axis}_tickvals")
         labels = config.get(f"_mpl_{axis}_ticktext")

@@ -3,7 +3,7 @@ import math
 from numbers import Real
 
 from . import styles
-from .core import load_tick_formatter, log
+from .core import call_tick_formatter, load_tick_formatter, log
 
 BASE_H, MT, MB, MR = 420, 64, 70, 30
 MAX_MR, MAX_CENTER_W, ITEM_H, CHAR_W, CHROME, TOP_GAP = 520, 1400, 24, 0.62, 46, 14
@@ -79,7 +79,8 @@ def _apply_custom_tick_formatter(axis_spec, axis_name, config, traces):
         return
     formatter = load_tick_formatter(source)
     axis_spec.update(tickmode="array", tickvals=values,
-                     ticktext=[str(formatter(value, axis_name)) for value in values])
+                     ticktext=[str(call_tick_formatter(formatter, value, axis_name, index))
+                               for index, value in enumerate(values)])
     axis_spec.pop("tickformat", None)
 
 

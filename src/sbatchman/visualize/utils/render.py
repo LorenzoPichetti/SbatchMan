@@ -81,9 +81,15 @@ def _apply_matplotlib_layout_script(config, traces, style, source, scope="layout
     layout = build_layout(work_config, {}, work_traces, style)
     if scope.startswith("layout(panel"):
         layout = {"xaxis": layout["xaxis"], "yaxis": layout["yaxis"]}
+    original_layout = deepcopy(layout)
     script_log, entries = make_script_logger(scope)
     edited, matplotlib_layout_fn, matplotlib_legend_fn = run_layout_script_with_hooks(
         source, layout, config, script_log, df_data, traces)
+    # A script that only defines customize_matplotlib() has not edited the
+    # Plotly layout. Do not translate generated defaults back into the
+    # Matplotlib config: that round-trip can overwrite settings such as log2.
+    if edited == original_layout:
+        return config, entries, matplotlib_layout_fn, matplotlib_legend_fn
     for axis in ("x", "y"):
         spec = edited.get(f"{axis}axis") or {}
         title = spec.get("title")
