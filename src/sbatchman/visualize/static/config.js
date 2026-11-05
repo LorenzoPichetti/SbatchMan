@@ -94,6 +94,7 @@ export function getNodeConfig(id) {
     legendColumns: document.getElementById(`legend-columns-${id}`)?.value ? Number(document.getElementById(`legend-columns-${id}`).value) : '',
     legendMarkerSize: document.getElementById(`legend-marker-size-${id}`)?.value ? Number(document.getElementById(`legend-marker-size-${id}`).value) : '',
     showLegend: document.getElementById(`show-legend-${id}`)?.checked !== false,
+    shortLegend: !!document.getElementById(`short-legend-${id}`)?.checked,
     extra,
     customScript: document.getElementById(`script-${id}`)?.value || '',
     transformScript: document.getElementById(`transform-${id}`)?.value || '',
@@ -123,6 +124,7 @@ export function applyNodeConfig(id, cfg) {
   f('legend-columns', cfg.legendColumns ?? '');
   f('legend-marker-size', cfg.legendMarkerSize ?? '');
   { const el = document.getElementById(`show-legend-${id}`); if (el) el.checked = cfg.showLegend !== false; }
+  { const el = document.getElementById(`short-legend-${id}`); if (el) el.checked = !!cfg.shortLegend; }
   f('script', cfg.customScript || '');
   f('transform', cfg.transformScript || '');
   f('layout-script', cfg.layoutScript || '');

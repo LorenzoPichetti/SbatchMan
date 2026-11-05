@@ -71,6 +71,68 @@ def compute_traces(df_data, plot_type, custom_script, config):
     return traces
 
 
+def _short_category_legend(traces, config):
+    """Replace combined series labels with compact, independent style keys."""
+    if not config.get("short_legend"):
+        for trace in traces:
+            trace.pop("_legend_color_label", None)
+            trace.pop("_legend_dash_value", None)
+            trace.pop("_legend_marker_value", None)
+        return traces
+    originals = [t for t in traces if t.get("showlegend") is not False and t.get("name")]
+    if not originals:
+        return traces
+    entries = []
+    def heading(label):
+        entries.append({"type": "scatter", "mode": "lines", "x": [], "y": [], "name": label,
+                        "line": {"color": "rgba(0,0,0,0)", "width": 0}, "hoverinfo": "skip"})
+    def sample(name, color="#555", dash="solid", marker="circle"):
+        entries.append({"type": "scatter", "mode": "lines+markers", "x": [], "y": [], "name": name,
+                        "line": {"color": color, "dash": dash, "width": 2},
+                        "marker": {"color": color, "symbol": marker, "size": 7}, "hoverinfo": "skip"})
+    colors = {}
+    for t in originals:
+        label = t.get("_legend_color_label")
+        color = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color")
+        if label and color and label not in colors:
+            colors[label] = (color, t)
+    if colors:
+        heading("Color")
+        for label, (color, trace) in colors.items():
+            sample(label, color, (trace.get("line") or {}).get("dash", "solid"))
+    dashes = {}
+    for t in originals:
+        value = t.get("_legend_dash_value")
+        if value is not None:
+            dashes.setdefault(value, (t.get("line") or {}).get("dash", "solid"))
+    if dashes:
+        heading("Linestyle")
+        for value, dash in dashes.items(): sample(value, "#555", dash)
+    markers = {}
+    for t in originals:
+        value = t.get("_legend_marker_value")
+        symbol = (t.get("marker") or {}).get("symbol")
+        if value is not None and symbol is not None:
+            if isinstance(symbol, list): symbol = symbol[0] if symbol else "circle"
+            markers.setdefault(value, symbol)
+    if markers:
+        heading("Marker")
+        for value, symbol in markers.items(): sample(value, "#555", "solid", symbol)
+    if not entries:
+        for trace in traces:
+            trace.pop("_legend_color_label", None)
+            trace.pop("_legend_dash_value", None)
+            trace.pop("_legend_marker_value", None)
+        return traces
+    for trace in originals:
+        trace["showlegend"] = False
+    for trace in traces:
+        trace.pop("_legend_color_label", None)
+        trace.pop("_legend_dash_value", None)
+        trace.pop("_legend_marker_value", None)
+    return traces + entries
+
+
 def _apply_matplotlib_layout_script(config, traces, style, source, scope="layout", df_data=None):
     """Run the existing Plotly layout snippet and translate common axis and
     legend edits into the Matplotlib config understood by the image renderer."""
@@ -176,6 +238,7 @@ def render_plot(p):
         return {**images, "columns": df["columns"], "truncated": df.get("truncated", False),
                 "preview": preview_of(df), "log_entries": entries, "panel_count": 1}
     traces = compute_traces(df, p.get("plot_type", "line"), p.get("custom_script", ""), config)
+    traces = _short_category_legend(traces, config)
     marker_size = config.get("legend_marker_size")
     if isinstance(marker_size, (int, float)) and marker_size > 0:
         for t in traces:
@@ -357,6 +420,7 @@ def render_grid(p):
             df, e = run_pipeline(panel["database"], panel["sql"], panel.get("transform_script", ""))
             entries += e
         traces = compute_traces(df, panel.get("plot_type", "line"), panel.get("custom_script", ""), config)
+        traces = _short_category_legend(traces, config)
         # build_layout runs BEFORE trace axis assignment: it's what tags a
         # y2-column trace with t['yaxis'] = 'y2' (see layout.py), and that
         # tag has to be read before we overwrite it with this panel's real

@@ -116,6 +116,11 @@ def _xy(df, cfg, kind):
                 t["line"]["dash"] = dmap.get(gr[0][ci[dash_by]], "solid")
         if marker_by:
             t["marker"]["symbol"] = [mmap.get(r[ci[marker_by]], "circle") for r in pts]
+            t["_legend_marker_value"] = str(gr[0][ci[marker_by]]) if gr else ""
+        if groups and gr:
+            t["_legend_color_label"] = " | ".join(map(str, (gr[0][ci[c]] for c in groups)))
+        if dash_by and gr:
+            t["_legend_dash_value"] = str(gr[0][ci[dash_by]])
 
         if not band:
             if err: t["error_y"] = err

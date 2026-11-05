@@ -432,6 +432,42 @@ def _axis_legend_handles(ax, right_ax=None):
             if label and not label.startswith("_")]
 
 
+def _short_legend_handles(traces, color_map, Line2D):
+    """Build Matplotlib legend handles for independent style categories."""
+    color_items, dash_items, marker_items = {}, {}, {}
+    for trace in traces:
+        label = trace.get("_legend_color_label")
+        name = trace.get("name")
+        if label and label not in color_items:
+            key = str(name)[:-7] if str(name).endswith(" (band)") else name
+            color_items[label] = color_map.get(key, (trace.get("line") or {}).get("color") or
+                                               (trace.get("marker") or {}).get("color") or "#555")
+        value = trace.get("_legend_dash_value")
+        if value is not None:
+            dash_items.setdefault(value, (trace.get("line") or {}).get("dash", "solid"))
+        value = trace.get("_legend_marker_value")
+        symbol = (trace.get("marker") or {}).get("symbol")
+        if value is not None and symbol is not None:
+            if isinstance(symbol, list): symbol = symbol[0] if symbol else "circle"
+            marker_items.setdefault(value, symbol)
+    result = []
+    def heading(label): result.append((Line2D([], [], linestyle="None", marker=None), label))
+    if color_items:
+        heading("Color")
+        for label, color in color_items.items():
+            result.append((Line2D([], [], color=color, marker="o", linewidth=2), label))
+    if dash_items:
+        heading("Linestyle")
+        for label, dash in dash_items.items():
+            result.append((Line2D([], [], color="#555", linestyle=_DASHES.get(dash, "-"), linewidth=2), str(label)))
+    if marker_items:
+        heading("Marker")
+        for label, marker in marker_items.items():
+            result.append((Line2D([], [], color="#555", linestyle="None",
+                                  marker=_MARKERS.get(marker, marker)), str(label)))
+    return result
+
+
 def _draw_reference_lines(ax, config):
     styles = {"solid": "-", "dash": "--", "dot": ":", "dashdot": "-."}
     positions = {"start": .02, "center": .5, "end": .98}
@@ -467,7 +503,7 @@ def _draw_reference_lines(ax, config):
 
 def render_matplotlib_plot(df, traces, config, style=None, title="",
                            custom_plot_fn=None, layout_fn=None, legend_fn=None):
-    plt, _, np, sns = _modules()
+    plt, Line2D, np, sns = _modules()
     style = styles.resolve(style)
     sns.set_theme(style="whitegrid" if style.get("grid", True) else "white", context="paper",
                   font=_font_family(style))
@@ -498,6 +534,8 @@ def render_matplotlib_plot(df, traces, config, style=None, title="",
     _draw_reference_lines(ax, config)
     if callable(custom_plot_fn):
         handles = _axis_legend_handles(ax, right_ax)
+    elif config.get("short_legend"):
+        handles = _short_legend_handles(traces, color_map, Line2D)
     _legend(ax, handles, config, style)
     _call_custom_hook(layout_fn, plt, np, sns, fig, ax, config)
     if callable(legend_fn):
@@ -559,8 +597,13 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
                     raise ValueError(f"Grid panel {i + 1}{panel_name}: {exc}") from exc
                 if result:
                     handles.append(result)
-                    if name not in {n for _, n in all_handles}:
+                    if not config.get("short_legend") and name not in {n for _, n in all_handles}:
                         all_handles.append(result)
+        if config.get("short_legend") and not callable(custom_plot_fn):
+            handles = _short_legend_handles(traces, color_map, Line2D)
+            for result in handles:
+                if result[1] not in {name for _, name in all_handles}:
+                    all_handles.append(result)
         _style_axes(ax, right_ax, config, style, config.get("title", ""))
         _draw_reference_lines(ax, config)
         if share_x_label and r < rows - 1:

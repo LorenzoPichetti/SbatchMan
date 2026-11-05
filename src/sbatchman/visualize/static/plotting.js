@@ -47,6 +47,7 @@ export function gatherPlotPayload(id) {
     legend_columns: Number(tabEl(id, 'legend-columns')?.value || 0),
     legend_marker_size: Number(tabEl(id, 'legend-marker-size')?.value || 0),
     show_legend: tabEl(id, 'show-legend')?.checked !== false,
+    short_legend: !!tabEl(id, 'short-legend')?.checked,
     ...extra,
   };
   for (const field of G.plotFields[st.plotType] || []) {
