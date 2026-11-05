@@ -244,7 +244,7 @@ export async function exportActiveFigure(selectedFormat) {
   const tab = window.activeTabObj();
   if (!tab) { clientLog('No active figure', 'warn'); return; }
   const format = selectedFormat || document.getElementById('export-format')?.value || 'png';
-  const filename = `hpc-plot-${tab.label.replace(/\s+/g, '-')}`;
+  const filename = `${tab.label.replace(/\s+/g, '-')}`;
   try {
     const blob = await activeFigureBlob(format);
     downloadBlob(blob, `${filename}.${format}`);
