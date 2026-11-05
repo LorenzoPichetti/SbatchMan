@@ -432,14 +432,17 @@ def _axis_legend_handles(ax, right_ax=None):
             if label and not label.startswith("_")]
 
 
-def _short_legend_handles(traces, color_map, Line2D):
+def _short_legend_handles(traces, color_map, Line2D, config=None):
     """Build Matplotlib legend handles for independent style categories."""
+    category_labels = (config or {}).get("short_legend_labels") or {}
     color_items, dash_items, marker_items = {}, {}, {}
     for trace in traces:
         label = trace.get("_legend_color_label")
         name = trace.get("name")
         if label and label not in color_items:
-            key = str(name)[:-7] if str(name).endswith(" (band)") else name
+            key = trace.get("_series_color_key")
+            if key is None:
+                key = str(name)[:-7] if str(name).endswith(" (band)") else name
             color_items[label] = color_map.get(key, (trace.get("line") or {}).get("color") or
                                                (trace.get("marker") or {}).get("color") or "#555")
         value = trace.get("_legend_dash_value")
@@ -451,20 +454,25 @@ def _short_legend_handles(traces, color_map, Line2D):
             if isinstance(symbol, list): symbol = symbol[0] if symbol else "circle"
             marker_items.setdefault(value, symbol)
     result = []
-    def heading(label): result.append((Line2D([], [], linestyle="None", marker=None), label))
+    def add(handle, label, category, value):
+        handle._sbatchman_legend_key = (category, str(value))
+        result.append((handle, label))
+    def heading(label, category):
+        if category_labels.get(category, True) is not False:
+            add(Line2D([], [], linestyle="None", marker=None), label, category, "__heading__")
     if color_items:
-        heading("Color")
+        heading("Color", "color")
         for label, color in color_items.items():
-            result.append((Line2D([], [], color=color, marker="o", linewidth=2), label))
+            add(Line2D([], [], color=color, marker="o", linewidth=2), label, "color", label)
     if dash_items:
-        heading("Linestyle")
+        heading("Linestyle", "linestyle")
         for label, dash in dash_items.items():
-            result.append((Line2D([], [], color="#555", linestyle=_DASHES.get(dash, "-"), linewidth=2), str(label)))
+            add(Line2D([], [], color="#555", linestyle=_DASHES.get(dash, "-"), linewidth=2), str(label), "linestyle", label)
     if marker_items:
-        heading("Marker")
+        heading("Marker", "marker")
         for label, marker in marker_items.items():
-            result.append((Line2D([], [], color="#555", linestyle="None",
-                                  marker=_MARKERS.get(marker, marker)), str(label)))
+            add(Line2D([], [], color="#555", linestyle="None",
+                       marker=_MARKERS.get(marker, marker)), str(label), "marker", label)
     return result
 
 
@@ -513,7 +521,7 @@ def render_matplotlib_plot(df, traces, config, style=None, title="",
     y2_cols = {y2_cols} if isinstance(y2_cols, str) else set(y2_cols)
     right_ax = ax.twinx() if y2_cols else None
     colors = style.get("palette") if isinstance(style.get("palette"), list) else styles.OKABE_ITO
-    names = list(dict.fromkeys(t.get("name") for t in traces
+    names = list(dict.fromkeys(t.get("_series_color_key", t.get("name")) for t in traces
                                if t.get("name") and not str(t.get("name")).endswith(" (band)")))
     color_map = {name: colors[i % len(colors)] for i, name in enumerate(names)}
     bar_traces = [t for t in traces if t.get("type") == "bar"]
@@ -526,7 +534,8 @@ def render_matplotlib_plot(df, traces, config, style=None, title="",
             trace_color = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color")
             name = str(t.get("name", ""))
             color_key = name[:-7] if name.endswith(" (band)") else name
-            color = color_map.get(color_key, colors[len(handles) % len(colors)]) if style.get("recolor", True) else trace_color
+            series_key = t.get("_series_color_key", color_key)
+            color = color_map.get(series_key, colors[len(handles) % len(colors)]) if style.get("recolor", True) else trace_color
             result = _draw_trace(ax, right_ax, t, config, style, color,
                                  bar_indexes.get(id(t), 0), len(bar_traces) or 1)
             if result: handles.append(result)
@@ -535,7 +544,7 @@ def render_matplotlib_plot(df, traces, config, style=None, title="",
     if callable(custom_plot_fn):
         handles = _axis_legend_handles(ax, right_ax)
     elif config.get("short_legend"):
-        handles = _short_legend_handles(traces, color_map, Line2D)
+        handles = _short_legend_handles(traces, color_map, Line2D, config)
     _legend(ax, handles, config, style)
     _call_custom_hook(layout_fn, plt, np, sns, fig, ax, config)
     if callable(legend_fn):
@@ -584,12 +593,13 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
             for t in traces:
                 name = t.get("name")
                 color_key = str(name)[:-7] if str(name).endswith(" (band)") else name
-                if color_key not in color_map:
-                    color_map[color_key] = colors[len(color_map) % len(colors)]
+                series_key = t.get("_series_color_key", color_key)
+                if series_key not in color_map:
+                    color_map[series_key] = colors[len(color_map) % len(colors)]
                 if not style.get("recolor", True):
-                    color_map[color_key] = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color") or colors[0]
+                    color_map[series_key] = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color") or colors[0]
                 try:
-                    result = _draw_trace(ax, right_ax, t, config, style, color_map[color_key],
+                    result = _draw_trace(ax, right_ax, t, config, style, color_map[series_key],
                                          bar_indexes.get(id(t), 0), len(bar_traces) or 1)
                 except Exception as exc:
                     title = str(config.get("title") or "").strip()
@@ -600,9 +610,11 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
                     if not config.get("short_legend") and name not in {n for _, n in all_handles}:
                         all_handles.append(result)
         if config.get("short_legend") and not callable(custom_plot_fn):
-            handles = _short_legend_handles(traces, color_map, Line2D)
+            handles = _short_legend_handles(traces, color_map, Line2D, config)
             for result in handles:
-                if result[1] not in {name for _, name in all_handles}:
+                key = getattr(result[0], "_sbatchman_legend_key", ("label", result[1]))
+                if key not in {getattr(handle, "_sbatchman_legend_key", ("label", name))
+                               for handle, name in all_handles}:
                     all_handles.append(result)
         _style_axes(ax, right_ax, config, style, config.get("title", ""))
         _draw_reference_lines(ax, config)

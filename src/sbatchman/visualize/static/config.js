@@ -95,6 +95,11 @@ export function getNodeConfig(id) {
     legendMarkerSize: document.getElementById(`legend-marker-size-${id}`)?.value ? Number(document.getElementById(`legend-marker-size-${id}`).value) : '',
     showLegend: document.getElementById(`show-legend-${id}`)?.checked !== false,
     shortLegend: !!document.getElementById(`short-legend-${id}`)?.checked,
+    shortLegendLabels: {
+      color: document.getElementById(`short-legend-color-label-${id}`)?.checked !== false,
+      linestyle: document.getElementById(`short-legend-linestyle-label-${id}`)?.checked !== false,
+      marker: document.getElementById(`short-legend-marker-label-${id}`)?.checked !== false,
+    },
     extra,
     customScript: document.getElementById(`script-${id}`)?.value || '',
     transformScript: document.getElementById(`transform-${id}`)?.value || '',
@@ -125,6 +130,10 @@ export function applyNodeConfig(id, cfg) {
   f('legend-marker-size', cfg.legendMarkerSize ?? '');
   { const el = document.getElementById(`show-legend-${id}`); if (el) el.checked = cfg.showLegend !== false; }
   { const el = document.getElementById(`short-legend-${id}`); if (el) el.checked = !!cfg.shortLegend; }
+  { const labels = cfg.shortLegendLabels || {}; for (const category of ['color', 'linestyle', 'marker']) {
+    const el = document.getElementById(`short-legend-${category}-label-${id}`);
+    if (el) el.checked = labels[category] !== false;
+  } }
   f('script', cfg.customScript || '');
   f('transform', cfg.transformScript || '');
   f('layout-script', cfg.layoutScript || '');

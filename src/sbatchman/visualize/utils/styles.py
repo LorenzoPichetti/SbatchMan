@@ -90,20 +90,15 @@ def apply(layout, traces, style=None):
     pal = s["palette"] if isinstance(s["palette"], list) and s["palette"] else OKABE_ITO
 
     if s["recolor"]:
-        # Color is assigned per unique series NAME (first-seen order), not
-        # per trace position. This matters for grids: the same group name
-        # ('A', say) can appear in every panel as a separate trace, and it
-        # must get the same color in all of them — otherwise a deduplicated
-        # shared legend entry ends up showing one color while some panel's
-        # actual line is drawn in another. Band-helper traces share their
-        # visible trace's name-derived color via fillcolor, not this map.
+        # Built-in traces supply a style-independent key so linestyle splits
+        # remain the same color. Other traces fall back to their name.
         name_color, next_i = {}, 0
         pending_band = []
         for t in traces:
             if _is_band_helper(t):
                 pending_band.append(t)
                 continue
-            key = t.get("name")
+            key = t.get("_series_color_key", t.get("name"))
             if key not in name_color:
                 name_color[key] = pal[next_i % len(pal)]
                 next_i += 1
@@ -117,6 +112,7 @@ def apply(layout, traces, style=None):
                     bt["fillcolor"] = with_alpha(c, 0.2)
             pending_band = []
     for t in traces:
+        t.pop("_series_color_key", None)
         if (not _is_band_helper(t) and isinstance(t.get("line"), dict)
                 and "width" in t["line"] and t.get("type") != "bar"):
             t["line"]["width"] = s["line_width"]

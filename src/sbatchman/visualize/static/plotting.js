@@ -48,6 +48,11 @@ export function gatherPlotPayload(id) {
     legend_marker_size: Number(tabEl(id, 'legend-marker-size')?.value || 0),
     show_legend: tabEl(id, 'show-legend')?.checked !== false,
     short_legend: !!tabEl(id, 'short-legend')?.checked,
+    short_legend_labels: {
+      color: tabEl(id, 'short-legend-color-label')?.checked !== false,
+      linestyle: tabEl(id, 'short-legend-linestyle-label')?.checked !== false,
+      marker: tabEl(id, 'short-legend-marker-label')?.checked !== false,
+    },
     ...extra,
   };
   for (const field of G.plotFields[st.plotType] || []) {

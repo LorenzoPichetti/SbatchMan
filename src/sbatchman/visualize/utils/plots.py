@@ -80,10 +80,14 @@ def _xy(df, cfg, kind):
     groups = _cols(cfg.get("group"))
     marker_by = (cfg.get("marker_by") or None) if kind != "bar" else None
     dash_by = (cfg.get("dash_by") or None) if kind == "line" else None
+    color_groups = [c for c in groups if c != dash_by]
     mmap, dmap = _style_map(rows, ci, marker_by, MARKERS), _style_map(rows, ci, dash_by, DASHES)
     split = groups + ([dash_by] if dash_by and dash_by not in groups else [])
     lx = cfg.get("x_scale") in ("log", "log2")
     y2_cols = set(_cols(cfg.get("y2")))
+
+    def legend_value(value):
+        return "(missing)" if value is None or (isinstance(value, str) and not value.strip()) else str(value)
 
     def make(gr, label, y, color):
         y_scale = cfg.get("y2_scale", "linear") if y in y2_cols else cfg.get("y_scale")
@@ -102,25 +106,41 @@ def _xy(df, cfg, kind):
         # trace is sent to the client.
         err = _error_y(cfg, ci, pts)
         band = bool(err) and cfg.get("error_style") == "band" and kind != "bar"
+        if color_groups and gr:
+            t_color_label = " | ".join(legend_value(gr[0][ci[c]]) for c in color_groups)
+        else:
+            t_color_label = None
+        if dash_by and gr:
+            t_dash_value = legend_value(gr[0][ci[dash_by]])
+        else:
+            t_dash_value = None
+        if marker_by and gr:
+            t_marker_value = legend_value(gr[0][ci[marker_by]])
+        else:
+            t_marker_value = None
+        color_key = tuple(gr[0][ci[c]] for c in color_groups) if color_groups and gr else y
         if kind == "bar":
             t = {"type": "bar", "name": name, "x": xs, "y": yv, "_ycol": y,
-                 "marker": {"color": color, "line": {"width": 0.8, "color": "#333"}}}
+                 "marker": {"color": color, "line": {"width": 0.8, "color": "#333"}},
+                 "_series_color_key": color_key}
+            if t_color_label is not None: t["_legend_color_label"] = t_color_label
+            if t_dash_value is not None: t["_legend_dash_value"] = t_dash_value
+            if t_marker_value is not None: t["_legend_marker_value"] = t_marker_value
             if err: t["error_y"] = err
             return [t]
         t = {"type": "scatter", "mode": cfg.get("mode", "lines+markers") if kind == "line" else "markers",
              "name": name, "x": xs, "y": yv, "_ycol": y,
-             "marker": {"size": MS, "color": color, "line": {"width": 1, "color": "#fff"}}}
+             "marker": {"size": MS, "color": color, "line": {"width": 1, "color": "#fff"}},
+             "_series_color_key": color_key}
         if kind == "line":
             t["line"] = {"width": LW, "color": color}
             if dash_by and gr:
                 t["line"]["dash"] = dmap.get(gr[0][ci[dash_by]], "solid")
         if marker_by:
             t["marker"]["symbol"] = [mmap.get(r[ci[marker_by]], "circle") for r in pts]
-            t["_legend_marker_value"] = str(gr[0][ci[marker_by]]) if gr else ""
-        if groups and gr:
-            t["_legend_color_label"] = " | ".join(map(str, (gr[0][ci[c]] for c in groups)))
-        if dash_by and gr:
-            t["_legend_dash_value"] = str(gr[0][ci[dash_by]])
+        if t_marker_value is not None: t["_legend_marker_value"] = t_marker_value
+        if t_color_label is not None: t["_legend_color_label"] = t_color_label
+        if t_dash_value is not None: t["_legend_dash_value"] = t_dash_value
 
         if not band:
             if err: t["error_y"] = err
@@ -132,9 +152,11 @@ def _xy(df, cfg, kind):
         # error_y would use, so it's a pure presentation switch.
         hi = [v + d for v, d in zip(yv, err["array"])]
         lo = [v - d for v, d in zip(yv, err.get("arrayminus", err["array"]))]
-        band_lower = {"type": "scatter", "x": xs, "y": lo, "_ycol": y, "mode": "lines", "line": {"width": 0},
+        band_lower = {"type": "scatter", "x": xs, "y": lo, "_ycol": y, "_series_color_key": color_key,
+                     "mode": "lines", "line": {"width": 0},
                      "showlegend": False, "hoverinfo": "skip", "name": name + " (band)"}
-        band_upper = {"type": "scatter", "x": xs, "y": hi, "_ycol": y, "mode": "lines", "line": {"width": 0},
+        band_upper = {"type": "scatter", "x": xs, "y": hi, "_ycol": y, "_series_color_key": color_key,
+                     "mode": "lines", "line": {"width": 0},
                      "fill": "tonexty", "fillcolor": with_alpha(color, 0.2),
                      "showlegend": False, "hoverinfo": "skip", "name": name + " (band)"}
         return [band_lower, band_upper, t]
@@ -146,9 +168,22 @@ def _xy(df, cfg, kind):
         buckets = {}
         for r in rows:
             buckets.setdefault(tuple(r[ci[c]] for c in split), []).append(r)
-        for key, gr in sorted(buckets.items(), key=lambda kv: [str(v) for v in kv[0]]):
+        color_keys = []
+        for key in buckets:
+            values = dict(zip(split, key))
+            group_color_key = tuple(values[c] for c in color_groups) if color_groups else None
             for y in ys:
-                traces += make(gr, " | ".join(map(str, key)), y, _color(n_series)); n_series += 1
+                color_key = group_color_key if group_color_key is not None else y
+                if color_key not in color_keys:
+                    color_keys.append(color_key)
+        color_map = {key: _color(i) for i, key in enumerate(color_keys)}
+        for key, gr in sorted(buckets.items(), key=lambda kv: [str(v) for v in kv[0]]):
+            values = dict(zip(split, key))
+            group_color_key = tuple(values[c] for c in color_groups) if color_groups else None
+            for y in ys:
+                color_key = group_color_key if group_color_key is not None else y
+                color = color_map[color_key]
+                traces += make(gr, " | ".join(map(str, key)), y, color); n_series += 1
     else:
         for y in ys:
             traces += make(rows, None, y, _color(n_series)); n_series += 1

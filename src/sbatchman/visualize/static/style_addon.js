@@ -9,7 +9,7 @@
     ['legend_orientation', 'Legend orientation', ['auto', 'vertical', 'horizontal']],
     ['legend_rows', 'Legend rows (horizontal, 0=auto)', 'number'], ['legend_columns', 'Legend columns (horizontal, 0=auto)', 'number'],
     ['line_width', 'Line width', 'number'], ['marker_size', 'Marker size (plot + legend)', 'number'],
-    ['palette', 'Palette (comma-separated hex)', 'list'],
+    ['palette', 'Series colors (comma-separated CSS colors)', 'list'],
     ['tick_dir', 'Tick direction', ['outside', 'inside']], ['tick_len', 'Tick length', 'number'],
     ['minor_ticks', 'Minor ticks', ['auto', 'on', 'off']], ['exponent', 'Exponent format', ['power', 'e', 'SI']],
     ['tick_angle', 'X tick angle', 'number'],
@@ -17,6 +17,13 @@
     ['width_in', 'Figure width (in, 0=fill)', 'number'], ['height_in', 'Figure height (in)', 'number'],
     ['dpi', 'Export DPI', 'number'],
   ];
+  const PALETTES = {
+    'Okabe-Ito (8)': ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7', '#000000'],
+    'Tableau (10)': ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC949', '#AF7AA1', '#FF9DA7', '#9C755F', '#BAB0AC'],
+    'Colorblind (10)': ['#332288', '#88CCEE', '#44AA99', '#117733', '#999933', '#DDCC77', '#CC6677', '#882255', '#AA4499', '#DDDDDD'],
+    'Set 1 (9)': ['#E41A1C', '#377EB8', '#4DAF4A', '#984EA3', '#FF7F00', '#FFFF33', '#A65628', '#F781BF', '#999999'],
+    'Dark 2 (8)': ['#1B9E77', '#D95F02', '#7570B3', '#E7298A', '#66A61E', '#E6AB02', '#A6761D', '#666666'],
+  };
   window.G_STYLE = JSON.parse(localStorage.getItem('plotStyle') || '{}');
   let presets = {}, timer;
 
@@ -38,19 +45,47 @@
       Object.keys(presets).map(k => `<option>${k}</option>`).join('') + '</select>';
     FIELDS.forEach(([k, label, type]) => {
       const w = document.createElement('div'); w.style.marginTop = '5px';
-      let el;
+      let el, paletteSelector;
       if (Array.isArray(type)) { el = document.createElement('select'); type.forEach(o => el.add(new Option(o))); }
       else { el = document.createElement('input'); el.type = type === 'bool' ? 'checkbox' : type === 'number' ? 'number' : 'text'; el.step = 'any'; }
+      if (k === 'palette') {
+        el.placeholder = '#1f77b4, #ff7f0e, #2ca02c, ...';
+        el.title = 'Enter one CSS color per series, separated by commas. Add as many colors as needed; the list repeats after its final color.';
+        paletteSelector = document.createElement('select');
+        paletteSelector.id = 'st-palette-preset';
+        paletteSelector.style.marginBottom = '4px';
+        paletteSelector.add(new Option('Choose a predefined palette…', ''));
+        Object.keys(PALETTES).forEach(name => paletteSelector.add(new Option(name, name)));
+        paletteSelector.add(new Option('Custom', 'custom'));
+        paletteSelector.addEventListener('change', () => {
+          const colors = PALETTES[paletteSelector.value];
+          if (!colors) return;
+          el.value = colors.join(', ');
+          el.dispatchEvent(new Event('change', {bubbles: true}));
+        });
+      }
       if (k === 'legend_rows' || k === 'legend_columns') { el.min = '0'; el.step = '1'; }
       el.id = 'st-' + k;
       if (type === 'bool') { el.style.width = 'auto'; w.innerHTML = `<label style="display:flex;gap:6px;align-items:center"></label>`; w.firstChild.append(el, label); }
       else { w.innerHTML = `<label>${label}</label>`; w.append(el); }
+      if (paletteSelector) w.append(paletteSelector);
       el.addEventListener('change', () => {
         G_STYLE[k] = type === 'bool' ? el.checked : type === 'number' ? (el.value === '' ? '' : +el.value)
           : type === 'list' ? el.value.split(',').map(x => x.trim()).filter(Boolean) : el.value;
+        if (k === 'palette' && paletteSelector) {
+          const match = Object.entries(PALETTES).find(([, colors]) =>
+            JSON.stringify(colors) === JSON.stringify(G_STYLE.palette));
+          paletteSelector.value = match?.[0] || 'custom';
+        }
         save();
       });
       box.append(w);
+      if (k === 'palette') {
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:9px;color:var(--text3);margin-top:2px';
+        hint.textContent = 'Use one color per series. Add more colors to avoid repeating the palette.';
+        box.append(hint);
+      }
     });
     const io = document.createElement('div'); io.style.cssText = 'display:flex;gap:6px;margin-top:10px';
     io.innerHTML = '<button class="btn sm" id="st-exp">Export style</button><button class="btn sm" id="st-imp">Import style</button>';
@@ -72,6 +107,12 @@
       const v = G_STYLE[k] ?? (k === 'legend_orientation' ? 'auto' : undefined);
       if (type === 'bool') el.checked = v !== false; else el.value = Array.isArray(v) ? v.join(', ') : (v ?? '');
     });
+    const paletteSelector = document.getElementById('st-palette-preset');
+    if (paletteSelector) {
+      const palette = G_STYLE.palette;
+      const match = Object.entries(PALETTES).find(([, colors]) => JSON.stringify(colors) === JSON.stringify(palette));
+      paletteSelector.value = match?.[0] || (palette ? 'custom' : '');
+    }
     const presetSelect = document.getElementById('style-preset');
     if (presetSelect) {
       const match = Object.entries(presets).find(([, preset]) =>

@@ -83,11 +83,17 @@ def _short_category_legend(traces, config):
     if not originals:
         return traces
     entries = []
-    def heading(label):
+    category_labels = config.get("short_legend_labels") or {}
+    def heading(label, category):
+        if category_labels.get(category, True) is False:
+            return
         entries.append({"type": "scatter", "mode": "lines", "x": [], "y": [], "name": label,
+                        "_short_legend_category": category,
                         "line": {"color": "rgba(0,0,0,0)", "width": 0}, "hoverinfo": "skip"})
-    def sample(name, color="#555", dash="solid", marker="circle"):
+    def sample(name, category, color="#555", dash="solid", marker="circle", color_key=None):
         entries.append({"type": "scatter", "mode": "lines+markers", "x": [], "y": [], "name": name,
+                        "_short_legend_category": category,
+                        "_series_color_key": color_key if color_key is not None else name,
                         "line": {"color": color, "dash": dash, "width": 2},
                         "marker": {"color": color, "symbol": marker, "size": 7}, "hoverinfo": "skip"})
     colors = {}
@@ -97,17 +103,18 @@ def _short_category_legend(traces, config):
         if label and color and label not in colors:
             colors[label] = (color, t)
     if colors:
-        heading("Color")
+        heading("Color", "color")
         for label, (color, trace) in colors.items():
-            sample(label, color, (trace.get("line") or {}).get("dash", "solid"))
+            sample(label, "color", color,
+                   color_key=trace.get("_series_color_key"))
     dashes = {}
     for t in originals:
         value = t.get("_legend_dash_value")
         if value is not None:
             dashes.setdefault(value, (t.get("line") or {}).get("dash", "solid"))
     if dashes:
-        heading("Linestyle")
-        for value, dash in dashes.items(): sample(value, "#555", dash)
+        heading("Linestyle", "linestyle")
+        for value, dash in dashes.items(): sample(value, "linestyle", "#555", dash)
     markers = {}
     for t in originals:
         value = t.get("_legend_marker_value")
@@ -116,8 +123,8 @@ def _short_category_legend(traces, config):
             if isinstance(symbol, list): symbol = symbol[0] if symbol else "circle"
             markers.setdefault(value, symbol)
     if markers:
-        heading("Marker")
-        for value, symbol in markers.items(): sample(value, "#555", "solid", symbol)
+        heading("Marker", "marker")
+        for value, symbol in markers.items(): sample(value, "marker", "#555", "solid", symbol)
     if not entries:
         for trace in traces:
             trace.pop("_legend_color_label", None)
@@ -248,6 +255,8 @@ def render_plot(p):
     # to grow a fixed-size canvas correctly, so read them before popping.
     extras = {k.lstrip("_"): layout.get(k, 0) for k in _EXTRA}
     layout, traces = styles.apply(layout, traces, style)
+    for trace in traces:
+        trace.pop("_short_legend_category", None)
     layout["annotations"] = [
         {key: value for key, value in annotation.items() if key != "_reference_line"}
         for annotation in layout.get("annotations", [])
@@ -278,10 +287,11 @@ def _dedupe_legend(traces):
         name = t.get("name")
         if not name or t.get("showlegend") is False:
             continue
-        if name in seen:
+        key = (t.get("_short_legend_category"), name) if t.get("_short_legend_category") else name
+        if key in seen:
             t["showlegend"] = False
         else:
-            seen.add(name)
+            seen.add(key)
 
 
 def _panel_label_annotations(panel_labels, doms, rows, cols):
@@ -558,6 +568,8 @@ def render_grid(p):
     legend_extra_width = legend_layout.get("_legend_extra_width", 0) if not per_panel_legends else 0
 
     layout, all_traces = styles.apply(layout, all_traces, style)
+    for trace in all_traces:
+        trace.pop("_short_legend_category", None)
     figure_size = _grid_figure_size(p, rows, cols, style)
     if figure_size:
         layout["width"] = round(figure_size[0] * 96)

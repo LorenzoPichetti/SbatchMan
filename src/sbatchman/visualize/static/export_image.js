@@ -208,6 +208,65 @@ function svgCloneToPngBlob(svgEl, scale) {
   });
 }
 
+// Plotly has no native PDF export in the browser. Rasterize the same adjusted
+// SVG used for SVG/PNG and wrap the resulting JPEG in a one-page PDF. At 4x,
+// a 96 dpi on-screen figure is embedded at roughly 384 dpi on the PDF page.
+async function svgCloneToPdfBlob(svgEl, scale = 4) {
+  const width = parseFloat(svgEl.getAttribute('width')) || 1600;
+  const height = parseFloat(svgEl.getAttribute('height')) || 900;
+  const svgStr = new XMLSerializer().serializeToString(svgEl);
+  const svgUrl = URL.createObjectURL(new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }));
+  let jpegBlob;
+  try {
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = svgUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not create a canvas for PDF export.');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    jpegBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.98));
+    if (!jpegBlob) throw new Error('Could not encode the plot for PDF export.');
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+
+  const imageBytes = new Uint8Array(await jpegBlob.arrayBuffer());
+  const encoder = new TextEncoder();
+  const pageWidth = width * 72 / 96;
+  const pageHeight = height * 72 / 96;
+  const content = encoder.encode(`q\n${pageWidth} 0 0 ${pageHeight} 0 0 cm\n/Im0 Do\nQ\n`);
+  const chunks = [];
+  let byteLength = 0;
+  const append = bytes => { chunks.push(bytes); byteLength += bytes.length; };
+  const offsets = [0];
+  append(encoder.encode('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n'));
+  const addObject = (id, body) => {
+    offsets[id] = byteLength;
+    append(encoder.encode(`${id} 0 obj\n`));
+    append(typeof body === 'string' ? encoder.encode(body) : body);
+    append(encoder.encode('\nendobj\n'));
+  };
+  addObject(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  addObject(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+  addObject(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
+  append(encoder.encode(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${Math.round(width * scale)} /Height ${Math.round(height * scale)} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`));
+  offsets[4] = byteLength - encoder.encode(`4 0 obj\n`).length;
+  append(imageBytes);
+  append(encoder.encode('\nendstream\nendobj\n'));
+  addObject(5, encoder.encode(`<< /Length ${content.length} >>\nstream\n${new TextDecoder().decode(content)}endstream`));
+  const xrefOffset = byteLength;
+  append(encoder.encode(`xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`));
+  return new Blob(chunks, { type: 'application/pdf' });
+}
+
 export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -227,7 +286,8 @@ async function activeFigureBlob(format) {
     const binary = atob(encoded);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new Blob([bytes], { type: format === 'svg' ? 'image/svg+xml' : 'image/png' });
+    return new Blob([bytes], { type: format === 'pdf' ? 'application/pdf'
+      : format === 'svg' ? 'image/svg+xml' : 'image/png' });
   }
   const svgClone = buildCombinedSvgClone(plotDiv);
   if (!svgClone) throw new Error("Could not find the plot's SVG to export.");
@@ -237,6 +297,7 @@ async function activeFigureBlob(format) {
     const svgStr = '<?xml version="1.0" standalone="no"?>\r\n' + new XMLSerializer().serializeToString(svgClone);
     return new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
   }
+  if (format === 'pdf') return svgCloneToPdfBlob(svgClone);
   return svgCloneToPngBlob(svgClone, 2); // 2x for a crisp PNG
 }
 

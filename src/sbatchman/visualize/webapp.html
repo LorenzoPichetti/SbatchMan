@@ -349,9 +349,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
     </button>
     <button class="btn" id="btn-script-paths" data-tip="Configure Python import paths for user scripts">Script paths</button>
     <div style="display:inline-flex;align-items:center;gap:4px">
-      <select id="export-format" data-tip="PNG is a raster image; SVG is a vector image" style="width:auto;padding:4px 6px;border-radius:4px">
+      <select id="export-format" data-tip="PNG is raster, SVG is vector, and PDF is a portable document" style="width:auto;padding:4px 6px;border-radius:4px">
         <option value="png">PNG</option>
         <option value="svg">SVG (vector)</option>
+        <option value="pdf">PDF</option>
       </select>
       <button class="btn" id="btn-export-png" data-tip="Download the active figure or copy a PNG to the clipboard">
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 10l3-3 3 3 2-2 4 4"/></svg>Save image

@@ -380,6 +380,11 @@ export function builderColumnsHTML(id) {
       <label style="display:flex;align-items:center;gap:6px">
         <input type="checkbox" id="short-legend-${id}" style="width:auto;margin:0"> Short legend (by category)
       </label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 0 18px;font-size:9px;color:var(--text2)">
+        <label><input type="checkbox" id="short-legend-color-label-${id}" checked style="width:auto;margin:0"> Color label</label>
+        <label><input type="checkbox" id="short-legend-linestyle-label-${id}" checked style="width:auto;margin:0"> Linestyle label</label>
+        <label><input type="checkbox" id="short-legend-marker-label-${id}" checked style="width:auto;margin:0"> Marker label</label>
+      </div>
 
       <div style="margin-top:8px">
         <div class="script-toggle" id="layout-toggle-${id}" data-tip="Customize layout and build data-driven legends with Python">
