@@ -74,12 +74,31 @@ def compute_traces(df_data, plot_type, custom_script, config):
 def _short_category_legend(traces, config):
     """Replace combined series labels with compact, independent style keys."""
     if not config.get("short_legend"):
+        entries = []
         for trace in traces:
+            marker_items = trace.pop("_legend_marker_items", None)
             trace.pop("_legend_color_label", None)
             trace.pop("_legend_dash_value", None)
             trace.pop("_legend_marker_value", None)
-            trace.pop("_legend_marker_items", None)
-        return traces
+            if not marker_items or trace.get("showlegend") is False:
+                continue
+            trace["showlegend"] = False
+            for marker_label, symbol in marker_items:
+                marker = dict(trace.get("marker") or {})
+                marker["symbol"] = symbol
+                line = dict(trace.get("line") or {})
+                entries.append({
+                    "type": "scatter",
+                    "mode": trace.get("mode", "markers"),
+                    "x": [], "y": [],
+                    "name": f"{trace.get('name', '')} — {marker_label}".strip(" —"),
+                    "marker": marker,
+                    "line": line,
+                    "_series_color_key": trace.get("_series_color_key", trace.get("name")),
+                    "showlegend": True,
+                    "hoverinfo": "skip",
+                })
+        return traces + entries
     originals = [t for t in traces if t.get("showlegend") is not False and t.get("name")]
     if not originals:
         return traces

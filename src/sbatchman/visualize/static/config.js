@@ -89,6 +89,8 @@ export function getNodeConfig(id) {
     tickFormatter: document.getElementById(`tick-formatter-${id}`)?.value || '',
     legendPosition: (document.getElementById(`legend-position-${id}`)?.value || 'right') === 'right' ? '' : document.getElementById(`legend-position-${id}`).value,
     legendTitle: document.getElementById(`legend-title-${id}`)?.value || '',
+    legendFieldSeparator: document.getElementById(`legend-field-separator-${id}`)?.value ?? ' | ',
+    legendFieldFormat: document.getElementById(`legend-field-format-${id}`)?.value || '{column}={value}',
     legendOrientation: document.getElementById(`legend-orientation-${id}`)?.value || '',
     legendRows: document.getElementById(`legend-rows-${id}`)?.value ? Number(document.getElementById(`legend-rows-${id}`).value) : '',
     legendColumns: document.getElementById(`legend-columns-${id}`)?.value ? Number(document.getElementById(`legend-columns-${id}`).value) : '',
@@ -124,6 +126,8 @@ export function applyNodeConfig(id, cfg) {
   f('tick-formatter', cfg.tickFormatter || '');
   f('legend-position', cfg.legendPosition || 'right');
   f('legend-title', cfg.legendTitle || '');
+  f('legend-field-separator', cfg.legendFieldSeparator ?? ' | ');
+  f('legend-field-format', cfg.legendFieldFormat || '{column}={value}');
   f('legend-orientation', cfg.legendOrientation || '');
   f('legend-rows', cfg.legendRows ?? '');
   f('legend-columns', cfg.legendColumns ?? '');

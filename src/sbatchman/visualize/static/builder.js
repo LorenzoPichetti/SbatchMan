@@ -376,6 +376,10 @@ export function builderColumnsHTML(id) {
       </select>
       <label style="margin-top:5px">Legend title</label>
       <input type="text" id="legend-title-${id}" placeholder="(none)">
+      <label style="margin-top:5px" data-tip="Join multiple selected fields in color, linestyle, and marker legend labels">Legend field separator</label>
+      <input type="text" id="legend-field-separator-${id}" value=" | " placeholder=" | ">
+      <label style="margin-top:5px" data-tip="Placeholders: {column} and {value}">Legend field format</label>
+      <input type="text" id="legend-field-format-${id}" value="{column}={value}" placeholder="{column}={value}">
       <label style="margin-top:5px" data-tip="Override the global legend layout for this panel. In a grid, explicit layout settings give this panel its own legend.">Panel legend orientation</label>
       <select id="legend-orientation-${id}">
         <option value="">inherit global</option><option value="auto">auto</option>

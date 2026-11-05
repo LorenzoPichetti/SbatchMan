@@ -42,6 +42,8 @@ export function gatherPlotPayload(id) {
     tick_formatter: tabEl(id, 'tick-formatter')?.value || '',
     legend_position: tabEl(id, 'legend-position')?.value || 'right',
     legend_title: tabEl(id, 'legend-title')?.value || '',
+    legend_field_separator: tabEl(id, 'legend-field-separator')?.value ?? ' | ',
+    legend_field_format: tabEl(id, 'legend-field-format')?.value || '{column}={value}',
     legend_orientation: tabEl(id, 'legend-orientation')?.value || '',
     legend_rows: Number(tabEl(id, 'legend-rows')?.value || 0),
     legend_columns: Number(tabEl(id, 'legend-columns')?.value || 0),

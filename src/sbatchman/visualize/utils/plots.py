@@ -90,6 +90,19 @@ def _xy(df, cfg, kind):
     def legend_value(value):
         return "(missing)" if value is None or (isinstance(value, str) and not value.strip()) else str(value)
 
+    def legend_fields(columns, values):
+        template = cfg.get("legend_field_format") or "{column}={value}"
+        separator = cfg.get("legend_field_separator", " | ")
+        separator = " | " if separator is None else str(separator)
+        fields = []
+        for column, value in zip(columns, values):
+            value = legend_value(value)
+            try:
+                fields.append(str(template).format(column=column, value=value))
+            except (KeyError, ValueError, IndexError, TypeError):
+                fields.append(f"{column}={value}")
+        return separator.join(fields)
+
     def make(gr, label, y, color):
         y_scale = cfg.get("y2_scale", "linear") if y in y2_cols else cfg.get("y_scale")
         y_log = y_scale in ("log", "log2")
@@ -108,18 +121,18 @@ def _xy(df, cfg, kind):
         err = _error_y(cfg, ci, pts)
         band = bool(err) and cfg.get("error_style") == "band" and kind != "bar"
         if color_groups and gr:
-            t_color_label = " | ".join(legend_value(gr[0][ci[c]]) for c in color_groups)
+            t_color_label = legend_fields(color_groups, [gr[0][ci[c]] for c in color_groups])
         else:
             t_color_label = None
         if dash_by and gr:
-            t_dash_value = " | ".join(f"{col}={legend_value(gr[0][ci[col]])}" for col in dash_by)
+            t_dash_value = legend_fields(dash_by, [gr[0][ci[col]] for col in dash_by])
         else:
             t_dash_value = None
         marker_items = {}
         if marker_by:
             for row in pts:
                 marker_key = tuple(row[ci[col]] for col in marker_by)
-                marker_label = " | ".join(f"{col}={legend_value(row[ci[col]])}" for col in marker_by)
+                marker_label = legend_fields(marker_by, marker_key)
                 marker_items.setdefault(marker_label, mmap.get(marker_key, "circle"))
         color_key = tuple(gr[0][ci[c]] for c in color_groups) if color_groups and gr else y
         if kind == "bar":
@@ -145,6 +158,51 @@ def _xy(df, cfg, kind):
         if marker_items: t["_legend_marker_items"] = list(marker_items.items())
         if t_color_label is not None: t["_legend_color_label"] = t_color_label
         if t_dash_value is not None: t["_legend_dash_value"] = t_dash_value
+
+        if kind == "line" and marker_by:
+            # Each marker category is its own line series. This connects its
+            # points across x values while preventing a line from joining
+            # different marker categories. Color and dash categories have
+            # already been separated by the outer grouping.
+            marker_groups = {}
+            for row in pts:
+                marker_key = tuple(row[ci[col]] for col in marker_by)
+                marker_groups.setdefault(marker_key, []).append(row)
+
+            segments = []
+            for marker_key, run_pts in marker_groups.items():
+                segment = dict(t)
+                segment["x"] = [row[ci[x]] for row in run_pts]
+                segment["y"] = [row[ci[y]] for row in run_pts]
+                segment["marker"] = dict(t["marker"])
+                symbol = mmap.get(marker_key, "circle")
+                segment["marker"]["symbol"] = symbol
+                marker_label = legend_fields(marker_by, marker_key)
+                segment["_legend_marker_items"] = [(marker_label, symbol)]
+
+                run_err = _error_y(cfg, ci, run_pts)
+                if band and run_err:
+                    run_y = segment["y"]
+                    hi = [value + delta if value is not None and delta is not None else None
+                          for value, delta in zip(run_y, run_err["array"])]
+                    lo = [value - delta if value is not None and delta is not None else None
+                          for value, delta in zip(run_y, run_err.get("arrayminus", run_err["array"]))]
+                    segment_x = segment["x"]
+                    segments.extend([
+                        {"type": "scatter", "x": segment_x, "y": lo, "_ycol": y,
+                         "_series_color_key": color_key,
+                         "mode": "lines", "line": {"width": 0}, "showlegend": False,
+                         "hoverinfo": "skip", "name": name + " (band)"},
+                        {"type": "scatter", "x": segment_x, "y": hi, "_ycol": y,
+                         "_series_color_key": color_key,
+                         "mode": "lines", "line": {"width": 0}, "fill": "tonexty",
+                         "fillcolor": with_alpha(color, 0.2), "showlegend": False,
+                         "hoverinfo": "skip", "name": name + " (band)"},
+                    ])
+                elif run_err:
+                    segment["error_y"] = run_err
+                segments.append(segment)
+            return segments
 
         if not band:
             if err: t["error_y"] = err
@@ -189,7 +247,7 @@ def _xy(df, cfg, kind):
             for y in ys:
                 color_key = group_color_key if group_color_key is not None else y
                 color = color_map[color_key]
-                traces += make(gr, " | ".join(map(str, key)), y, color); n_series += 1
+                traces += make(gr, legend_fields(split, key), y, color); n_series += 1
     else:
         for y in ys:
             traces += make(rows, None, y, _color(n_series)); n_series += 1

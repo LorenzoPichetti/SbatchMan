@@ -490,6 +490,31 @@ def _short_legend_handles(traces, color_map, Line2D, config=None):
     return result
 
 
+def _marker_legend_handles(traces, color_map, Line2D, style, config):
+    """Build full series legend entries for each marker-by category."""
+    handles = []
+    marker_size = float(config.get("legend_marker_size") or style.get("marker_size", 5))
+    for trace in traces:
+        items = trace.get("_legend_marker_items")
+        if not items or trace.get("showlegend") is False:
+            continue
+        name = str(trace.get("name") or "")
+        series_key = trace.get("_series_color_key", name)
+        line = trace.get("line") or {}
+        marker = trace.get("marker") or {}
+        color = color_map.get(name, color_map.get(series_key, line.get("color") or marker.get("color") or "#555"))
+        mode = trace.get("mode", "markers")
+        linestyle = _DASHES.get(line.get("dash", "solid"), "-") if "lines" in mode else "None"
+        linewidth = float(line.get("width", 1.5)) if "lines" in mode else 0
+        for marker_label, symbol in items:
+            label = f"{name} — {marker_label}".strip(" —")
+            handle = Line2D([], [], color=color, linestyle=linestyle, linewidth=linewidth,
+                            marker=_MARKERS.get(symbol, symbol), markersize=marker_size,
+                            markerfacecolor=color, markeredgecolor=color)
+            handles.append((handle, label))
+    return handles
+
+
 def _draw_reference_lines(ax, config):
     styles = {"solid": "-", "dash": "--", "dot": ":", "dashdot": "-."}
     positions = {"start": .02, "center": .5, "end": .98}
@@ -559,6 +584,8 @@ def render_matplotlib_plot(df, traces, config, style=None, title="",
         handles = _axis_legend_handles(ax, right_ax)
     elif config.get("short_legend"):
         handles = _short_legend_handles(traces, color_map, Line2D, config)
+    elif any(trace.get("_legend_marker_items") for trace in traces):
+        handles = _marker_legend_handles(traces, color_map, Line2D, style, config)
     _legend(ax, handles, config, style)
     _call_custom_hook(layout_fn, plt, np, sns, fig, ax, config)
     if callable(legend_fn):
@@ -597,6 +624,7 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
         bar_indexes = {id(t): j for j, t in enumerate(bar_traces)}
         handles = []
         custom_plot_fn = panel.get("_custom_mpl_plot_fn")
+        has_marker_items = any(t.get("_legend_marker_items") for t in traces)
         if callable(custom_plot_fn):
             _call_custom_hook(custom_plot_fn, plt, np, sns, ax, panel.get("_df_data"), config)
             handles = _axis_legend_handles(ax, right_ax)
@@ -621,8 +649,13 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
                     raise ValueError(f"Grid panel {i + 1}{panel_name}: {exc}") from exc
                 if result:
                     handles.append(result)
-                    if not config.get("short_legend") and name not in {n for _, n in all_handles}:
+                    if not config.get("short_legend") and not has_marker_items and name not in {n for _, n in all_handles}:
                         all_handles.append(result)
+        if has_marker_items and not config.get("short_legend") and not callable(custom_plot_fn):
+            handles = _marker_legend_handles(traces, color_map, Line2D, style, config)
+            for result in handles:
+                if result[1] not in {name for _, name in all_handles}:
+                    all_handles.append(result)
         if config.get("short_legend") and not callable(custom_plot_fn):
             handles = _short_legend_handles(traces, color_map, Line2D, config)
             for result in handles:

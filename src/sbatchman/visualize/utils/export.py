@@ -37,6 +37,8 @@ def _panel_payload(node_cfg: dict, style: dict | None) -> dict:
         "y_tickformat": node_cfg.get("yTickFmt", ""),
         "tick_formatter": node_cfg.get("tickFormatter", ""),
         "legend_position": node_cfg.get("legendPosition") or "right",
+        "legend_field_separator": node_cfg.get("legendFieldSeparator", " | "),
+        "legend_field_format": node_cfg.get("legendFieldFormat") or "{column}={value}",
         "legend_orientation": node_cfg.get("legendOrientation", ""),
         "legend_rows": node_cfg.get("legendRows", 0), "legend_columns": node_cfg.get("legendColumns", 0),
         "legend_marker_size": node_cfg.get("legendMarkerSize", 0),
