@@ -50,7 +50,7 @@ export function defaultNodeState(base) {
   const state = Object.assign({
     database: G.defaultDb || Object.keys(G.databases)[0] || '',
     sql: '', plotType: 'line', columns: [], yCols: [], groupCols: [],
-    x: '', markerBy: '', dashBy: '', z: '', extra: {},
+    x: '', markerBy: [], dashBy: [], z: '', extra: {},
     chartTitle: '', xLabel: '', yLabel: '', xScale: 'linear', yScale: 'linear',
     plotFields: {},
     xTickFmt: '', yTickFmt: '', tickFormatter: '', customScript: '', transformScript: '', layoutScript: '',

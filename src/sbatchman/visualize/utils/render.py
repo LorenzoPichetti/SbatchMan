@@ -78,6 +78,7 @@ def _short_category_legend(traces, config):
             trace.pop("_legend_color_label", None)
             trace.pop("_legend_dash_value", None)
             trace.pop("_legend_marker_value", None)
+            trace.pop("_legend_marker_items", None)
         return traces
     originals = [t for t in traces if t.get("showlegend") is not False and t.get("name")]
     if not originals:
@@ -117,11 +118,16 @@ def _short_category_legend(traces, config):
         for value, dash in dashes.items(): sample(value, "linestyle", "#555", dash)
     markers = {}
     for t in originals:
-        value = t.get("_legend_marker_value")
-        symbol = (t.get("marker") or {}).get("symbol")
-        if value is not None and symbol is not None:
-            if isinstance(symbol, list): symbol = symbol[0] if symbol else "circle"
-            markers.setdefault(value, symbol)
+        items = t.get("_legend_marker_items")
+        if items:
+            for value, symbol in items:
+                markers.setdefault(value, symbol)
+        else:
+            value = t.get("_legend_marker_value")
+            symbol = (t.get("marker") or {}).get("symbol")
+            if value is not None and symbol is not None:
+                if isinstance(symbol, list): symbol = symbol[0] if symbol else "circle"
+                markers.setdefault(value, symbol)
     if markers:
         heading("Marker", "marker")
         for value, symbol in markers.items(): sample(value, "marker", "#555", "solid", symbol)
@@ -130,6 +136,7 @@ def _short_category_legend(traces, config):
             trace.pop("_legend_color_label", None)
             trace.pop("_legend_dash_value", None)
             trace.pop("_legend_marker_value", None)
+            trace.pop("_legend_marker_items", None)
         return traces
     for trace in originals:
         trace["showlegend"] = False
@@ -137,6 +144,7 @@ def _short_category_legend(traces, config):
         trace.pop("_legend_color_label", None)
         trace.pop("_legend_dash_value", None)
         trace.pop("_legend_marker_value", None)
+        trace.pop("_legend_marker_items", None)
     return traces + entries
 
 

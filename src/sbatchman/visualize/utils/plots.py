@@ -29,11 +29,12 @@ def _color(i):
     return COLORWAY[i % len(COLORWAY)]
 
 
-def _style_map(rows, ci, col, seq):
-    if not col or col not in ci:
+def _style_map(rows, ci, columns, seq):
+    columns = _cols(columns)
+    if not columns or any(col not in ci for col in columns):
         return {}
-    vals = sorted({r[ci[col]] for r in rows}, key=str)
-    return {v: seq[i % len(seq)] for i, v in enumerate(vals)}
+    vals = sorted({tuple(r[ci[col]] for col in columns) for r in rows}, key=lambda values: [str(v) for v in values])
+    return {value: seq[i % len(seq)] for i, value in enumerate(vals)}
 
 
 def _drop_unplottable(rows, ci, col, is_log):
@@ -78,11 +79,11 @@ def _xy(df, cfg, kind):
     if not x or not ys:
         raise ValueError(f"{kind} chart requires x and at least one y.")
     groups = _cols(cfg.get("group"))
-    marker_by = (cfg.get("marker_by") or None) if kind != "bar" else None
-    dash_by = (cfg.get("dash_by") or None) if kind == "line" else None
-    color_groups = [c for c in groups if c != dash_by]
+    marker_by = [c for c in _cols(cfg.get("marker_by")) if c in ci] if kind != "bar" else []
+    dash_by = [c for c in _cols(cfg.get("dash_by")) if c in ci] if kind == "line" else []
+    color_groups = [c for c in groups if c not in dash_by]
     mmap, dmap = _style_map(rows, ci, marker_by, MARKERS), _style_map(rows, ci, dash_by, DASHES)
-    split = groups + ([dash_by] if dash_by and dash_by not in groups else [])
+    split = groups + [c for c in dash_by if c not in groups]
     lx = cfg.get("x_scale") in ("log", "log2")
     y2_cols = set(_cols(cfg.get("y2")))
 
@@ -111,13 +112,15 @@ def _xy(df, cfg, kind):
         else:
             t_color_label = None
         if dash_by and gr:
-            t_dash_value = legend_value(gr[0][ci[dash_by]])
+            t_dash_value = " | ".join(f"{col}={legend_value(gr[0][ci[col]])}" for col in dash_by)
         else:
             t_dash_value = None
-        if marker_by and gr:
-            t_marker_value = legend_value(gr[0][ci[marker_by]])
-        else:
-            t_marker_value = None
+        marker_items = {}
+        if marker_by:
+            for row in pts:
+                marker_key = tuple(row[ci[col]] for col in marker_by)
+                marker_label = " | ".join(f"{col}={legend_value(row[ci[col]])}" for col in marker_by)
+                marker_items.setdefault(marker_label, mmap.get(marker_key, "circle"))
         color_key = tuple(gr[0][ci[c]] for c in color_groups) if color_groups and gr else y
         if kind == "bar":
             t = {"type": "bar", "name": name, "x": xs, "y": yv, "_ycol": y,
@@ -125,7 +128,7 @@ def _xy(df, cfg, kind):
                  "_series_color_key": color_key}
             if t_color_label is not None: t["_legend_color_label"] = t_color_label
             if t_dash_value is not None: t["_legend_dash_value"] = t_dash_value
-            if t_marker_value is not None: t["_legend_marker_value"] = t_marker_value
+            if marker_items: t["_legend_marker_items"] = list(marker_items.items())
             if err: t["error_y"] = err
             return [t]
         t = {"type": "scatter", "mode": cfg.get("mode", "lines+markers") if kind == "line" else "markers",
@@ -135,10 +138,11 @@ def _xy(df, cfg, kind):
         if kind == "line":
             t["line"] = {"width": LW, "color": color}
             if dash_by and gr:
-                t["line"]["dash"] = dmap.get(gr[0][ci[dash_by]], "solid")
+                dash_key = tuple(gr[0][ci[col]] for col in dash_by)
+                t["line"]["dash"] = dmap.get(dash_key, "solid")
         if marker_by:
-            t["marker"]["symbol"] = [mmap.get(r[ci[marker_by]], "circle") for r in pts]
-        if t_marker_value is not None: t["_legend_marker_value"] = t_marker_value
+            t["marker"]["symbol"] = [mmap.get(tuple(r[ci[col]] for col in marker_by), "circle") for r in pts]
+        if marker_items: t["_legend_marker_items"] = list(marker_items.items())
         if t_color_label is not None: t["_legend_color_label"] = t_color_label
         if t_dash_value is not None: t["_legend_dash_value"] = t_dash_value
 
@@ -150,8 +154,10 @@ def _xy(df, cfg, kind):
         # invisible line traces (lower, then upper with fill='tonexty') sit
         # behind the main trace, built from the same array/arrayminus as
         # error_y would use, so it's a pure presentation switch.
-        hi = [v + d for v, d in zip(yv, err["array"])]
-        lo = [v - d for v, d in zip(yv, err.get("arrayminus", err["array"]))]
+        high_errors = err["array"]
+        low_errors = err.get("arrayminus", high_errors)
+        hi = [v + d if v is not None and d is not None else None for v, d in zip(yv, high_errors)]
+        lo = [v - d if v is not None and d is not None else None for v, d in zip(yv, low_errors)]
         band_lower = {"type": "scatter", "x": xs, "y": lo, "_ycol": y, "_series_color_key": color_key,
                      "mode": "lines", "line": {"width": 0},
                      "showlegend": False, "hoverinfo": "skip", "name": name + " (band)"}

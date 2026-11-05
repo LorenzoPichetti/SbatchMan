@@ -216,28 +216,28 @@ export function updateAxisControls(id, columns) {
   st.columns = columns;
   st.yCols = toArray(st.yCols).filter(c => columns.includes(c));
   st.groupCols = toArray(st.groupCols).filter(c => columns.includes(c));
+  st.markerBy = toArray(st.markerBy).filter(c => columns.includes(c));
+  st.dashBy = toArray(st.dashBy).filter(c => columns.includes(c));
   renderPlotSpecificFields(id);
 
   const xSel = tabEl(id, 'x-col');
-  const markerSel = tabEl(id, 'marker-by');
-  const dashSel = tabEl(id, 'dash-by');
+  const markerPills = document.getElementById(`marker-pills-${id}`);
+  const dashPills = document.getElementById(`dash-pills-${id}`);
   const yPills = document.getElementById(`y-pills-${id}`);
   const grpPills = document.getElementById(`group-pills-${id}`);
   if (!xSel || !yPills) return;
 
-  const prevX = xSel.value, prevMarker = markerSel?.value, prevDash = dashSel?.value;
+  const prevX = xSel.value;
   const mkOpt = (v, sel) => { const o = document.createElement('option'); o.value = v; o.textContent = v; if (v === sel) o.selected = true; return o; };
 
   xSel.innerHTML = '<option value="">— x column —</option>';
-  if (markerSel) markerSel.innerHTML = '<option value="">— none —</option>';
-  if (dashSel) dashSel.innerHTML = '<option value="">— none —</option>';
   yPills.innerHTML = '';
   if (grpPills) grpPills.innerHTML = '';
+  if (markerPills) markerPills.innerHTML = '';
+  if (dashPills) dashPills.innerHTML = '';
 
   for (const col of columns) {
     xSel.appendChild(mkOpt(col, prevX || st.x));
-    if (markerSel) markerSel.appendChild(mkOpt(col, prevMarker || st.markerBy));
-    if (dashSel) dashSel.appendChild(mkOpt(col, prevDash || st.dashBy));
 
     const yPill = document.createElement('div');
     yPill.className = 'col-pill' + (st.yCols.includes(col) ? ' selected' : '');
@@ -257,6 +257,19 @@ export function updateAxisControls(id, columns) {
         else { st.groupCols.push(col); gPill.classList.add('selected'); }
       });
       grpPills.appendChild(gPill);
+    }
+    for (const [host, field] of [[markerPills, 'markerBy'], [dashPills, 'dashBy']]) {
+      if (!host) continue;
+      const selected = st[field].includes(col);
+      const pill = document.createElement('div');
+      pill.className = 'col-pill' + (selected ? ' selected' : '');
+      pill.textContent = col; pill.dataset.col = col;
+      pill.addEventListener('click', () => {
+        if (st[field].includes(col)) st[field] = st[field].filter(value => value !== col);
+        else st[field] = [...st[field], col];
+        pill.classList.toggle('selected', st[field].includes(col));
+      });
+      host.appendChild(pill);
     }
   }
 }
@@ -318,12 +331,12 @@ export function builderColumnsHTML(id) {
       <select id="x-col-${id}"><option value="">— x column —</option></select>
       <label style="margin-top:5px" data-tip="One or more columns mapped to Y — click to toggle">Y column(s)</label>
       <div class="multi-col-list" id="y-pills-${id}"></div>
-      <label style="margin-top:5px" data-tip="Group / colour by one or more columns — combinations become separate traces">Group by (colour) — multi-column</label>
+      <label style="margin-top:5px" data-tip="Group / colour by one or more columns — combinations become separate traces">Colour by</label>
       <div class="multi-col-list" id="group-pills-${id}"></div>
-      <label style="margin-top:5px" data-tip="Assign a distinct marker shape to each value of this column (line/scatter charts)">Marker by</label>
-      <select id="marker-by-${id}"><option value="">— none —</option></select>
-      <label style="margin-top:5px" data-tip="Assign a distinct linestyle (solid/dash/dot/…) to each value of this column (line charts)">Linestyle by</label>
-      <select id="dash-by-${id}"><option value="">— none —</option></select>
+      <label style="margin-top:5px" data-tip="Assign distinct marker shapes to combinations of selected column values (line/scatter charts)">Marker by</label>
+      <div class="multi-col-list" id="marker-pills-${id}"></div>
+      <label style="margin-top:5px" data-tip="Assign distinct linestyles to combinations of selected column values (line charts)">Linestyle by</label>
+      <div class="multi-col-list" id="dash-pills-${id}"></div>
     </div>
 
     <div class="b-col" style="min-width:180px">
@@ -524,7 +537,6 @@ export function wireBuilderColumns(id) {
   // a cloned tab, or a grid panel just created with a database already set),
   // not from a fresh query — same reasoning applies.
   if (st.columns && st.columns.length) window.updateAxisControls(id, st.columns);
-  setTimeout(() => { f(`marker-by-${id}`, st.markerBy); f(`dash-by-${id}`, st.dashBy); }, 0);
 
   const bindToggle = (toggleId, boxId, arrowId) => {
     const t = document.getElementById(toggleId);

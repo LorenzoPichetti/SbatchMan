@@ -77,8 +77,8 @@ export function getNodeConfig(id) {
     x: document.getElementById(`x-col-${id}`)?.value || '',
     y: st.yCols,
     group: st.groupCols,
-    markerBy: document.getElementById(`marker-by-${id}`)?.value || '',
-    dashBy: document.getElementById(`dash-by-${id}`)?.value || '',
+    markerBy: st.markerBy,
+    dashBy: st.dashBy,
     z: document.getElementById(`plot-field-${id}-z`)?.value || st.z || '',
     xLabel: document.getElementById(`x-label-${id}`)?.value || '',
     yLabel: document.getElementById(`y-label-${id}`)?.value || '',
@@ -150,8 +150,8 @@ export function applyNodeConfig(id, cfg) {
   st.groupCols = toArray(cfg.group);
   // Keep column-dependent selections in state while the imported SQL runs;
   // their <select> options do not exist yet at this point.
-  st.markerBy = cfg.markerBy || '';
-  st.dashBy = cfg.dashBy || '';
+  st.markerBy = toArray(cfg.markerBy);
+  st.dashBy = toArray(cfg.dashBy);
   st.extra = cfg.extra || {};
   if (cfg.z && st.extra.z === undefined) st.extra.z = cfg.z;
   st.customScript = cfg.customScript || '';
@@ -174,7 +174,6 @@ export function applyNodeConfig(id, cfg) {
     const inp = document.getElementById(`extra-${id}-${key}`);
     if (inp) inp.value = val;
   }
-  setTimeout(() => { f('marker-by', st.markerBy); f('dash-by', st.dashBy); }, 0);
 
   if (cfg.sql && cfg.sql.trim()) {
     // window.runShow: axis_addon.js wraps it to restore its own
@@ -184,8 +183,6 @@ export function applyNodeConfig(id, cfg) {
     setTimeout(() => window.runShow(id).then(() => {
       setTimeout(() => {
         f('x-col', cfg.x || '');
-        f('marker-by', st.markerBy);
-        f('dash-by', st.dashBy);
       }, 0);
     }), 0);
   }

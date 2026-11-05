@@ -85,8 +85,13 @@ def _errorbar_kwargs(trace):
     array = err.get("array")
     if array is None:
         return {}
+    # Matplotlib adds error sizes to the data values internally. Treat a
+    # missing error as zero so one incomplete row does not fail the plot.
+    array = [0 if value is None else value for value in array]
     if err.get("symmetric") is False:
-        return {"yerr": [err.get("arrayminus", []), array], "capsize": 2}
+        arrayminus = err.get("arrayminus", [])
+        arrayminus = [0 if value is None else value for value in arrayminus]
+        return {"yerr": [arrayminus, array], "capsize": 2}
     return {"yerr": array, "capsize": 2}
 
 
@@ -138,6 +143,7 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
     y2 = {y2} if isinstance(y2, str) else set(y2)
     axis = right_ax if trace.get("yaxis") == "y2" or trace.get("_ycol") in y2 else ax
     x, y = trace.get("x"), trace.get("y")
+    numeric_y = [np.nan if value is None else value for value in (y or [])]
     line = trace.get("line") or {}
     marker = trace.get("marker") or {}
     lw = float(style.get("line_width", line.get("width", 1.5)))
@@ -159,17 +165,20 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
             if lower is not None:
                 from matplotlib.colors import to_rgba
                 _, lower_y = lower
+                lower_y = np.asarray([np.nan if value is None else value for value in lower_y], dtype=float)
+                upper_y = np.asarray([np.nan if value is None else value for value in (y or [])], dtype=float)
                 axis.xaxis.update_units(x or [])
                 x_values = axis.convert_xunits(x or [])
                 band_color = color if style.get("recolor", True) else trace.get("fillcolor") or color
                 try: band_color = to_rgba(band_color, alpha=.2 if style.get("recolor", True) else None)
                 except (TypeError, ValueError): band_color = to_rgba(color, alpha=.2)
-                axis.fill_between(x_values, lower_y, y or [],
+                axis.fill_between(x_values, lower_y, upper_y,
                                   color=band_color, linewidth=0,
                                   interpolate=True, zorder=1)
             axis._sbatchman_band_lower = None
         else:
-            axis._sbatchman_band_lower = (x or [], y or [])
+            lower_y = [np.nan if value is None else value for value in (y or [])]
+            axis._sbatchman_band_lower = (x or [], lower_y)
         return None
 
     if kind == "scatter":
@@ -177,7 +186,7 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
         if "lines" in mode:
             linestyle = _DASHES.get(line.get("dash", "solid"), "-")
             if _has_errorbars(trace, config) and not marker_values:
-                artist = axis.errorbar(x or [], y or [], color=color, linewidth=lw, linestyle=linestyle,
+                artist = axis.errorbar(x or [], numeric_y, color=color, linewidth=lw, linestyle=linestyle,
                                        marker=marker_value if "markers" in mode and not marker_values else None,
                                        markersize=ms, label=name, **_errorbar_kwargs(trace))
                 handle = artist.lines[0]
@@ -196,7 +205,7 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
                 if _has_errorbars(trace, config):
                     # Error bars are rendered independently when marker
                     # symbols vary from point to point.
-                    axis.errorbar(x or [], y or [], color=color, fmt="none", label="_nolegend_",
+                    axis.errorbar(x or [], numeric_y, color=color, fmt="none", label="_nolegend_",
                                   **_errorbar_kwargs(trace))
         else:
             if marker_values:
@@ -208,10 +217,10 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
                                                      s=ms ** 2, label=name if not collections else "_nolegend_"))
                 handle = collections[0] if collections else None
                 if _has_errorbars(trace, config):
-                    axis.errorbar(x or [], y or [], color=color, fmt="none", label="_nolegend_",
+                    axis.errorbar(x or [], numeric_y, color=color, fmt="none", label="_nolegend_",
                                   **_errorbar_kwargs(trace))
             else:
-                artist = axis.errorbar(x or [], y or [], color=color, linestyle="none",
+                artist = axis.errorbar(x or [], numeric_y, color=color, linestyle="none",
                                        marker=marker_value, markersize=ms, label=name,
                                        **(_errorbar_kwargs(trace) if _has_errorbars(trace, config) else {}))
                 handle = artist.lines[0]
@@ -219,7 +228,7 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
         xx = np.arange(len(x or []))
         width = .8 / max(bar_count, 1)
         xx = xx - .4 + width / 2 + bar_index * width
-        bars = axis.bar(xx, y or [], width=width, color=color, label=name,
+        bars = axis.bar(xx, numeric_y, width=width, color=color, label=name,
                         **_errorbar_kwargs(trace))
         axis.set_xticks(np.arange(len(x or [])), [str(v) for v in (x or [])])
         handle = bars[0] if len(bars) else None
@@ -448,11 +457,16 @@ def _short_legend_handles(traces, color_map, Line2D, config=None):
         value = trace.get("_legend_dash_value")
         if value is not None:
             dash_items.setdefault(value, (trace.get("line") or {}).get("dash", "solid"))
-        value = trace.get("_legend_marker_value")
-        symbol = (trace.get("marker") or {}).get("symbol")
-        if value is not None and symbol is not None:
-            if isinstance(symbol, list): symbol = symbol[0] if symbol else "circle"
-            marker_items.setdefault(value, symbol)
+        items = trace.get("_legend_marker_items")
+        if items:
+            for value, symbol in items:
+                marker_items.setdefault(value, symbol)
+        else:
+            value = trace.get("_legend_marker_value")
+            symbol = (trace.get("marker") or {}).get("symbol")
+            if value is not None and symbol is not None:
+                if isinstance(symbol, list): symbol = symbol[0] if symbol else "circle"
+                marker_items.setdefault(value, symbol)
     result = []
     def add(handle, label, category, value):
         handle._sbatchman_legend_key = (category, str(value))
