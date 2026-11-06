@@ -82,6 +82,9 @@ variables:
 -   **`default_conf` (Optional)**: A dictionary of default parameters that apply to all configurations under this cluster.
 -   **`configs`**: A list of configuration templates. Wildcards in `name` or parameter values will be expanded using the variables.
 
+!!! note "Variables in default configuration values"
+    Variables in `default_conf` values are substituted for each generated configuration. This works as expected when a variable used only in `default_conf` has a single value. If it has multiple values, include it in the configuration `name` (and in any job config reference) so each generated configuration has a unique name. Otherwise, configurations with the same name can overwrite one another, and jobs may use the value from a different variable combination.
+
 #### Example
 
 Here is an example `my_configs.yaml` file defining configurations for two different clusters, `clusterA` (using SLURM) and `clusterB` (using PBS), with variables and wildcards:

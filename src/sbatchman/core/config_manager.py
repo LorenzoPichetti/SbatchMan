@@ -122,7 +122,7 @@ def create_configs_from_data(data: dict, base_dir: Path, overwrite: bool = False
     if not scheduler:
       raise ConfigurationError(f"Cluster '{cluster_name}' must have a 'scheduler' defined.")
  
-    default_conf = cluster_configs.get("default_conf", {})
+    default_conf = cluster_configs.get("default_conf", cluster_configs.get("default_config", {}))
     configs = cluster_configs.get("configs", {})
  
     if not configs:
@@ -135,17 +135,21 @@ def create_configs_from_data(data: dict, base_dir: Path, overwrite: bool = False
       used_vars = set()
       used_vars |= extract_used_vars(config_name_template)
       
-      for v in config_params.values():
-        if isinstance(v, str):
-          used_vars |= extract_used_vars(v)
-        elif isinstance(v, list):
-          for lv in v:
-            if isinstance(lv, str):
-              used_vars |= extract_used_vars(lv)
+      def collect_strings(value):
+        if isinstance(value, str):
+          return [value]
+        if isinstance(value, dict):
+          return [text for nested in value.values() for text in collect_strings(nested)]
+        if isinstance(value, (list, tuple)):
+          return [text for nested in value for text in collect_strings(nested)]
+        return []
 
-      config_templates = [config_name_template] + [
-        value for value in config_params.values() if isinstance(value, (str, list))
-      ]
+      config_templates = [config_name_template]
+      config_templates.extend(collect_strings(config_params))
+      config_templates.extend(collect_strings(default_conf))
+      for template in config_templates:
+        used_vars |= extract_used_vars(template)
+
       map_names = [
         name for name, value in expanded_vars.items()
         if isinstance(value, dict) and '__map__' in value
@@ -163,17 +167,12 @@ def create_configs_from_data(data: dict, base_dir: Path, overwrite: bool = False
           if k in used_vars:
             # Find the key variable for this map by searching config parameters
             key_var = None
-            for template in [config_name_template] + [val for val in config_params.values() if isinstance(val, str) or isinstance(val, list)]:
-              template_list = template
-              if isinstance(template, str):
-                template_list = [template]
-
-              for t in template_list:
-                pattern = re.compile(rf"\{{{k}\[(\w+)\]\}}")
-                match = pattern.search(t)
-                if match:
-                  key_var = match.group(1)
-                  break
+            for template in config_templates:
+              pattern = re.compile(rf"\{{{k}\[(\w+)\]\}}")
+              match = pattern.search(template)
+              if match:
+                key_var = match.group(1)
+                break
             if key_var:
               map_info[k] = (v, key_var)
           continue
@@ -194,12 +193,10 @@ def create_configs_from_data(data: dict, base_dir: Path, overwrite: bool = False
       
       if not filtered_vars and not map_info:
         # No variables to expand, create single config
-        final_params = deepcopy(default_conf)
-        final_params.update(config_params if config_params else {})
-        final_params["name"] = config_name_template
-        final_params["cluster_name"] = cluster_name
-        final_params["overwrite"] = overwrite
-        created_configs.append(_create_config_from_params(scheduler, final_params))
+        _create_config_from_params_helper(
+          config_params, config_name_template, default_conf,
+          {}, scheduler, cluster_name, overwrite, created_configs
+        )
       else:
         # Expand over variable combinations
         keys, values = zip(*filtered_vars.items()) if filtered_vars else ([], [])
@@ -262,20 +259,30 @@ def _create_config_from_params_helper(
   """Helper function to create a config with substituted variables."""
   config_name = substitute(config_name_template, final_vars)
   
-  # Merge default params with specific config params, substituting variables
+  # Merge defaults with config-specific parameters, then substitute every
+  # string value, including strings nested in default dictionaries/lists.
   final_params = deepcopy(default_conf)
   for k, v in config_params.items():
     if isinstance(v, (int, float, str)):
-      final_params[k] = substitute(v, final_vars)
-    elif isinstance(v, list) and len(v) > 0:
+      final_params[k] = v
+    elif isinstance(v, list):
       if final_params.get(k) and isinstance(final_params[k], list):
-        for i in range(len(final_params[k])):
-          if isinstance(final_params[k][i], str):
-            final_params[k][i] = substitute(final_params[k][i], final_vars)
+        final_params[k] = [*final_params[k], *v]
       else:
-        final_params[k] = []
-      for lv in v:
-        final_params[k].append(substitute(lv, final_vars) if isinstance(lv, str) else lv)
+        final_params[k] = deepcopy(v)
+
+  def substitute_nested(value):
+    if isinstance(value, str):
+      return substitute(value, final_vars)
+    if isinstance(value, list):
+      return [substitute_nested(item) for item in value]
+    if isinstance(value, tuple):
+      return tuple(substitute_nested(item) for item in value)
+    if isinstance(value, dict):
+      return {key: substitute_nested(item) for key, item in value.items()}
+    return value
+
+  final_params = substitute_nested(final_params)
   
   final_params["name"] = config_name
   final_params["cluster_name"] = cluster_name

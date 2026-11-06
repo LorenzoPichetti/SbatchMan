@@ -2,9 +2,12 @@ import re
 import warnings
 from pathlib import Path
 from copy import deepcopy
+from rich.console import Console
 
 from sbatchman.config.global_config import get_cluster_name
 from sbatchman.exceptions import ClusterNameNotFoundError, SyntaxError
+
+console = Console()
 
 def get_var_path_filename(path):
   path = Path(path)
@@ -152,8 +155,16 @@ def substitute(template, variables):
     var_name = match.group(1)
     key_var_name = match.group(2)
 
+    def warn_missing(name):
+      if name not in variables:
+        console.print(
+          f"[yellow]Warning: variable pattern '{full_match}' has no matching variable '{name}'.[/yellow]"
+        )
+
     # Handle {map_var[key_var]}
     if key_var_name:
+      warn_missing(var_name)
+      warn_missing(key_var_name)
       map_value = variables.get(var_name)
       key_value = variables.get(key_var_name)
 
@@ -191,6 +202,7 @@ def substitute(template, variables):
     # Handle {var_name_filename}
     if var_name.endswith("_filename"):
       base_name = var_name[:-len("_filename")]
+      warn_missing(base_name)
       value = variables.get(base_name)
 
       if isinstance(value, tuple) and len(value) > 1:
@@ -198,6 +210,7 @@ def substitute(template, variables):
 
     else:
       # Handle regular {var_name}
+      warn_missing(var_name)
       value = variables.get(var_name)
 
       if isinstance(value, tuple):

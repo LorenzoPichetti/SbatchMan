@@ -83,7 +83,7 @@ jobs:
       - tag: trial_1
 ```
 
-The inline `configs` mapping uses the same structure as a standalone configuration file, including `variables` and `default_conf`. The cluster name must match the cluster selected in SbatchMan.
+The inline `configs` mapping uses the same structure as a standalone configuration file, including `variables` and `default_conf`. Variables declared at the jobs file's top level are available while generating these configurations; variables declared inside `configs` override them. The cluster name must match the cluster selected in SbatchMan.
 
 !!! tip
     In general, higher-level variables and blocks can be overwritten by redeclaring them for more specific scopes.

@@ -9,6 +9,7 @@ import time
 import yaml
 import fnmatch
 import typer
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -638,6 +639,7 @@ def launch_jobs_from_file(
   global_is_sequential = bool(config.get("sequential"))
   global_configs_file = config.get("configs")
   global_vars = config.get("variables", {})
+  jobs_file_vars = dict(global_vars)
   global_vars_file = config.get("include_variables")
   included_var_bases = {}
   global_command = config.get("command", None)
@@ -681,7 +683,12 @@ def launch_jobs_from_file(
     if isinstance(global_configs_file, dict):
       emit('[cyan]Loading inline configs from jobs file[/cyan]')
       try:
-        for c in create_configs_from_data(global_configs_file, jobs_file_path.parent, True):
+        # Inline config variables inherit the jobs file's global variables.
+        # Keep the inline config's own variables as the more specific scope.
+        inline_configs = deepcopy(global_configs_file)
+        inline_vars = inline_configs.get("variables", {})
+        inline_configs["variables"] = {**jobs_file_vars, **inline_vars}
+        for c in create_configs_from_data(inline_configs, jobs_file_path.parent, True):
           emit(f"✅ Configuration '[bold cyan]{c.name}[/bold cyan]' saved to {c.template_path}")
         emit("✅ Inline configurations loaded successfully.")
       except SbatchManError as e:
