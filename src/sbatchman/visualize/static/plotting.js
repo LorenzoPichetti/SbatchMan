@@ -35,6 +35,8 @@ export function gatherPlotPayload(id) {
     z: st.z || '',
     x_label: tabEl(id, 'x-label')?.value || '',
     y_label: tabEl(id, 'y-label')?.value || '',
+    x_label_hidden: !!tabEl(id, 'x-label-hidden')?.checked,
+    y_label_hidden: !!tabEl(id, 'y-label-hidden')?.checked,
     x_scale: tabEl(id, 'x-scale')?.value || 'linear',
     y_scale: tabEl(id, 'y-scale')?.value || 'linear',
     x_tickformat: tabEl(id, 'x-tickfmt')?.value || '',

@@ -75,7 +75,7 @@
       facetGroupCols: Array.isArray(cfg.grid.groupBy) ? cfg.grid.groupBy :
         (Array.isArray(cfg.grid.facetGroupCols) ? cfg.grid.facetGroupCols : []),
       facetAxis: cfg.grid.facetAxis === 'rows' ? 'rows' : 'cols',
-      facetCount: Math.max(1, Math.min(6, parseInt(cfg.grid.facetCount, 10) || 2)),
+      facetCount: Math.max(1, Math.min(12, parseInt(cfg.grid.facetCount, 10) || 2)),
       figureWidth: Math.max(0, Number(cfg.grid.figureWidth) || 0),
       figureHeight: Math.max(0, Number(cfg.grid.figureHeight) || 0),
       subplotWidth: Math.max(.5, Number(cfg.grid.subplotWidth) || 4),
@@ -209,7 +209,7 @@
     const axis = document.getElementById(`facet-axis-${tabId}`);
     const count = document.getElementById(`facet-count-${tabId}`);
     if (axis) { axis.value = g.facetAxis; axis.onchange = () => { g.facetAxis = axis.value; }; }
-    if (count) { count.value = g.facetCount; count.onchange = () => { g.facetCount = Math.max(1, Math.min(6, parseInt(count.value, 10) || 1)); count.value = g.facetCount; }; }
+    if (count) { count.value = g.facetCount; count.onchange = () => { g.facetCount = Math.max(1, Math.min(12, parseInt(count.value, 10) || 1)); count.value = g.facetCount; }; }
     const format = document.getElementById(`facet-label-format-${tabId}`);
     if (format) { format.value = g.facetLabelFormat; format.onchange = () => { g.facetLabelFormat = format.value || '{column}={value}'; }; }
   }
@@ -248,7 +248,7 @@
           const facetColumns = g.facetGroupCols || [];
           if (!facetColumns.length) throw new Error('Choose one or more columns in Group by for the data-driven grid.');
           b = { ...b, group_by: facetColumns, facet_axis: g.facetAxis || 'cols',
-            facet_count: Math.max(1, Math.min(6, parseInt(g.facetCount, 10) || 1)),
+            facet_count: Math.max(1, Math.min(12, parseInt(g.facetCount, 10) || 1)),
             facet_label_format: g.facetLabelFormat || '{column}={value}', panels: b.panels.slice(0, 1) };
         } else if (g.facetByGroup) {
           const sourceId = g.panelIds?.[0];

@@ -82,6 +82,8 @@ export function getNodeConfig(id) {
     z: document.getElementById(`plot-field-${id}-z`)?.value || st.z || '',
     xLabel: document.getElementById(`x-label-${id}`)?.value || '',
     yLabel: document.getElementById(`y-label-${id}`)?.value || '',
+    xLabelHidden: !!document.getElementById(`x-label-hidden-${id}`)?.checked,
+    yLabelHidden: !!document.getElementById(`y-label-hidden-${id}`)?.checked,
     xScale: (document.getElementById(`x-scale-${id}`)?.value || 'linear') === 'linear' ? '' : document.getElementById(`x-scale-${id}`).value,
     yScale: (document.getElementById(`y-scale-${id}`)?.value || 'linear') === 'linear' ? '' : document.getElementById(`y-scale-${id}`).value,
     xTickFmt: document.getElementById(`x-tickfmt-${id}`)?.value || '',
@@ -119,6 +121,8 @@ export function applyNodeConfig(id, cfg) {
   f('chart-title', cfg.chartTitle || '');
   f('x-label', cfg.xLabel || '');
   f('y-label', cfg.yLabel || '');
+  { const el = document.getElementById(`x-label-hidden-${id}`); if (el) el.checked = !!cfg.xLabelHidden; }
+  { const el = document.getElementById(`y-label-hidden-${id}`); if (el) el.checked = !!cfg.yLabelHidden; }
   f('x-scale', cfg.xScale || 'linear');
   f('y-scale', cfg.yScale || 'linear');
   f('x-tickfmt', cfg.xTickFmt || '');

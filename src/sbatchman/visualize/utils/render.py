@@ -358,6 +358,8 @@ def render_grid(p):
     share_y_label = bool(p.get("share_y_label", share_y))
     rows, cols = int(p.get("rows", 1)), int(p.get("cols", 1))
     if rows < 1 or cols < 1: raise ValueError("Grid rows/cols must be >= 1.")
+    if rows > 12 or cols > 12:
+        raise ValueError("Grid rows/cols must be at most 12.")
     style = p.get("style")
     # Axis titles and tick labels live outside each subplot's domain. A tight
     # domain gap makes the inner axes of a 2×2 figure draw into their
@@ -410,14 +412,14 @@ def render_grid(p):
         count = len(panels)
         facet_axis = p.get("facet_axis", "cols")
         facet_count = int(p.get("facet_count", cols if facet_axis == "cols" else rows))
-        if facet_count < 1 or facet_count > 6:
-            raise ValueError("Data-driven grid row/column count must be between 1 and 6.")
+        if facet_count < 1 or facet_count > 12:
+            raise ValueError("Data-driven grid row/column count must be between 1 and 12.")
         if facet_axis == "rows":
             rows, cols = facet_count, math.ceil(count / facet_count)
         else:
             cols, rows = facet_count, math.ceil(count / facet_count)
-        if rows > 6 or cols > 6:
-            raise ValueError(f"Grouping produced {count} panels; the grid supports at most 6 rows and 6 columns.")
+        if rows > 12 or cols > 12:
+            raise ValueError(f"Grouping produced {count} panels; the grid supports at most 12 rows and 12 columns.")
         doms = grid_domains(rows, cols,
                             min(max(float(p.get("xgap", .20)), .20 if cols > 1 else 0), .35 / max(cols - 1, 1)),
                             min(max(float(p.get("ygap", .24)), .24 if rows > 1 else 0), .35 / max(rows - 1, 1)))
@@ -620,6 +622,8 @@ def _render_matplotlib_grid(p):
     rows, cols = int(p.get("rows", 1)), int(p.get("cols", 1))
     if rows < 1 or cols < 1:
         raise ValueError("Grid rows/cols must be >= 1.")
+    if rows > 12 or cols > 12:
+        raise ValueError("Grid rows/cols must be at most 12.")
     panels = list(p.get("panels", []))
     style = p.get("style")
     entries, previews = [], []
@@ -655,14 +659,14 @@ def _render_matplotlib_grid(p):
             panels.append(panel)
         facet_axis = p.get("facet_axis", "cols")
         facet_count = int(p.get("facet_count", cols if facet_axis == "cols" else rows))
-        if facet_count < 1 or facet_count > 6:
-            raise ValueError("Data-driven grid row/column count must be between 1 and 6.")
+        if facet_count < 1 or facet_count > 12:
+            raise ValueError("Data-driven grid row/column count must be between 1 and 12.")
         if facet_axis == "rows":
             rows, cols = facet_count, math.ceil(len(panels) / facet_count)
         else:
             cols, rows = facet_count, math.ceil(len(panels) / facet_count)
-        if rows > 6 or cols > 6:
-            raise ValueError(f"Grouping produced {len(panels)} panels; the grid supports at most 6 rows and 6 columns.")
+        if rows > 12 or cols > 12:
+            raise ValueError(f"Grouping produced {len(panels)} panels; the grid supports at most 12 rows and 12 columns.")
     else:
         panels = panels[:rows * cols]
     for panel in panels:

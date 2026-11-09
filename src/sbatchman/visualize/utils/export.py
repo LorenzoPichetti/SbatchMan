@@ -33,6 +33,8 @@ def _panel_payload(node_cfg: dict, style: dict | None) -> dict:
         "marker_by": node_cfg.get("markerBy", ""), "dash_by": node_cfg.get("dashBy", ""),
         "z": node_cfg.get("z", ""), "x_label": node_cfg.get("xLabel", ""),
         "y_label": node_cfg.get("yLabel", ""), "x_scale": node_cfg.get("xScale") or "linear",
+        "x_label_hidden": node_cfg.get("xLabelHidden", False),
+        "y_label_hidden": node_cfg.get("yLabelHidden", False),
         "y_scale": node_cfg.get("yScale") or "linear", "x_tickformat": node_cfg.get("xTickFmt", ""),
         "y_tickformat": node_cfg.get("yTickFmt", ""),
         "tick_formatter": node_cfg.get("tickFormatter", ""),

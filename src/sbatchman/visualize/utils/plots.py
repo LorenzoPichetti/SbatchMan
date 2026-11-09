@@ -98,9 +98,18 @@ def _xy(df, cfg, kind):
         for column, value in zip(columns, values):
             value = legend_value(value)
             try:
-                fields.append(str(template).format(column=column, value=value))
-            except (KeyError, ValueError, IndexError, TypeError):
-                fields.append(f"{column}={value}")
+                # Keep the aliases accepted by facet labels as well. In
+                # particular, never silently replace a user's custom format
+                # with the default: that made a typo look like the setting
+                # was being ignored and leaked `column=value` into legends.
+                fields.append(str(template).format(
+                    column=column, col=column, name=column, value=value,
+                ))
+            except (KeyError, ValueError, IndexError, TypeError) as exc:
+                raise ValueError(
+                    "Invalid legend field format. Use {column} (or {col}/{name}) "
+                    "and {value} placeholders."
+                ) from exc
         return separator.join(fields)
 
     def make(gr, label, y, color):

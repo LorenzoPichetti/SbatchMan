@@ -50,8 +50,8 @@ export function clonePanel(tabId, sourceId) {
   const tab = G.tabs.find(t => t.id === tabId);
   const grid = tab?.state.grid;
   if (!tab || !grid || !grid.panelIds.includes(sourceId)) return;
-  if (grid.panelIds.length >= 36) {
-    clientLog('Cannot clone this panel: the subplot grid is already at its 6×6 limit.', 'warn');
+  if (grid.panelIds.length >= 144) {
+    clientLog('Cannot clone this panel: the subplot grid is already at its 12×12 limit.', 'warn');
     return;
   }
 
@@ -60,7 +60,7 @@ export function clonePanel(tabId, sourceId) {
   if (!confirm(`Clone Panel ${sourceIndex} into new Panel ${targetIndex}?\n\nThe new panel copies the source database, SQL and transform, plot type, data mappings, appearance, axis settings, plot-specific fields, and custom plot/layout scripts. Existing panels are not overwritten.`)) return;
 
   const config = window.getNodeConfig(sourceId);
-  if (grid.cols < 6) grid.cols += 1;
+  if (grid.cols < 12) grid.cols += 1;
   else grid.rows += 1;
   document.getElementById(`grid-rows-${tabId}`).value = grid.rows;
   document.getElementById(`grid-cols-${tabId}`).value = grid.cols;

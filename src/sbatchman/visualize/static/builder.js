@@ -345,8 +345,10 @@ export function builderColumnsHTML(id) {
       <input type="text" id="chart-title-${id}" placeholder="My benchmark">
       <label style="margin-top:5px">X axis label</label>
       <input type="text" id="x-label-${id}" placeholder="(auto from column)">
+      <label><input type="checkbox" id="x-label-hidden-${id}" style="width:auto;margin:0"> Hide X axis label</label>
       <label style="margin-top:5px">Y axis label</label>
       <input type="text" id="y-label-${id}" placeholder="(auto from column)">
+      <label><input type="checkbox" id="y-label-hidden-${id}" style="width:auto;margin:0"> Hide Y axis label</label>
       <label style="margin-top:5px" data-tip="linear, log (base 10), log2 (base 2), date, category">X scale</label>
       <select id="x-scale-${id}">
         <option value="linear">linear</option><option value="log">log10</option><option value="log2">log2</option>

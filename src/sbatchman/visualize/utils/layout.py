@@ -130,8 +130,10 @@ def build_layout(config, overrides=None, traces=None, style=None):
             # major ticks by powers of two without changing the data values.
             out["dtick"] = 0.3010299956639812
         return out
-    xaxis = axis("x", config.get("x_label") or config.get("x", ""))
-    yaxis = axis("y", config.get("y_label") or ylab)
+    x_label = "" if config.get("x_label_hidden") else (config.get("x_label") or config.get("x", ""))
+    y_label = "" if config.get("y_label_hidden") else (config.get("y_label") or ylab)
+    xaxis = axis("x", x_label)
+    yaxis = axis("y", y_label)
     # If every selected series uses y2, the primary y axis has no data.
     # Leaving it visible duplicates the y2 ticks and axis label, especially
     # when Panel 1 groups are expanded into many small facets.

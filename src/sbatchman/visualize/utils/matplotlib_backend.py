@@ -290,6 +290,8 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
 
 
 def _axis_label(config, axis):
+    if config.get(f"{axis}_label_hidden"):
+        return ""
     if config.get(f"{axis}_label"):
         return config[f"{axis}_label"]
     if axis == "x":
