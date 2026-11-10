@@ -715,6 +715,11 @@ def launch_jobs_from_file(
       cache_dir = get_project_config_dir() / ".source_cache"
       cache_path = cache_dir / f"{hashlib.sha256(str(source).encode()).hexdigest()}.json"
       fingerprint = _config_source_fingerprint(source)
+      # Generated configuration files are stored under the active cluster's
+      # directory, even when the source YAML itself is unchanged.
+      fingerprint = hashlib.sha256(
+        f"{fingerprint}\0{get_cluster_name()}".encode()
+      ).hexdigest()
       cached_outputs = []
       if cache_path.is_file():
         try:
