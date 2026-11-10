@@ -16,7 +16,6 @@ from sbatchman.tui.tui_status import run_tui
 from sbatchman.core.campaign import run_campaign
 from sbatchman.core.campaign_export import export_campaign_project
 from sbatchman.tui.tui_campaign import run_campaign_tui
-from sbatchman.tui.tui_remote import run_remotes_config_tui
 from sbatchman.parser import print_sqlite_db
 
 console = Console(width=shutil.get_terminal_size().columns)
@@ -649,6 +648,7 @@ def sync(
 
 @app.command("remotes-config")
 def config_cmd():
+  from sbatchman.tui.tui_remote import run_remotes_config_tui
   run_remotes_config_tui()
 
 

@@ -26,10 +26,10 @@ dependencies = [
     "platformdirs",
     "pandas",
     "paramiko",
-    "tomli_w",
 ]
 
 [project.optional-dependencies]
+ssh = ["tomli_w"]
 visualization = ["pysqlite3", "matplotlib>=3.5", "seaborn>=0.12", "numpy"]
 
 [project.urls]

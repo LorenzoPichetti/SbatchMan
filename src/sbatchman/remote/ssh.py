@@ -1,13 +1,29 @@
 from __future__ import annotations
 
 import shutil
+import warnings
 from pathlib import Path
 from typing import Optional
 
 import paramiko
 import platformdirs
-import tomllib
-import tomli_w
+try:
+    import tomllib
+except ImportError:  # Python < 3.11
+    tomllib = None
+
+try:
+    import tomli_w
+except ImportError:
+    tomli_w = None
+
+if tomllib is None or tomli_w is None:
+    warnings.warn(
+        "SSH remote configuration requires tomllib (Python 3.11+) and tomli_w; "
+        "the remote configuration feature will not work.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 from rich.console import Console
 
 console = Console()
@@ -113,12 +129,16 @@ def ensure_config() -> Path:
 
 
 def load_config() -> dict:
+    if tomllib is None:
+        raise RuntimeError("Loading SSH remote configuration requires tomllib (Python 3.11+).")
     ensure_config()
     with open(CONFIG_FILE, "rb") as fh:
         return tomllib.load(fh)
 
 
 def save_config(cfg: dict) -> None:
+    if tomli_w is None:
+        raise RuntimeError("Saving SSH remote configuration requires the optional tomli_w package.")
     from copy import deepcopy
     cfg = deepcopy(cfg)
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
