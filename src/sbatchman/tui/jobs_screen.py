@@ -1,4 +1,5 @@
 from typing import List, Optional, Dict, Any
+import fnmatch
 import yaml
 from sbatchman import Job, jobs_list
 from textual.app import ComposeResult
@@ -390,9 +391,14 @@ class FilterScreen(Screen):
         "UNKNOWN",
     ]
 
-    def __init__(self, current_filters: Optional[Dict[str, str]] = None, **kwargs):
+    def __init__(self, current_filters: Optional[Dict[str, str]] = None, jobs: Optional[List[Job]] = None, **kwargs):
         super().__init__(**kwargs)
         self.filters = current_filters or {}
+        self.jobs = jobs or []
+        self.selected_categories = set(self.filters.get("category", "").split(",")) - {""}
+        self.selected_clusters = set(self.filters.get("cluster", "").split(",")) - {""}
+        self.categories = sorted({str(getattr(job, "category", None) or "N/A") for job in self.jobs})
+        self.clusters = sorted({str(getattr(job, "cluster_name", None) or "N/A") for job in self.jobs})
         self.selected_statuses = set()
         if "status" in self.filters:
             self.selected_statuses = set(
@@ -425,9 +431,17 @@ class FilterScreen(Screen):
                             compact=True,
                         )
                     yield Label("Config Name (comma-separated):", classes="section-label")
-                    yield Input(value=self.filters.get("config", ""), placeholder="e.g., config_a, config_b", id="config-input")
+                    yield Input(value=self.filters.get("config", ""), placeholder="e.g., config_*, test?", id="config-input")
                     yield Label("Tag (comma-separated):", classes="section-label")
-                    yield Input(value=self.filters.get("tag", ""), placeholder="e.g., exp_1, test", id="tag-input")
+                    yield Input(value=self.filters.get("tag", ""), placeholder="e.g., exp_*, test?", id="tag-input")
+                    yield Label("Categories (select multiple):", classes="section-label")
+                    for i, value in enumerate(self.categories):
+                        selected = value in self.selected_categories
+                        yield Button(f"{'✓' if selected else '☐'} {value}", id=f"category-{i}", variant="primary" if selected else "default", classes="checkbox-btn", compact=True)
+                    yield Label("Clusters (select multiple):", classes="section-label")
+                    for i, value in enumerate(self.clusters):
+                        selected = value in self.selected_clusters
+                        yield Button(f"{'✓' if selected else '☐'} {value}", id=f"cluster-{i}", variant="primary" if selected else "default", classes="checkbox-btn", compact=True)
                     yield Label("Start Time (after, format: %Y-%m-%d %H:%M:%S):", classes="section-label")
                     yield Input(value=self.filters.get("time__gt", ""), placeholder="e.g., 2024-01-01 01:02:00", id="time-gt-input")
                     yield Label("End Time (before, format: %Y-%m-%d %H:%M:%S):", classes="section-label")
@@ -463,6 +477,10 @@ class FilterScreen(Screen):
         elif event.button.id and event.button.id.startswith("status-"):
             status = event.button.id.replace("status-", "")
             self._toggle_status(status, event.button)
+        elif event.button.id and event.button.id.startswith("category-"):
+            self._toggle_choice(self.categories, self.selected_categories, int(event.button.id.split("-")[-1]), event.button)
+        elif event.button.id and event.button.id.startswith("cluster-"):
+            self._toggle_choice(self.clusters, self.selected_clusters, int(event.button.id.split("-")[-1]), event.button)
         elif event.button.id and event.button.id.startswith("remove-var-"):
             self._remove_variable_row(event.button.id)
 
@@ -474,6 +492,18 @@ class FilterScreen(Screen):
         else:
             self.selected_statuses.add(status)
             button.label = f"✓ {status}"
+            button.variant = "primary"
+
+    @staticmethod
+    def _toggle_choice(values: List[str], selected: set, index: int, button: Button) -> None:
+        value = values[index]
+        if value in selected:
+            selected.remove(value)
+            button.label = f"☐ {value}"
+            button.variant = "default"
+        else:
+            selected.add(value)
+            button.label = f"✓ {value}"
             button.variant = "primary"
 
     def _add_variable_row(self) -> None:
@@ -511,6 +541,10 @@ class FilterScreen(Screen):
         tag = self.query_one("#tag-input", Input).value.strip()
         if tag:
             filters["tag"] = tag
+        if self.selected_categories:
+            filters["category"] = ",".join(sorted(self.selected_categories))
+        if self.selected_clusters:
+            filters["cluster"] = ",".join(sorted(self.selected_clusters))
         time_gt = self.query_one("#time-gt-input", Input).value.strip()
         if time_gt:
             filters["time__gt"] = time_gt
@@ -548,6 +582,16 @@ class FilterScreen(Screen):
                 self.query_one(input_id, Input).value = ""
             except Exception:
                 pass
+        self.selected_categories.clear()
+        self.selected_clusters.clear()
+        for prefix, values in (("category", self.categories), ("cluster", self.clusters)):
+            for i, value in enumerate(values):
+                try:
+                    button = self.query_one(f"#{prefix}-{i}", Button)
+                    button.label = f"☐ {value}"
+                    button.variant = "default"
+                except Exception:
+                    pass
         container = self.query_one("#variable-filters-container", Vertical)
         for row in list(container.children):
             if isinstance(row, Horizontal):
@@ -1194,7 +1238,7 @@ class JobsScreen(Screen):
                 self.filter = filters if filters else None
                 self.update_filter_status()
                 self.update_tables()
-        self.app.push_screen(FilterScreen(self.filter), handle_filter_result)
+        self.app.push_screen(FilterScreen(self.filter, jobs=self.all_jobs), handle_filter_result)
 
     def action_open_archives(self) -> None:
         def handle_archive_result(selection: Optional[Dict[str, bool]]) -> None:
@@ -1456,14 +1500,20 @@ class JobsScreen(Screen):
                     if not any(status in job_status for status in allowed_statuses):
                         return False
                 elif key == "config":
-                    allowed_configs = [c.strip().lower() for c in val.split(",")]
-                    job_config = getattr(job, "config_name", "").lower()
-                    if not any(config in job_config for config in allowed_configs):
+                    allowed_configs = [c.strip() for c in val.split(",") if c.strip()]
+                    job_config = getattr(job, "config_name", "")
+                    if not any(fnmatch.fnmatchcase(job_config, pattern) for pattern in allowed_configs):
                         return False
                 elif key == "tag":
-                    allowed_tags = [t.strip().lower() for t in val.split(",")]
-                    job_tag = getattr(job, "tag", "").lower()
-                    if not any(tag in job_tag for tag in allowed_tags):
+                    allowed_tags = [t.strip() for t in val.split(",") if t.strip()]
+                    job_tag = getattr(job, "tag", "")
+                    if not any(fnmatch.fnmatchcase(job_tag, pattern) for pattern in allowed_tags):
+                        return False
+                elif key == "category":
+                    if (getattr(job, "category", None) or "N/A") not in val.split(","):
+                        return False
+                elif key == "cluster":
+                    if (getattr(job, "cluster_name", None) or "N/A") not in val.split(","):
                         return False
                 elif key == "variables":
                     job_vars = getattr(job, "variables", {})
