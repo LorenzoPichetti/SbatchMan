@@ -565,6 +565,10 @@ def render_matplotlib_plot(df, traces, config, style=None, title="",
     names = list(dict.fromkeys(t.get("_series_color_key", t.get("name")) for t in traces
                                if t.get("name") and not str(t.get("name")).endswith(" (band)")))
     color_map = {name: colors[i % len(colors)] for i, name in enumerate(names)}
+    for trace in traces:
+        shared_color = trace.get("_shared_category_color")
+        if shared_color is not None:
+            color_map[trace.get("_series_color_key", trace.get("name"))] = shared_color
     bar_traces = [t for t in traces if t.get("type") == "bar"]
     bar_indexes = {id(t): i for i, t in enumerate(bar_traces)}
     handles = []
@@ -640,6 +644,8 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
                 series_key = t.get("_series_color_key", color_key)
                 if series_key not in color_map:
                     color_map[series_key] = colors[len(color_map) % len(colors)]
+                if t.get("_shared_category_color") is not None:
+                    color_map[series_key] = t["_shared_category_color"]
                 if not style.get("recolor", True):
                     color_map[series_key] = (t.get("line") or {}).get("color") or (t.get("marker") or {}).get("color") or colors[0]
                 try:

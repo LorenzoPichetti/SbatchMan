@@ -71,6 +71,15 @@ def compute_traces(df_data, plot_type, custom_script, config):
     return traces
 
 
+def _with_shared_category_styles(config, style):
+    """Make the global Style-tab category map available to built-in plots."""
+    config = dict(config or {})
+    category_map = (style or {}).get("category_style_map")
+    if category_map:
+        config["category_style_map"] = category_map
+    return config
+
+
 def _short_category_legend(traces, config):
     """Replace combined series labels with compact, independent style keys."""
     if not config.get("short_legend"):
@@ -235,7 +244,7 @@ def run_preview(p):
 
 def render_plot(p):
     """Single figure. Order: build -> global style -> user layout script (script wins)."""
-    config, style = p.get("config", {}), p.get("style")
+    config, style = _with_shared_category_styles(p.get("config", {}), p.get("style")), p.get("style")
     backend = p.get("backend", "matplotlib")
     if backend not in ("plotly", "matplotlib"):
         raise ValueError(f"Unknown plotting backend: {backend}")
@@ -452,7 +461,7 @@ def render_grid(p):
         r, c = divmod(i, cols)
         xsfx, ysfx = main_sfx(i), main_sfx(i)
         panel_xsfx.append(xsfx); panel_ysfx.append(ysfx)
-        config = panel.get("config", {})
+        config = _with_shared_category_styles(panel.get("config", {}), p.get("style"))
         if "_grouped_df" in panel:
             df, e = panel["_grouped_df"], []
         else:
@@ -677,7 +686,7 @@ def _render_matplotlib_grid(p):
                 panel["database"], panel["sql"], panel.get("transform_script", ""))
             entries += panel_entries
         panel["_df_data"] = df
-        panel_config = panel.get("config", {})
+        panel_config = _with_shared_category_styles(panel.get("config", {}), p.get("style"))
         custom_script = panel.get("custom_script", "")
         panel["_custom_mpl_plot_fn"] = None
         if custom_script and custom_script.strip():

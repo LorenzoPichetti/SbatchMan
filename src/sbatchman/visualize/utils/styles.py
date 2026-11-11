@@ -100,7 +100,7 @@ def apply(layout, traces, style=None):
                 continue
             key = t.get("_series_color_key", t.get("name"))
             if key not in name_color:
-                name_color[key] = pal[next_i % len(pal)]
+                name_color[key] = t.get("_shared_category_color") or pal[next_i % len(pal)]
                 next_i += 1
             c = name_color[key]
             for attr in ("line", "marker"):
@@ -113,6 +113,7 @@ def apply(layout, traces, style=None):
             pending_band = []
     for t in traces:
         t.pop("_series_color_key", None)
+        t.pop("_shared_category_color", None)
         if (not _is_band_helper(t) and isinstance(t.get("line"), dict)
                 and "width" in t["line"] and t.get("type") != "bar"):
             t["line"]["width"] = s["line_width"]

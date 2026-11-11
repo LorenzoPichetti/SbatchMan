@@ -148,6 +148,35 @@ def customize_matplotlib(fig, ax, config):
 
       <p>Legend options in the Appearance section still set defaults. A layout script runs after those options, so its edits take precedence. For a grid with a shared legend, use the Panel 1 hook when you need to replace the single figure-level legend.</p>
     </section>
+
+    <section id="shared-category-styles" style="margin-top:36px">
+      <h1>Keep category styles consistent across plots</h1>
+      <p>Open the global <strong>Style</strong> tab and edit <strong>Shared category styles (JSON)</strong> to assign a color, linestyle, or marker to a column value. These mappings apply to plots that use the matching column in <strong>Group by</strong>, <strong>Linestyle by</strong>, or <strong>Marker by</strong>. Unmapped values keep the normal automatic style.</p>
+      <pre><code>{
+  "color": {
+    "by_field": {
+      "implementation": {"SG2044": "#E69F00", "openblas": "#56B4E9"}
+    }
+  },
+  "linestyle": {
+    "by_field": {"dtype": {"f16": "solid", "f32": "dash"}}
+  },
+  "marker": {
+    "by_field": {"matrix": {"64x512": "diamond", "64x1024": "circle"}}
+  }
+}</code></pre>
+      <p>For a style category formed from multiple columns, use a <code>combinations</code> object. Its key is the fields joined as <code>column=value | column=value</code>:</p>
+      <pre><code>{
+  "color": {
+    "combinations": {
+      "implementation=SG2044 | dtype=f16": "#E69F00",
+      "implementation=SG2044 | dtype=f32": "#56B4E9"
+    }
+  }
+}</code></pre>
+      <p>Colors may be any Matplotlib/Plotly CSS color. Linestyles are <code>solid</code>, <code>dash</code>, <code>dot</code>, <code>dashdot</code>, <code>longdash</code>, or <code>longdashdot</code>. Markers include <code>circle</code>, <code>square</code>, <code>diamond</code>, <code>cross</code>, <code>x</code>, <code>triangle-up</code>, <code>triangle-down</code>, <code>star</code>, <code>pentagon</code>, and <code>hexagon</code>.</p>
+      <p>The Style tab saves these mappings in this browser. Use <strong>Export style</strong> and <strong>Import style</strong> to carry them between sessions; workspace exports also include the shared style profile, so the mappings can be shared alongside your <code>plots.json</code>.</p>
+    </section>
   </main>
 </body>
 </html>

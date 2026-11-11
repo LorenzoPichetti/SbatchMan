@@ -87,17 +87,48 @@
         box.append(hint);
       }
     });
+    const categoryStyles = document.createElement('div');
+    categoryStyles.style.cssText = 'margin-top:10px';
+    categoryStyles.innerHTML = '<label for="st-category-style-map">Shared category styles (JSON)</label>' +
+      '<textarea id="st-category-style-map" spellcheck="false" rows="10" ' +
+      'placeholder="{\n  &quot;color&quot;: {&quot;by_field&quot;: {&quot;dtype&quot;: {&quot;f16&quot;: &quot;#E69F00&quot;}}}\n}" ' +
+      'style="font:11px monospace;min-height:130px"></textarea>' +
+      '<div style="font-size:9px;color:var(--text3);margin-top:3px">' +
+      'Map values by column to keep their styles consistent across plots and workspaces. ' +
+      'Kinds: color, linestyle, marker. Use combinations for multi-column mappings.</div>';
+    const categoryMapInput = categoryStyles.querySelector('textarea');
+    categoryMapInput.addEventListener('change', () => {
+      try {
+        const value = categoryMapInput.value.trim() ? JSON.parse(categoryMapInput.value) : {};
+        if (!value || Array.isArray(value) || typeof value !== 'object') throw new Error('Expected a JSON object.');
+        for (const kind of Object.keys(value)) {
+          if (!['color', 'linestyle', 'marker'].includes(kind) || !value[kind] || Array.isArray(value[kind]) || typeof value[kind] !== 'object') {
+            throw new Error('Use color, linestyle, and/or marker objects.');
+          }
+        }
+        categoryMapInput.setCustomValidity('');
+        G_STYLE.category_style_map = value;
+        save();
+      } catch (e) {
+        categoryMapInput.setCustomValidity(`Invalid shared category style map: ${e.message}`);
+        categoryMapInput.reportValidity();
+      }
+    });
+    box.append(categoryStyles);
     const io = document.createElement('div'); io.style.cssText = 'display:flex;gap:6px;margin-top:10px';
     io.innerHTML = '<button class="btn sm" id="st-exp">Export style</button><button class="btn sm" id="st-imp">Import style</button>';
     box.append(io); pane.append(box);
     box.querySelector('#style-preset').addEventListener('change', e => {
       if (!e.target.value) return;
-      G_STYLE = {...presets[e.target.value]}; fill(); save();
+      G_STYLE = {...presets[e.target.value], category_style_map: G_STYLE.category_style_map}; fill(); save();
     });
     box.querySelector('#st-exp').onclick = () => download(JSON.stringify(G_STYLE, null, 2), 'plot-style.json');
     box.querySelector('#st-imp').onclick = () => {
       const f = document.createElement('input'); f.type = 'file'; f.accept = '.json';
-      f.onchange = () => readJson(f.files[0], s => { G_STYLE = s; fill(); save(); }); f.click();
+      f.onchange = () => readJson(f.files[0], s => {
+        G_STYLE = {...s, category_style_map: s.category_style_map ?? G_STYLE.category_style_map};
+        fill(); save();
+      }); f.click();
     };
     fill();
   }
@@ -107,6 +138,8 @@
       const v = G_STYLE[k] ?? (k === 'legend_orientation' ? 'auto' : undefined);
       if (type === 'bool') el.checked = v !== false; else el.value = Array.isArray(v) ? v.join(', ') : (v ?? '');
     });
+    const categoryMapInput = document.getElementById('st-category-style-map');
+    if (categoryMapInput) categoryMapInput.value = JSON.stringify(G_STYLE.category_style_map || {}, null, 2);
     const paletteSelector = document.getElementById('st-palette-preset');
     if (paletteSelector) {
       const palette = G_STYLE.palette;
@@ -266,7 +299,11 @@
   };
   const _applyWorkspace = window.applyWorkspace;
   window.applyWorkspace = function (ws, label) {
-    if (ws && ws.style) { G_STYLE = ws.style; fill(); save(); }
+    if (ws && ws.style) {
+      G_STYLE = {...ws.style,
+        category_style_map: ws.style.category_style_map ?? G_STYLE.category_style_map};
+      fill(); save();
+    }
     return _applyWorkspace(ws, label);
   };
 
@@ -275,7 +312,8 @@
   const _applyTabConfig = window.applyTabConfig;
   window.applyTabConfig = function (tabId, cfg) {
     if (cfg && cfg.style && typeof cfg.style === 'object') {
-      G_STYLE = cfg.style;
+      G_STYLE = {...cfg.style,
+        category_style_map: cfg.style.category_style_map ?? G_STYLE.category_style_map};
       fill();
       save();
     }

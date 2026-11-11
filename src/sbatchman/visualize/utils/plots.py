@@ -37,6 +37,30 @@ def _style_map(rows, ci, columns, seq):
     return {value: seq[i % len(seq)] for i, value in enumerate(vals)}
 
 
+def _category_style(mapping, kind, columns, values):
+    """Return an explicit shared style for one category, if configured."""
+    rules = (mapping or {}).get(kind, {})
+    if not isinstance(rules, dict):
+        return None
+    columns, values = list(columns), list(values)
+    if len(columns) == 1:
+        by_field = rules.get("by_field", {})
+        field_rules = by_field.get(columns[0], {}) if isinstance(by_field, dict) else {}
+        if isinstance(field_rules, dict):
+            key = "(missing)" if values[0] is None else str(values[0])
+            if key in field_rules:
+                return field_rules[key]
+    combinations = rules.get("combinations", {})
+    if isinstance(combinations, dict):
+        key = " | ".join(
+            f"{column}={'(missing)' if value is None else value}"
+            for column, value in zip(columns, values)
+        )
+        if key in combinations:
+            return combinations[key]
+    return None
+
+
 def _drop_unplottable(rows, ci, col, is_log):
     """Log axes cannot place None/<=0 values."""
     if not is_log or col not in ci:
@@ -82,7 +106,16 @@ def _xy(df, cfg, kind):
     marker_by = [c for c in _cols(cfg.get("marker_by")) if c in ci] if kind != "bar" else []
     dash_by = [c for c in _cols(cfg.get("dash_by")) if c in ci] if kind == "line" else []
     color_groups = [c for c in groups if c not in dash_by]
+    category_styles = cfg.get("category_style_map") or {}
     mmap, dmap = _style_map(rows, ci, marker_by, MARKERS), _style_map(rows, ci, dash_by, DASHES)
+    for key in mmap:
+        shared = _category_style(category_styles, "marker", marker_by, key)
+        if shared is not None:
+            mmap[key] = shared
+    for key in dmap:
+        shared = _category_style(category_styles, "linestyle", dash_by, key)
+        if shared is not None:
+            dmap[key] = shared
     split = groups + [c for c in dash_by if c not in groups]
     lx = cfg.get("x_scale") in ("log", "log2")
     y2_cols = set(_cols(cfg.get("y2")))
@@ -143,11 +176,15 @@ def _xy(df, cfg, kind):
                 marker_key = tuple(row[ci[col]] for col in marker_by)
                 marker_label = legend_fields(marker_by, marker_key)
                 marker_items.setdefault(marker_label, mmap.get(marker_key, "circle"))
-        color_key = tuple(gr[0][ci[c]] for c in color_groups) if color_groups and gr else y
+        color_values = tuple(gr[0][ci[c]] for c in color_groups) if color_groups and gr else ()
+        color_key = (tuple(color_groups), color_values) if color_groups and gr else y
+        shared_color = (_category_style(category_styles, "color", color_groups, color_values)
+                        if color_groups and gr else None)
         if kind == "bar":
             t = {"type": "bar", "name": name, "x": xs, "y": yv, "_ycol": y,
                  "marker": {"color": color, "line": {"width": 0.8, "color": "#333"}},
                  "_series_color_key": color_key}
+            if shared_color is not None: t["_shared_category_color"] = shared_color
             if t_color_label is not None: t["_legend_color_label"] = t_color_label
             if t_dash_value is not None: t["_legend_dash_value"] = t_dash_value
             if marker_items: t["_legend_marker_items"] = list(marker_items.items())
@@ -157,6 +194,7 @@ def _xy(df, cfg, kind):
              "name": name, "x": xs, "y": yv, "_ycol": y,
              "marker": {"size": MS, "color": color, "line": {"width": 1, "color": "#fff"}},
              "_series_color_key": color_key}
+        if shared_color is not None: t["_shared_category_color"] = shared_color
         if kind == "line":
             t["line"] = {"width": LW, "color": color}
             if dash_by and gr:
@@ -244,15 +282,18 @@ def _xy(df, cfg, kind):
         color_keys = []
         for key in buckets:
             values = dict(zip(split, key))
-            group_color_key = tuple(values[c] for c in color_groups) if color_groups else None
+            group_color_key = (tuple(color_groups), tuple(values[c] for c in color_groups)) if color_groups else None
             for y in ys:
                 color_key = group_color_key if group_color_key is not None else y
                 if color_key not in color_keys:
                     color_keys.append(color_key)
-        color_map = {key: _color(i) for i, key in enumerate(color_keys)}
+        color_map = {}
+        for i, key in enumerate(color_keys):
+            shared = _category_style(category_styles, "color", color_groups, key) if color_groups else None
+            color_map[key] = shared if shared is not None else _color(i)
         for key, gr in sorted(buckets.items(), key=lambda kv: [str(v) for v in kv[0]]):
             values = dict(zip(split, key))
-            group_color_key = tuple(values[c] for c in color_groups) if color_groups else None
+            group_color_key = (tuple(color_groups), tuple(values[c] for c in color_groups)) if color_groups else None
             for y in ys:
                 color_key = group_color_key if group_color_key is not None else y
                 color = color_map[color_key]
