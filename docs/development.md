@@ -21,6 +21,8 @@ If you'd like to contribute or simply modify the internal behavior of SbatchMan:
 ### Clone the GitHub repository
 
 ```bash
+git clone https://github.com/LorenzoPichetti/SbatchMan.git
+# OR
 git clone git@github.com:LorenzoPichetti/SbatchMan.git
 ```
 
@@ -32,7 +34,7 @@ From the `SbatchMan` root folder, run:
 
 ```bash
 # Install the project in editable mode
-pip install -e .
+pip install -e ".[visualization]"
 # Install documentation dependencies
 pip install -r docs/requirements.txt
 ```
