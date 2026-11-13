@@ -30,11 +30,13 @@ GitHub repository: [https://github.com/LorenzoPichetti/SbatchMan](https://github
 
 ### Install Locally
 
-From the `SbatchMan` root folder, run: 
-
 ```bash
+cd SbatchMan
+pip install pipx
 # Install the project in editable mode
-pip install -e ".[visualization]"
+pipx install -e ".[visualization]"
+pipx ensurepath
+
 # Install documentation dependencies
 pip install -r docs/requirements.txt
 ```
