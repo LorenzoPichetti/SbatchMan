@@ -610,6 +610,7 @@ class FilterScreen(Screen):
     #left-column {
         width: 50%;
         padding-right: 1;
+        overflow-y: auto;
     }
     #right-column {
         width: 50%;
@@ -645,8 +646,10 @@ class FilterScreen(Screen):
         height: 85%;
         border: solid $primary;
         background: $panel;
+        overflow-y: auto;
     }
     .variable-filter-row {
+        height: auto;
         margin-bottom: 0;
         align: left middle;
     }
