@@ -36,9 +36,6 @@ pip install pipx
 # Install the project in editable mode
 pipx install -e ".[visualization]"
 pipx ensurepath
-
-# Install documentation dependencies
-pip install -r docs/requirements.txt
 ```
 
 Now the `sbatchman` command should use the local version of the package. Any changes you make to the code will be reflected immediately when you run the command.
@@ -48,6 +45,9 @@ Now the `sbatchman` command should use the local version of the package. Any cha
 To preview the documentation site locally, run the `mkdocs` server.
 
 ```bash
+# Install documentation dependencies
+pip install -r docs/requirements.txt
+
 mkdocs serve
 ```
 
