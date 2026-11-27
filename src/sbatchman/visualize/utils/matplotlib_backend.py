@@ -129,6 +129,24 @@ def _heatmap_axis(values, np, categorical=False):
     return edges, centers, labels, {float(index): value for index, value in enumerate(values)}
 
 
+def _set_bar_categories(ax, bar_traces):
+    """Store the x categories shared by all bar traces of one axes: numeric
+    values sorted ascending, anything else in first-appearance order.
+    _style_axes re-applies them as tick labels, since set_xscale() resets the
+    tick formatter, and a custom tick formatter maps positions back through
+    them to the real x value."""
+    if not bar_traces:
+        return
+    values = list(dict.fromkeys(v for t in bar_traces for v in (t.get("x") or [])))
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
+        values.sort()
+    ax._sbatchman_bar_x = values
+    ax._sbatchman_category_tick_values = {
+        **getattr(ax, "_sbatchman_category_tick_values", {}),
+        "x": dict(enumerate(values)),
+    }
+
+
 def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_count=1):
     """Draw one Plotly-compatible trace; return its legend handle and label."""
     plt, Line2D, np, sns = _modules()
@@ -225,12 +243,19 @@ def _draw_trace(ax, right_ax, trace, config, style, color, bar_index=0, bar_coun
                                        **(_errorbar_kwargs(trace) if _has_errorbars(trace, config) else {}))
                 handle = artist.lines[0]
     elif kind == "bar":
-        xx = np.arange(len(x or []))
+        # Each bar goes to the slot of its x value in the axes' shared category
+        # list (set by _set_bar_categories), not to its row index: traces can
+        # list their x values in different orders or have different subsets.
+        if getattr(ax, "_sbatchman_bar_x", None) is None:
+            _set_bar_categories(ax, [trace])
+        slot = {v: i for i, v in enumerate(ax._sbatchman_bar_x)}
         width = .8 / max(bar_count, 1)
+        xx = np.array([slot[v] for v in (x or [])], dtype=float)
         xx = xx - .4 + width / 2 + bar_index * width
         bars = axis.bar(xx, numeric_y, width=width, color=color, label=name,
                         **_errorbar_kwargs(trace))
-        axis.set_xticks(np.arange(len(x or [])), [str(v) for v in (x or [])])
+        categories = ax._sbatchman_bar_x
+        axis.set_xticks(np.arange(len(categories)), [str(v) for v in categories])
         handle = bars[0] if len(bars) else None
     elif kind == "histogram":
         patches = axis.hist(x or [], bins=int(trace.get("nbinsx", 30)), color=color,
@@ -309,7 +334,10 @@ def _style_axes(ax, right_ax, config, style, title=""):
     ax.set_title(title or config.get("title", ""), fontsize=style.get("title_size", 14), fontfamily=font)
     ax.set_xlabel(_axis_label(config, "x"), fontsize=style.get("label_size", 12), fontfamily=font)
     ax.set_ylabel(_axis_label(config, "y"), fontsize=style.get("label_size", 12), fontfamily=font)
-    _scale(ax, "x", config.get("x_scale", "linear"))
+    bar_x = getattr(ax, "_sbatchman_bar_x", None)
+    if bar_x is None:
+        # Bar x positions are category indices: a log scale on them is meaningless.
+        _scale(ax, "x", config.get("x_scale", "linear"))
     _scale(ax, "y", config.get("y_scale", "linear"))
     if right_ax:
         y2_cols = config.get("y2") or []
@@ -375,6 +403,21 @@ def _style_axes(ax, right_ax, config, style, title=""):
             lambda value, position: format_axis_tick(value, "x", int(position))))
         ax.yaxis.set_major_formatter(FuncFormatter(
             lambda value, position: format_axis_tick(value, "y", int(position))))
+    if bar_x is not None:
+        if isinstance(tick_formatter_source, str) and tick_formatter_source.strip():
+            # The custom formatter maps each position to its category value.
+            ax.set_xticks(np.arange(len(bar_x)))
+        else:
+            x_fmt = str(config.get("x_tickformat") or "")
+
+            def bar_label(value):
+                if isinstance(value, float) and x_fmt.startswith(".") and x_fmt.endswith("f"):
+                    return ("%" + x_fmt) % value
+                if isinstance(value, float) and value.is_integer():
+                    return str(int(value))
+                return str(value)
+
+            ax.set_xticks(np.arange(len(bar_x)), [bar_label(v) for v in bar_x])
     for axis in ("x", "y"):
         vals = config.get(f"_mpl_{axis}_tickvals")
         labels = config.get(f"_mpl_{axis}_ticktext")
@@ -571,6 +614,7 @@ def render_matplotlib_plot(df, traces, config, style=None, title="",
             color_map[trace.get("_series_color_key", trace.get("name"))] = shared_color
     bar_traces = [t for t in traces if t.get("type") == "bar"]
     bar_indexes = {id(t): i for i, t in enumerate(bar_traces)}
+    _set_bar_categories(ax, bar_traces)
     handles = []
     if callable(custom_plot_fn):
         _call_custom_hook(custom_plot_fn, plt, np, sns, ax, df, config)
@@ -628,6 +672,7 @@ def render_matplotlib_grid(panels, rows, cols, style=None, share_x=False, share_
         right_ax = ax.twinx() if y2 else None
         bar_traces = [t for t in traces if t.get("type") == "bar"]
         bar_indexes = {id(t): j for j, t in enumerate(bar_traces)}
+        _set_bar_categories(ax, bar_traces)
         handles = []
         custom_plot_fn = panel.get("_custom_mpl_plot_fn")
         has_marker_items = any(t.get("_legend_marker_items") for t in traces)
