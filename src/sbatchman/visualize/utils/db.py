@@ -86,7 +86,7 @@ def get_all_tables_as_dataframes(db: str) -> Dict[str, pd.DataFrame]:
         conn.close()
 
 
-def run_query(db, sql, limit=10000):
+def run_query(db, sql, limit=None):
     if not sql.strip().upper().startswith(("SELECT", "WITH")):
         raise ValueError("Only SELECT / WITH queries are allowed.")
     conn = _connect(db)
@@ -102,7 +102,7 @@ def df_data_to_dataframe(d: dict) -> pd.DataFrame:
     return pd.DataFrame(d["rows"], columns=d["columns"])
 
 
-def dataframe_to_df_data(df: pd.DataFrame, limit=10000) -> dict:
+def dataframe_to_df_data(df: pd.DataFrame, limit=None) -> dict:
     truncated = limit is not None and len(df) > limit
     df = df.head(limit) if truncated else df
     safe = df.astype(object).where(pd.notnull(df), None)

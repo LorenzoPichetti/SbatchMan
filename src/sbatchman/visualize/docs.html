@@ -124,6 +124,7 @@ def customize_matplotlib(fig, ax, config):
             'tick_params': {'labelsize': 7},
         },
     )</code></pre>
+      <p>To pass named arguments in <code>zoom_ax_kwargs</code> do, fo instance, <code>'set_xscale': {'value': 'log', 'base': 2}</code> (value is positional, base is named)</p>
 
       <h2 style="margin-top:22px">Matplotlib: custom shared legend for a grid</h2>
       <p>Put this hook in Panel 1's Layout script. It runs once after all panels and the default shared legend are drawn. <code>axes</code> is a 2D NumPy array; <code>panel_data</code> contains one <code>{'df_data': ..., 'traces': ...}</code> object per rendered panel.</p>

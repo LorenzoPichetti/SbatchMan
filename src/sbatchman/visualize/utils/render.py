@@ -38,7 +38,7 @@ def _facet_title(group_by, values, template):
 
 
 def run_pipeline(database, sql, transform_script="", full=False):
-    df_data, entries = run_query(database, sql, limit=None if full else 10000), []
+    df_data, entries = run_query(database, sql, limit=None), []
     if transform_script and transform_script.strip():
         data = get_all_tables_as_dataframes(database)
         # The SQL projection is the base plotting dataset. Keep track of all
@@ -56,7 +56,7 @@ def run_pipeline(database, sql, transform_script="", full=False):
         # omitted from the SELECT stay out of the data used to plot.
         keep = [c for c in selected_columns if c in result.columns]
         keep += [c for c in result.columns if c not in source_columns and c not in keep]
-        df_data = dataframe_to_df_data(result.loc[:, keep], limit=None if full else 10000)
+        df_data = dataframe_to_df_data(result.loc[:, keep], limit=None)
     return df_data, entries
 
 
