@@ -331,11 +331,6 @@ def launch_job(
     config_cluster_name = get_cluster_name()
     if cluster_name is None: # Use global cluster name if not provided
       cluster_name = config_cluster_name
-    elif cluster_name != config_cluster_name: # Mismatch in cluster names
-      raise JobSubmitError(
-        f"Cluster name '{cluster_name}' does not match the globally set cluster name '{config_cluster_name}'. "
-        "You may be running jobs meant for a different cluster. If you want to change this cluster name, use 'sbatchman set-cluster-name <cluster_name>' to set a new global default."
-      )
   except ClusterNameNotSetError:
     if not cluster_name:
       raise ConfigurationError(
@@ -610,6 +605,7 @@ def launch_jobs_from_file(
   return_details: bool = False,
   rerun_non_completed: bool = False,
   filter_categories: Optional[List[str]] = None,
+  cluster_name: Optional[str] = None,
 ) -> Union[List[Job], LaunchResult]:
   """  Launches jobs based on a YAML configuration file.
   Args:
@@ -646,7 +642,7 @@ def launch_jobs_from_file(
   global_preprocess = config.get("preprocess", None)
   global_postprocess = config.get("postprocess", None)
   global_check = config.get("check", None)
-  global_cluster_name = config.get("cluster_name", None)
+  global_cluster_name = cluster_name or config.get("cluster_name", None)
 
   if global_vars_file:
     global_vars_file_list = []
@@ -749,7 +745,7 @@ def launch_jobs_from_file(
   
   machine_cluster_name = None
   try:
-    machine_cluster_name = get_cluster_name()
+    machine_cluster_name = cluster_name or get_cluster_name()
   except ClusterNameNotSetError:
     pass
 

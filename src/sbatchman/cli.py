@@ -263,6 +263,7 @@ def configure(
 def launch(
   file: Optional[Path] = typer.Option(None, "--file", "-f", help="YAML file that describes a batch of experiments."),
   config: Optional[str] = typer.Option(None, "--config", help="Configuration name."),
+  cluster: Optional[str] = typer.Option(None, "--cluster", "-c", help="Cluster to use for this launch (overrides the global cluster name)."),
   tag: Optional[List[str]] = typer.Option(None, "--tag", "-t", help="Tag for the experiment. With --file, filters jobs by tag and supports shell-style wildcards (*, ?, [seq]); repeatable. Quote wildcard patterns to prevent shell expansion (e.g. -t 'trial_*')."),
   category: Optional[List[str]] = typer.Option(None, "--category", "-C", help="With --file, filter jobs by category using shell-style wildcards (*, ?, [seq]); repeatable. Quote wildcard patterns to prevent shell expansion (e.g. -C 'sim_*')."),
   command: Optional[str] = typer.Argument(None, help="The executable and its parameters, enclosed in quotes."),
@@ -296,6 +297,7 @@ def launch(
     if file:
       jobs = sbm.launch_jobs_from_file(
         file,
+        cluster_name=cluster,
         force=force,
         dry_run=dry_run,
         filter_tags=tag,
@@ -316,6 +318,7 @@ def launch(
         actual_tag = tag[0] if tag else "default"
         job = sbm.launch_job(
           config_name=config,
+          cluster_name=cluster,
           command=command,
           tag=actual_tag,
           preprocess=preprocess,
